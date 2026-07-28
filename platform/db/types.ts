@@ -39,6 +39,110 @@ export type Database = {
   }
   public: {
     Tables: {
+      action_events: {
+        Row: {
+          action_id: string
+          created_at: string
+          from_status: string | null
+          id: string
+          reason: string | null
+          to_status: string
+          user_id: string
+        }
+        Insert: {
+          action_id: string
+          created_at?: string
+          from_status?: string | null
+          id?: string
+          reason?: string | null
+          to_status: string
+          user_id: string
+        }
+        Update: {
+          action_id?: string
+          created_at?: string
+          from_status?: string | null
+          id?: string
+          reason?: string | null
+          to_status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "action_events_action_id_fkey"
+            columns: ["action_id"]
+            isOneToOne: false
+            referencedRelation: "daily_actions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_actions: {
+        Row: {
+          created_at: string
+          date: string
+          description: string | null
+          domain_id: string | null
+          goal_id: string | null
+          id: string
+          is_required: boolean
+          priority: number | null
+          skip_reason: string | null
+          source: string
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          description?: string | null
+          domain_id?: string | null
+          goal_id?: string | null
+          id?: string
+          is_required?: boolean
+          priority?: number | null
+          skip_reason?: string | null
+          source?: string
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          description?: string | null
+          domain_id?: string | null
+          goal_id?: string | null
+          id?: string
+          is_required?: boolean
+          priority?: number | null
+          skip_reason?: string | null
+          source?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_actions_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "domains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_actions_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_checkin_fields: {
         Row: {
           created_at: string
@@ -154,6 +258,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      nutrition_logs: {
+        Row: {
+          calories: number | null
+          carbohydrates: number | null
+          created_at: string
+          date: string
+          fat: number | null
+          fiber: number | null
+          food: string
+          id: string
+          meal: string
+          notes: string | null
+          protein: number | null
+          quantity: number | null
+          saved_meal_label: string | null
+          unit: string | null
+          user_id: string
+        }
+        Insert: {
+          calories?: number | null
+          carbohydrates?: number | null
+          created_at?: string
+          date: string
+          fat?: number | null
+          fiber?: number | null
+          food: string
+          id?: string
+          meal: string
+          notes?: string | null
+          protein?: number | null
+          quantity?: number | null
+          saved_meal_label?: string | null
+          unit?: string | null
+          user_id: string
+        }
+        Update: {
+          calories?: number | null
+          carbohydrates?: number | null
+          created_at?: string
+          date?: string
+          fat?: number | null
+          fiber?: number | null
+          food?: string
+          id?: string
+          meal?: string
+          notes?: string | null
+          protein?: number | null
+          quantity?: number | null
+          saved_meal_label?: string | null
+          unit?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       onboarding_responses: {
         Row: {
@@ -340,6 +498,150 @@ export type Database = {
         }
         Relationships: []
       }
+      recovery_logs: {
+        Row: {
+          approved_exercises: string | null
+          brace_compliance: boolean | null
+          created_at: string
+          date: string
+          elevation: boolean | null
+          energy: number | null
+          ice: boolean | null
+          id: string
+          medication_adherence: boolean | null
+          mobility: string | null
+          notes: string | null
+          pain: number | null
+          swelling: number | null
+          user_id: string
+          warning_signs: boolean
+          warning_signs_notes: string | null
+        }
+        Insert: {
+          approved_exercises?: string | null
+          brace_compliance?: boolean | null
+          created_at?: string
+          date: string
+          elevation?: boolean | null
+          energy?: number | null
+          ice?: boolean | null
+          id?: string
+          medication_adherence?: boolean | null
+          mobility?: string | null
+          notes?: string | null
+          pain?: number | null
+          swelling?: number | null
+          user_id: string
+          warning_signs?: boolean
+          warning_signs_notes?: string | null
+        }
+        Update: {
+          approved_exercises?: string | null
+          brace_compliance?: boolean | null
+          created_at?: string
+          date?: string
+          elevation?: boolean | null
+          energy?: number | null
+          ice?: boolean | null
+          id?: string
+          medication_adherence?: boolean | null
+          mobility?: string | null
+          notes?: string | null
+          pain?: number | null
+          swelling?: number | null
+          user_id?: string
+          warning_signs?: boolean
+          warning_signs_notes?: string | null
+        }
+        Relationships: []
+      }
+      sleep_logs: {
+        Row: {
+          bedtime: string | null
+          created_at: string
+          date: string
+          id: string
+          interruptions: number | null
+          notes: string | null
+          quality: number | null
+          source: string
+          total_duration_minutes: number | null
+          user_id: string
+          wake_time: string | null
+        }
+        Insert: {
+          bedtime?: string | null
+          created_at?: string
+          date: string
+          id?: string
+          interruptions?: number | null
+          notes?: string | null
+          quality?: number | null
+          source?: string
+          total_duration_minutes?: number | null
+          user_id: string
+          wake_time?: string | null
+        }
+        Update: {
+          bedtime?: string | null
+          created_at?: string
+          date?: string
+          id?: string
+          interruptions?: number | null
+          notes?: string | null
+          quality?: number | null
+          source?: string
+          total_duration_minutes?: number | null
+          user_id?: string
+          wake_time?: string | null
+        }
+        Relationships: []
+      }
+      study_sessions: {
+        Row: {
+          created_at: string
+          date: string
+          duration_minutes: number | null
+          focus: number | null
+          id: string
+          link: string | null
+          next_step: string | null
+          output: string | null
+          reflection: string | null
+          task: string
+          track: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          duration_minutes?: number | null
+          focus?: number | null
+          id?: string
+          link?: string | null
+          next_step?: string | null
+          output?: string | null
+          reflection?: string | null
+          task: string
+          track?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          duration_minutes?: number | null
+          focus?: number | null
+          id?: string
+          link?: string | null
+          next_step?: string | null
+          output?: string | null
+          reflection?: string | null
+          task?: string
+          track?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       weekly_outcomes: {
         Row: {
           created_at: string
@@ -380,6 +682,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      weight_logs: {
+        Row: {
+          created_at: string
+          id: string
+          logged_at: string
+          notes: string | null
+          source: string
+          unit: string
+          user_id: string
+          weight: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          logged_at?: string
+          notes?: string | null
+          source?: string
+          unit: string
+          user_id: string
+          weight: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          logged_at?: string
+          notes?: string | null
+          source?: string
+          unit?: string
+          user_id?: string
+          weight?: number
+        }
+        Relationships: []
       }
     }
     Views: {
