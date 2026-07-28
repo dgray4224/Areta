@@ -11,15 +11,21 @@ Personal execution and weekly-regeneration platform. Full product spec, phase pl
 
 **Phase 2 (Today screen and daily logging): done**, deployed, and verified in production. The dashboard is now a daily working screen: create/complete/skip tasks (with status history via `action_events`), a next-action recommendation, and quick-log entry for all five founder-relevant log types — weight, sleep, nutrition, recovery, and learning/study sessions.
 
-Not built yet: the Outcome-to-Operating-Parameters engine and meal/grocery planning (Phase 3), weekly review and AI-generated regeneration (Phase 4). See `CLAUDE.md` §6 for the full phase breakdown. **Phase 3 is next.**
+**Phase 3 (Outcome-to-Operating-Parameters engine, meal planning, grocery list, Sunday prep): done**, deployed, and verified in production. A deterministic nutrition engine (Mifflin-St Jeor BMR, activity multipliers, safe rate-of-change clamping, calorie floors) turns onboarding answers into calorie/protein/macro targets with full assumption/rationale/confidence disclosure, requiring explicit user approval before anything downstream uses them (`/plan/parameters`). Approved targets drive a rule-based 7-day meal plan generator over a seeded 24-recipe library (`/plan/meals`), which cascades on approval into an aggregated, inventory-subtracted, section-grouped grocery list (`/plan/grocery`) and a Sunday prep plan following CLAUDE.md's exact 10-step ordered workflow (`/plan/prep`). The dashboard now shows today's planned meals from the active plan. No AI calls anywhere in this phase — all of it is deterministic, per the "Day 3-4" scope in the phase schedule; structured AI generation is Phase 4's weekly regeneration engine.
+
+Not built yet: weekly review and AI-generated regeneration (Phase 4). See `CLAUDE.md` §6 for the full phase breakdown. **Phase 4 is next.**
 
 Known gaps in what's built so far:
-- The Playwright e2e spec (`tests/e2e/`) is written but requires a local Supabase stack via Docker (`supabase start`), which hasn't been available in this environment — it hasn't actually been run yet. Phase 2 was verified with unit tests plus manual browser testing instead.
+- The Playwright e2e spec (`tests/e2e/`) is written but requires a local Supabase stack via Docker (`supabase start`), which hasn't been available in this environment — it hasn't actually been run yet. Phases 2 and 3 were verified with unit tests plus manual browser testing instead.
 - `confirmOnboarding`'s multi-table write (`domains/onboarding/write-output.ts`) is sequential inserts, not a single DB transaction — a partial failure mid-write can leave some tables written and others not. Fine for a single-user MVP; worth hardening with a Postgres function before this is multi-user.
 - Password policy relies entirely on Supabase Auth's built-in minimum (8 characters) — no additional strength rule.
 - Vercel deploys do **not** automatically run `supabase db push` — new migrations need to be pushed manually (see below) before/after a deploy that depends on them.
 - Resend's free tier caps outgoing email at **30/hour** (raised from Supabase's default 2/hour once custom SMTP was enabled). Fine for early use; raise it from the Resend dashboard before any real launch push.
 - `todayDateString()` (`app/(app)/dashboard/data.ts`) uses UTC, not the user's local timezone — the "today" a user sees around midnight local time may not match calendar-today for their timezone. Fine for a single-timezone founder MVP; worth revisiting once `profiles.timezone` is used for this.
+- `inventory_items` has a table and is wired into grocery-list subtraction, but there's no UI to edit it yet — every user's inventory starts (and stays) empty until one is built, so grocery lists never actually subtract anything today.
+- The recipe library (24 recipes, seeded via migration) is small and fixed — no per-user recipes, no substitutions UI, no way to exclude a recipe from future plans beyond the blunt allergy/dislike keyword match against name + ingredients.
+- Meal-plan and prep-plan generation call Supabase sequentially in a few places (delete-then-insert, fetch-recipes-then-fetch-more); fine at current scale, a candidate to batch further if generation latency becomes noticeable.
+- Client components that both `router.push()` to a new route and want fresh data must pick one — calling `router.refresh()` immediately after `router.push()` races the pending navigation and can strand the UI on the old route even though the underlying save succeeded (hit and fixed in `ParametersForm`/`ApprovePlanButton`; `router.push` alone already fetches fresh data for the destination).
 
 ## Accounts & services this project depends on
 
@@ -38,9 +44,10 @@ Next.js (App Router) · TypeScript · Tailwind CSS · Supabase (Postgres, Auth, 
 ## Project structure
 
 ```
-app/            Routes. (auth) = login/signup, (app) = authenticated shell (dashboard, onboarding, log/*)
+app/            Routes. (auth) = login/signup, (app) = authenticated shell (dashboard, onboarding, log/*, plan/*)
 platform/       Platform core: auth session/actions, Supabase clients, env validation, shared UI, AI provider interface
-domains/        Domain modules: identity, goals, nutrition, recovery, learning, coaching, onboarding, weight, sleep, tasks
+domains/        Domain modules: identity, goals, nutrition, recovery, learning, coaching, onboarding, weight, sleep,
+                tasks, parameters, recipes, mealplan, grocery, prep
 supabase/       Migrations, dev seed data, local Supabase config, custom email templates
 scripts/        seed.ts — dev-only founder profile seeder
 tests/          unit/ (Vitest) and e2e/ (Playwright)
@@ -92,8 +99,8 @@ Local dev's `enable_confirmations` is on in `supabase/config.toml`; if you run a
 
 ## Testing
 
-- **Unit** (`tests/unit/`): Zod schema validation for every onboarding and log domain, the onboarding-answers → structured-output transform (`domains/onboarding/transform.ts`), the deterministic Phase 2 logic (`computeSevenDayMovingAverage`, `computeSleepDurationMinutes`, `recommendNextAction`), env validation, and the `optionalNumberValue`/`optionalStringValue` form helpers (see Form patterns below). Run with `pnpm test`.
-- **E2E** (`tests/e2e/`): a Playwright smoke test covering signup → email confirmation → all onboarding steps → dashboard. Requires `supabase start` (Docker) running alongside `pnpm dev`; not yet run in this environment (see Status above). Phase 2's Today screen and all five log flows were verified manually via browser automation against both local dev and production instead.
+- **Unit** (`tests/unit/`): Zod schema validation for every onboarding and log domain, the onboarding-answers → structured-output transform (`domains/onboarding/transform.ts`), the deterministic Phase 2 logic (`computeSevenDayMovingAverage`, `computeSleepDurationMinutes`, `recommendNextAction`), the deterministic Phase 3 logic (`calculateNutritionParameters`, `generateMealPlan`, `generateGroceryList`, `generatePrepPlan`), env validation, and the `optionalNumberValue`/`optionalStringValue` form helpers (see Form patterns below). Run with `pnpm test`.
+- **E2E** (`tests/e2e/`): a Playwright smoke test covering signup → email confirmation → all onboarding steps → dashboard. Requires `supabase start` (Docker) running alongside `pnpm dev`; not yet run in this environment (see Status above). Phases 2 and 3's UI flows (Today screen, all five log types, the full parameters → meal plan → grocery list → prep plan chain) were verified manually via browser automation against both local dev and production instead.
 
 ## Form patterns worth knowing
 
