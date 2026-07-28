@@ -73,7 +73,8 @@ async function fetchMetrics(
       .select("date, pain, swelling")
       .eq("user_id", userId)
       .gte("date", weekStart)
-      .lte("date", weekEnd),
+      .lte("date", weekEnd)
+      .order("date", { ascending: true }),
     supabase
       .from("study_sessions")
       .select("duration_minutes")

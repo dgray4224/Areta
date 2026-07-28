@@ -38,7 +38,11 @@ export const weeklyBriefSchema = z.object({
       previousValue: z.union([z.string(), z.number(), z.null()]),
       proposedValue: z.union([z.string(), z.number(), z.null()]),
       reason: z.string(),
-      confidence: z.number().min(0).max(1),
+      // Forced tool-use occasionally omits this on one or more array items
+      // even when instructed to include it — it's informational, not
+      // safety-critical (unlike the numeric parameters the engine itself
+      // computes), so a sensible default beats failing the whole brief.
+      confidence: z.number().min(0).max(1).optional().default(0.7),
     })
   ),
   risks: z.array(

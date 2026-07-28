@@ -58,6 +58,29 @@ describe("computeWeeklyMetrics", () => {
     expect(result.nutritionLoggingDays).toBe(2);
   });
 
+  it("sums same-day entries before averaging across days (not one average per entry)", () => {
+    const result = computeWeeklyMetrics(
+      baseInput({
+        nutritionLogs: [
+          // Day 1: three meals summing to 2000/150.
+          { date: "2026-07-20", calories: 700, protein: 50 },
+          { date: "2026-07-20", calories: 800, protein: 60 },
+          { date: "2026-07-20", calories: 500, protein: 40 },
+          // Day 2: two meals summing to 2200/170.
+          { date: "2026-07-21", calories: 1200, protein: 100 },
+          { date: "2026-07-21", calories: 1000, protein: 70 },
+        ],
+        calorieTarget: 2100,
+        proteinTarget: 160,
+      })
+    );
+    // Daily totals average to 2100/160 -> 100%, not an average of the 5
+    // raw entries (which would understate adherence).
+    expect(result.calorieAdherencePercent).toBe(100);
+    expect(result.proteinAdherencePercent).toBe(100);
+    expect(result.nutritionLoggingDays).toBe(2);
+  });
+
   it("returns null adherence when there is no target or no logs", () => {
     const noTarget = computeWeeklyMetrics(
       baseInput({ nutritionLogs: [{ date: "2026-07-20", calories: 2000, protein: 150 }] })
@@ -106,6 +129,20 @@ describe("computeWeeklyMetrics", () => {
     );
     expect(worsening.painTrend).toBe("worsening");
     expect(worsening.swellingTrend).toBe("insufficient_data");
+
+    // Recovery logs arrive from a plain date-range query with no defined
+    // row order — trend direction must not depend on caller ordering.
+    const improvingOutOfOrder = computeWeeklyMetrics(
+      baseInput({
+        recoveryLogs: [
+          { date: "2026-07-25", pain: 1, swelling: null },
+          { date: "2026-07-20", pain: 7, swelling: null },
+          { date: "2026-07-24", pain: 2, swelling: null },
+          { date: "2026-07-21", pain: 6, swelling: null },
+        ],
+      })
+    );
+    expect(improvingOutOfOrder.painTrend).toBe("improving");
 
     const stable = computeWeeklyMetrics(
       baseInput({

@@ -6,6 +6,7 @@ import type { StructuredGenerationRequest, StructuredGenerationResult } from "@/
 
 const MODEL = "claude-sonnet-5";
 const TOOL_NAME = "emit_result";
+const MAX_ATTEMPTS = 2;
 
 /**
  * Real AIProvider implementation (CLAUDE.md §13). Uses forced tool-use to
@@ -26,46 +27,53 @@ export class AnthropicProvider implements AIProvider {
       unknown
     >;
 
-    try {
-      const message = await client.messages.create({
-        model: MODEL,
-        max_tokens: 4096,
-        system: request.instructions,
-        messages: [
-          {
-            role: "user",
-            content: `Context:\n${JSON.stringify(request.context, null, 2)}\n\nUse the ${TOOL_NAME} tool to respond.`,
-          },
-        ],
-        tools: [
-          {
-            name: TOOL_NAME,
-            description: "Emit the structured result for this request.",
-            input_schema: jsonSchema as Anthropic.Tool.InputSchema,
-          },
-        ],
-        tool_choice: { type: "tool", name: TOOL_NAME },
-      });
+    let lastError = "Unknown AI provider error";
 
-      const toolUse = message.content.find((block) => block.type === "tool_use");
-      if (!toolUse || toolUse.type !== "tool_use") {
-        return { ok: false, error: "Model did not return a tool_use block." };
-      }
+    // Forced tool-use occasionally produces output that doesn't satisfy
+    // the schema on the first try (a missing field, wrong enum casing).
+    // One retry clears most of these without weakening validation itself.
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const message = await client.messages.create({
+          model: MODEL,
+          max_tokens: 4096,
+          system: request.instructions,
+          messages: [
+            {
+              role: "user",
+              content: `Context:\n${JSON.stringify(request.context, null, 2)}\n\nUse the ${TOOL_NAME} tool to respond.`,
+            },
+          ],
+          tools: [
+            {
+              name: TOOL_NAME,
+              description: "Emit the structured result for this request.",
+              input_schema: jsonSchema as Anthropic.Tool.InputSchema,
+            },
+          ],
+          tool_choice: { type: "tool", name: TOOL_NAME },
+        });
 
-      const parsed = request.schema.safeParse(toolUse.input);
-      if (!parsed.success) {
-        return {
-          ok: false,
-          error: `Model output failed schema validation: ${parsed.error.issues
+        const toolUse = message.content.find((block) => block.type === "tool_use");
+        if (!toolUse || toolUse.type !== "tool_use") {
+          lastError = "Model did not return a tool_use block.";
+          continue;
+        }
+
+        const parsed = request.schema.safeParse(toolUse.input);
+        if (!parsed.success) {
+          lastError = `Model output failed schema validation: ${parsed.error.issues
             .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-            .join("; ")}`,
-        };
-      }
+            .join("; ")}`;
+          continue;
+        }
 
-      return { ok: true, data: parsed.data };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown AI provider error";
-      return { ok: false, error: message };
+        return { ok: true, data: parsed.data };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : "Unknown AI provider error";
+      }
     }
+
+    return { ok: false, error: lastError };
   }
 }

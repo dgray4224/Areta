@@ -77,12 +77,24 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
   const averageWeightThisWeek =
     sortedWeights.length > 0 ? round1(average(sortedWeights.map((w) => w.weight))!) : null;
 
-  const loggedCalorieDays = input.nutritionLogs.filter((n) => n.calories !== null);
-  const loggedProteinDays = input.nutritionLogs.filter((n) => n.protein !== null);
   const nutritionLoggingDays = new Set(input.nutritionLogs.map((n) => n.date)).size;
 
-  const avgCalories = average(loggedCalorieDays.map((n) => n.calories!));
-  const avgProtein = average(loggedProteinDays.map((n) => n.protein!));
+  // Nutrition logs are per food entry (a day can have several), so daily
+  // adherence needs each day's entries summed *before* averaging across
+  // days — averaging raw entry values would divide by meal-count instead
+  // of day-count and understate adherence.
+  const caloriesByDay = new Map<string, number>();
+  const proteinByDay = new Map<string, number>();
+  for (const log of input.nutritionLogs) {
+    if (log.calories !== null) {
+      caloriesByDay.set(log.date, (caloriesByDay.get(log.date) ?? 0) + log.calories);
+    }
+    if (log.protein !== null) {
+      proteinByDay.set(log.date, (proteinByDay.get(log.date) ?? 0) + log.protein);
+    }
+  }
+  const avgCalories = average(Array.from(caloriesByDay.values()));
+  const avgProtein = average(Array.from(proteinByDay.values()));
 
   const calorieAdherencePercent =
     avgCalories !== null && input.calorieTarget
@@ -99,8 +111,12 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
   const averageSleepMinutes = sleepDurations.length > 0 ? Math.round(average(sleepDurations)!) : null;
 
   const recoveryLoggingDays = new Set(input.recoveryLogs.map((r) => r.date)).size;
-  const painValues = input.recoveryLogs.map((r) => r.pain).filter((p): p is number => p !== null);
-  const swellingValues = input.recoveryLogs
+  // Trend direction depends on chronological order, which the caller isn't
+  // guaranteed to provide (a plain date-range query has no defined row
+  // order) — sort defensively rather than trusting input order.
+  const sortedRecoveryLogs = [...input.recoveryLogs].sort((a, b) => a.date.localeCompare(b.date));
+  const painValues = sortedRecoveryLogs.map((r) => r.pain).filter((p): p is number => p !== null);
+  const swellingValues = sortedRecoveryLogs
     .map((r) => r.swelling)
     .filter((s): s is number => s !== null);
 
