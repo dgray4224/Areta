@@ -18,7 +18,6 @@ export function ApprovePlanButton({ userId }: { userId: string }) {
         return;
       }
       router.push("/plan/grocery");
-      router.refresh();
     });
   };
 

@@ -76,32 +76,30 @@ export async function generateNutritionParameters(userId: string): Promise<Actio
     };
   }
 
-  for (const param of parameters) {
-    const { error } = await supabase.from("generated_parameters").upsert(
-      {
-        user_id: userId,
-        domain: param.domain,
-        name: param.id,
-        value: param.value,
-        unit: param.unit ?? null,
-        range_min: param.range?.min ?? null,
-        range_max: param.range?.max ?? null,
-        source: param.source,
-        assumptions: param.assumptions,
-        rationale: param.rationale,
-        confidence: param.confidence,
-        safety_bounds: param.safetyBounds ?? [],
-        review_date: param.reviewDate ?? null,
-        requires_user_approval: param.requiresUserApproval,
-        requires_professional_approval: param.requiresProfessionalApproval ?? false,
-        approved: false,
-        approved_at: null,
-      },
-      { onConflict: "user_id,domain,name" }
-    );
-    if (error) {
-      return { ok: false, error: `Failed to save "${param.name}": ${error.message}` };
-    }
+  const { error } = await supabase.from("generated_parameters").upsert(
+    parameters.map((param) => ({
+      user_id: userId,
+      domain: param.domain,
+      name: param.id,
+      value: param.value,
+      unit: param.unit ?? null,
+      range_min: param.range?.min ?? null,
+      range_max: param.range?.max ?? null,
+      source: param.source,
+      assumptions: param.assumptions,
+      rationale: param.rationale,
+      confidence: param.confidence,
+      safety_bounds: param.safetyBounds ?? [],
+      review_date: param.reviewDate ?? null,
+      requires_user_approval: param.requiresUserApproval,
+      requires_professional_approval: param.requiresProfessionalApproval ?? false,
+      approved: false,
+      approved_at: null,
+    })),
+    { onConflict: "user_id,domain,name" }
+  );
+  if (error) {
+    return { ok: false, error: `Failed to save nutrition parameters: ${error.message}` };
   }
 
   return { ok: true, data: undefined };
@@ -157,17 +155,22 @@ export async function approveNutritionParameters(
   edits: Record<string, string | number>
 ): Promise<ActionResult> {
   const supabase = await createClient();
+  const approvedAt = new Date().toISOString();
 
-  for (const [name, value] of Object.entries(edits)) {
-    const { error } = await supabase
-      .from("generated_parameters")
-      .update({ value, approved: true, approved_at: new Date().toISOString() })
-      .eq("user_id", userId)
-      .eq("domain", "nutrition")
-      .eq("name", name);
-    if (error) {
-      return { ok: false, error: `Failed to approve "${name}": ${error.message}` };
-    }
+  const results = await Promise.all(
+    Object.entries(edits).map(([name, value]) =>
+      supabase
+        .from("generated_parameters")
+        .update({ value, approved: true, approved_at: approvedAt })
+        .eq("user_id", userId)
+        .eq("domain", "nutrition")
+        .eq("name", name)
+    )
+  );
+
+  const failed = results.find((r) => r.error);
+  if (failed?.error) {
+    return { ok: false, error: `Failed to approve nutrition parameters: ${failed.error.message}` };
   }
 
   return { ok: true, data: undefined };

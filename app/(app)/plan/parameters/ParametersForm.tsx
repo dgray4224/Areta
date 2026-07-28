@@ -35,7 +35,6 @@ export function ParametersForm({
         return;
       }
       router.push("/plan");
-      router.refresh();
     });
   };
 
