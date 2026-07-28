@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { nutritionSchema, type NutritionInput } from "@/domains/nutrition/schema";
+import { ACTIVITY_LEVELS, nutritionSchema, type NutritionInput } from "@/domains/nutrition/schema";
 import { saveNutritionStep } from "@/domains/nutrition/service";
 import { StepShell } from "@/platform/ui/StepShell";
 import {
@@ -61,7 +61,12 @@ export function NutritionForm({
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <div className="grid grid-cols-3 gap-4">
-          <FormField label="Height" htmlFor="height" error={errors.height?.message}>
+          <FormField
+            label="Height"
+            htmlFor="height"
+            error={errors.height?.message}
+            hint="Inches if imperial, cm if metric"
+          >
             <TextInput
               id="height"
               type="number"
@@ -69,7 +74,12 @@ export function NutritionForm({
               {...register("height", { setValueAs: optionalNumberValue })}
             />
           </FormField>
-          <FormField label="Current weight" htmlFor="currentWeight" error={errors.currentWeight?.message}>
+          <FormField
+            label="Current weight"
+            htmlFor="currentWeight"
+            error={errors.currentWeight?.message}
+            hint="lb if imperial, kg if metric"
+          >
             <TextInput
               id="currentWeight"
               type="number"
@@ -77,13 +87,52 @@ export function NutritionForm({
               {...register("currentWeight", { setValueAs: optionalNumberValue })}
             />
           </FormField>
-          <FormField label="Target weight" htmlFor="targetWeight" error={errors.targetWeight?.message}>
+          <FormField
+            label="Target weight"
+            htmlFor="targetWeight"
+            error={errors.targetWeight?.message}
+            hint="Same units as above"
+          >
             <TextInput
               id="targetWeight"
               type="number"
               step="0.1"
               {...register("targetWeight", { setValueAs: optionalNumberValue })}
             />
+          </FormField>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          <FormField label="Age" htmlFor="age" error={errors.age?.message}>
+            <TextInput
+              id="age"
+              type="number"
+              {...register("age", { setValueAs: optionalNumberValue })}
+            />
+          </FormField>
+          <FormField label="Sex (optional)" htmlFor="sex" error={errors.sex?.message}>
+            <SelectInput id="sex" {...register("sex", { setValueAs: optionalStringValue })}>
+              <option value="">Prefer not to say</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </SelectInput>
+          </FormField>
+          <FormField
+            label="Typical activity"
+            htmlFor="activityLevel"
+            error={errors.activityLevel?.message}
+          >
+            <SelectInput
+              id="activityLevel"
+              {...register("activityLevel", { setValueAs: optionalStringValue })}
+            >
+              <option value="">—</option>
+              {ACTIVITY_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {level.replace("_", " ")}
+                </option>
+              ))}
+            </SelectInput>
           </FormField>
         </div>
 
@@ -120,6 +169,28 @@ export function NutritionForm({
               <option value="intermediate">Intermediate</option>
               <option value="advanced">Advanced</option>
             </SelectInput>
+          </FormField>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Available prep time (minutes)"
+            htmlFor="availablePrepTimeMinutes"
+          >
+            <TextInput
+              id="availablePrepTimeMinutes"
+              type="number"
+              min={0}
+              {...register("availablePrepTimeMinutes", { setValueAs: optionalNumberValue })}
+            />
+          </FormField>
+          <FormField label="Household servings" htmlFor="householdServings">
+            <TextInput
+              id="householdServings"
+              type="number"
+              min={1}
+              {...register("householdServings", { setValueAs: optionalNumberValue })}
+            />
           </FormField>
         </div>
 

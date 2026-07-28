@@ -197,6 +197,75 @@ export type Database = {
         }
         Relationships: []
       }
+      generated_parameters: {
+        Row: {
+          approved: boolean
+          approved_at: string | null
+          assumptions: string[]
+          confidence: number
+          created_at: string
+          domain: string
+          id: string
+          name: string
+          range_max: number | null
+          range_min: number | null
+          rationale: string
+          requires_professional_approval: boolean
+          requires_user_approval: boolean
+          review_date: string | null
+          safety_bounds: string[]
+          source: string
+          unit: string | null
+          updated_at: string
+          user_id: string
+          value: Json
+        }
+        Insert: {
+          approved?: boolean
+          approved_at?: string | null
+          assumptions?: string[]
+          confidence: number
+          created_at?: string
+          domain: string
+          id?: string
+          name: string
+          range_max?: number | null
+          range_min?: number | null
+          rationale: string
+          requires_professional_approval?: boolean
+          requires_user_approval?: boolean
+          review_date?: string | null
+          safety_bounds?: string[]
+          source: string
+          unit?: string | null
+          updated_at?: string
+          user_id: string
+          value: Json
+        }
+        Update: {
+          approved?: boolean
+          approved_at?: string | null
+          assumptions?: string[]
+          confidence?: number
+          created_at?: string
+          domain?: string
+          id?: string
+          name?: string
+          range_max?: number | null
+          range_min?: number | null
+          rationale?: string
+          requires_professional_approval?: boolean
+          requires_user_approval?: boolean
+          review_date?: string | null
+          safety_bounds?: string[]
+          source?: string
+          unit?: string | null
+          updated_at?: string
+          user_id?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       goals: {
         Row: {
           confidence: number | null
@@ -258,6 +327,196 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      grocery_items: {
+        Row: {
+          created_at: string
+          grocery_list_id: string
+          id: string
+          is_checked: boolean
+          name: string
+          needed_for: string[]
+          quantity: number | null
+          section: string
+          unit: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          grocery_list_id: string
+          id?: string
+          is_checked?: boolean
+          name: string
+          needed_for?: string[]
+          quantity?: number | null
+          section?: string
+          unit?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          grocery_list_id?: string
+          id?: string
+          is_checked?: boolean
+          name?: string
+          needed_for?: string[]
+          quantity?: number | null
+          section?: string
+          unit?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grocery_items_grocery_list_id_fkey"
+            columns: ["grocery_list_id"]
+            isOneToOne: false
+            referencedRelation: "grocery_lists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      grocery_lists: {
+        Row: {
+          created_at: string
+          id: string
+          meal_plan_id: string | null
+          status: string
+          user_id: string
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          meal_plan_id?: string | null
+          status?: string
+          user_id: string
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          meal_plan_id?: string | null
+          status?: string
+          user_id?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grocery_lists_meal_plan_id_fkey"
+            columns: ["meal_plan_id"]
+            isOneToOne: false
+            referencedRelation: "meal_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_items: {
+        Row: {
+          id: string
+          name: string
+          quantity: number
+          unit: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          quantity?: number
+          unit?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          quantity?: number
+          unit?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      meal_plan_items: {
+        Row: {
+          created_at: string
+          day_of_week: number
+          id: string
+          meal_plan_id: string
+          meal_type: string
+          recipe_id: string
+          servings: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          day_of_week: number
+          id?: string
+          meal_plan_id: string
+          meal_type: string
+          recipe_id: string
+          servings?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          day_of_week?: number
+          id?: string
+          meal_plan_id?: string
+          meal_type?: string
+          recipe_id?: string
+          servings?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meal_plan_items_meal_plan_id_fkey"
+            columns: ["meal_plan_id"]
+            isOneToOne: false
+            referencedRelation: "meal_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meal_plan_items_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "recipes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meal_plans: {
+        Row: {
+          calorie_target: number | null
+          created_at: string
+          id: string
+          protein_target: number | null
+          status: string
+          updated_at: string
+          user_id: string
+          week_start: string
+        }
+        Insert: {
+          calorie_target?: number | null
+          created_at?: string
+          id?: string
+          protein_target?: number | null
+          status?: string
+          updated_at?: string
+          user_id: string
+          week_start: string
+        }
+        Update: {
+          calorie_target?: number | null
+          created_at?: string
+          id?: string
+          protein_target?: number | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+          week_start?: string
+        }
+        Relationships: []
       }
       nutrition_logs: {
         Row: {
@@ -441,6 +700,82 @@ export type Database = {
           },
         ]
       }
+      prep_plans: {
+        Row: {
+          container_count: number | null
+          created_at: string
+          estimated_minutes: number | null
+          id: string
+          meal_plan_id: string | null
+          status: string
+          user_id: string
+          week_start: string
+        }
+        Insert: {
+          container_count?: number | null
+          created_at?: string
+          estimated_minutes?: number | null
+          id?: string
+          meal_plan_id?: string | null
+          status?: string
+          user_id: string
+          week_start: string
+        }
+        Update: {
+          container_count?: number | null
+          created_at?: string
+          estimated_minutes?: number | null
+          id?: string
+          meal_plan_id?: string | null
+          status?: string
+          user_id?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prep_plans_meal_plan_id_fkey"
+            columns: ["meal_plan_id"]
+            isOneToOne: false
+            referencedRelation: "meal_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      prep_steps: {
+        Row: {
+          created_at: string
+          id: string
+          instruction: string
+          prep_plan_id: string
+          step_number: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          instruction: string
+          prep_plan_id: string
+          step_number: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          instruction?: string
+          prep_plan_id?: string
+          step_number?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prep_steps_prep_plan_id_fkey"
+            columns: ["prep_plan_id"]
+            isOneToOne: false
+            referencedRelation: "prep_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           bed_time: string | null
@@ -495,6 +830,63 @@ export type Database = {
           weekly_review_day?: number | null
           work_hours_note?: string | null
           work_status?: string | null
+        }
+        Relationships: []
+      }
+      recipes: {
+        Row: {
+          calories: number
+          carbs_g: number
+          cook_minutes: number
+          created_at: string
+          dietary_tags: string[]
+          fat_g: number
+          fiber_g: number | null
+          id: string
+          ingredients: Json
+          instructions: string[]
+          meal_type: string
+          name: string
+          prep_minutes: number
+          protein_g: number
+          servings: number
+          storage_instructions: string | null
+        }
+        Insert: {
+          calories: number
+          carbs_g: number
+          cook_minutes?: number
+          created_at?: string
+          dietary_tags?: string[]
+          fat_g: number
+          fiber_g?: number | null
+          id?: string
+          ingredients: Json
+          instructions?: string[]
+          meal_type: string
+          name: string
+          prep_minutes?: number
+          protein_g: number
+          servings?: number
+          storage_instructions?: string | null
+        }
+        Update: {
+          calories?: number
+          carbs_g?: number
+          cook_minutes?: number
+          created_at?: string
+          dietary_tags?: string[]
+          fat_g?: number
+          fiber_g?: number | null
+          id?: string
+          ingredients?: Json
+          instructions?: string[]
+          meal_type?: string
+          name?: string
+          prep_minutes?: number
+          protein_g?: number
+          servings?: number
+          storage_instructions?: string | null
         }
         Relationships: []
       }

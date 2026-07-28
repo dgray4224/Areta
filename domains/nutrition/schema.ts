@@ -3,10 +3,26 @@ import { z } from "zod";
 /** Phase 1 onboarding only captures preferences and current/target state —
  * deterministic calorie/protein targets are derived in Phase 3's
  * Outcome-to-Operating-Parameters engine, not asked here (CLAUDE.md §5A). */
+export const ACTIVITY_LEVELS = [
+  "sedentary",
+  "light",
+  "moderate",
+  "active",
+  "very_active",
+] as const;
+export type ActivityLevel = (typeof ACTIVITY_LEVELS)[number];
+
 export const nutritionSchema = z.object({
   height: z.number().positive().optional(),
   currentWeight: z.number().positive().optional(),
   targetWeight: z.number().positive().optional(),
+  age: z.number().int().positive().optional(),
+  /** Optional — only used to pick a BMR formula constant; the engine falls
+   * back to a sex-neutral average when omitted. */
+  sex: z.enum(["male", "female"]).optional(),
+  activityLevel: z.enum(ACTIVITY_LEVELS).optional(),
+  availablePrepTimeMinutes: z.number().int().positive().optional(),
+  householdServings: z.number().int().positive().optional(),
   foodPreferences: z.string().optional(),
   allergies: z.string().optional(),
   dislikedFoods: z.string().optional(),

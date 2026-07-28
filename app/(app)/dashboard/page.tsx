@@ -128,10 +128,26 @@ export default async function DashboardPage() {
 
       <section>
         <h2 className="text-sm font-medium text-neutral-500">Planned meals</h2>
-        <EmptyState
-          title="Meal planning arrives in Phase 3"
-          description="For now, log what you eat with Quick log → Food."
-        />
+        {data.plannedMealsToday.length > 0 ? (
+          <ul className="mt-2 space-y-1 text-sm">
+            {data.plannedMealsToday.map((meal, i) => (
+              <li key={i} className="flex justify-between">
+                <span className="capitalize text-neutral-500">{meal.mealType}</span>
+                <span>{meal.recipeName}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState
+            title="No active meal plan"
+            description="Generate and approve a weekly meal plan to see today's meals here."
+            action={
+              <Link href="/plan" className="text-sm underline">
+                Go to plan
+              </Link>
+            }
+          />
+        )}
       </section>
 
       <section>

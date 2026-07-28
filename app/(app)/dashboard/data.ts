@@ -33,6 +33,7 @@ export type DashboardData = {
     recoveryLogged: boolean;
     learningMinutes: number;
   };
+  plannedMealsToday: { mealType: string; recipeName: string }[];
 };
 
 /** Server's current date as YYYY-MM-DD. A more correct implementation
@@ -110,6 +111,29 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
     (t) => t.status === "completed" || t.status === "partially_completed"
   ).length;
 
+  const todayDow = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const { data: activeMealPlan } = await supabase
+    .from("meal_plans")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("week_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let plannedMealsToday: DashboardData["plannedMealsToday"] = [];
+  if (activeMealPlan) {
+    const { data: items } = await supabase
+      .from("meal_plan_items")
+      .select("meal_type, recipes(name)")
+      .eq("meal_plan_id", activeMealPlan.id)
+      .eq("day_of_week", todayDow);
+    plannedMealsToday = (items ?? []).map((i) => ({
+      mealType: i.meal_type,
+      recipeName: (i.recipes as { name: string } | null)?.name ?? "Unknown recipe",
+    }));
+  }
+
   return {
     profile: {
       fullName: profile?.full_name ?? null,
@@ -139,5 +163,6 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
         0
       ),
     },
+    plannedMealsToday,
   };
 }
