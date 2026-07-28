@@ -13,7 +13,9 @@ Personal execution and weekly-regeneration platform. Full product spec, phase pl
 
 **Phase 3 (Outcome-to-Operating-Parameters engine, meal planning, grocery list, Sunday prep): done**, deployed, and verified in production. A deterministic nutrition engine (Mifflin-St Jeor BMR, activity multipliers, safe rate-of-change clamping, calorie floors) turns onboarding answers into calorie/protein/macro targets with full assumption/rationale/confidence disclosure, requiring explicit user approval before anything downstream uses them (`/plan/parameters`). Approved targets drive a rule-based 7-day meal plan generator over a seeded 24-recipe library (`/plan/meals`), which cascades on approval into an aggregated, inventory-subtracted, section-grouped grocery list (`/plan/grocery`) and a Sunday prep plan following CLAUDE.md's exact 10-step ordered workflow (`/plan/prep`). The dashboard now shows today's planned meals from the active plan. No AI calls anywhere in this phase — all of it is deterministic, per the "Day 3-4" scope in the phase schedule; structured AI generation is Phase 4's weekly regeneration engine.
 
-Not built yet: weekly review and AI-generated regeneration (Phase 4). See `CLAUDE.md` §6 for the full phase breakdown. **Phase 4 is next.**
+**Phase 4 (Weekly Review and Regeneration): done**, deployed, and verified in production with a real AI call. `/review` computes this week's deterministic metrics (weight change, calorie/protein adherence, sleep, pain/swelling trend, task completion, missed-task reasons, a data-sparsity flag) and asks 5-8 free-text questions; submitting calls a real `AIProvider` (Anthropic, via forced tool-use structured output validated against a Zod schema) to generate the qualitative half of a Weekly Operating Brief — executive summary, per-goal progress classification, top 3 priorities, proposed changes with reasons, risks, and the highest-leverage action (`/review/brief`). The AI never invents numbers or medical guidance: nutrition targets and the meal/grocery/prep plan stay on Phase 3's deterministic generators, and the system prompt explicitly forbids suggesting changes to brace settings, weight-bearing, exercise intensity, or medication. Approving the brief cascades the full regeneration cycle — nutrition parameters recalculate from the latest logged weight and auto-approve as a bundle, the meal plan regenerates folding in "meals that shouldn't return," grocery/prep cascade as in Phase 3, and `weekly_outcomes` rolls forward using the brief's priorities.
+
+This closes out the phases in CLAUDE.md §6. See `CLAUDE.md` for the full spec if further work continues past this MVP.
 
 Known gaps in what's built so far:
 - The Playwright e2e spec (`tests/e2e/`) is written but requires a local Supabase stack via Docker (`supabase start`), which hasn't been available in this environment — it hasn't actually been run yet. Phases 2 and 3 were verified with unit tests plus manual browser testing instead.
@@ -26,6 +28,10 @@ Known gaps in what's built so far:
 - The recipe library (24 recipes, seeded via migration) is small and fixed — no per-user recipes, no substitutions UI, no way to exclude a recipe from future plans beyond the blunt allergy/dislike keyword match against name + ingredients.
 - Meal-plan and prep-plan generation call Supabase sequentially in a few places (delete-then-insert, fetch-recipes-then-fetch-more); fine at current scale, a candidate to batch further if generation latency becomes noticeable.
 - Client components that both `router.push()` to a new route and want fresh data must pick one — calling `router.refresh()` immediately after `router.push()` races the pending navigation and can strand the UI on the old route even though the underlying save succeeded (hit and fixed in `ParametersForm`/`ApprovePlanButton`; `router.push` alone already fetches fresh data for the destination).
+- The Weekly Operating Brief only covers the qualitative sections (summary, progress, priorities, changes, risks, highest-leverage action). CLAUDE.md's full spec also calls for an AI-organized recovery plan, a learning plan, appointments, and a regenerated daily schedule — none of those exist yet; recovery in particular should probably stay closer to "organize clinician instructions" than a model-generated plan even when built (CLAUDE.md rule 11).
+- The Recommendation Feedback Loop (CLAUDE.md §8) only goes as far as accept/reject at approval time (`recommendations.accepted`). There's no outcome/rating step in a later review, and no "use successful strategies more often" logic reading that history back — the durable-memory Layer 4 (a `memories` table with confidence/expiration/user-confirmed status) isn't built.
+- `weekly_reviews`/`recommendations`/`ai_runs` have RLS but no per-user rate limiting on `generateWeeklyBrief` — a user could re-trigger AI generation repeatedly. Fine for a single founder account; worth adding before multi-user.
+- `ANTHROPIC_API_KEY` must be set in Vercel's environment variables for `/review/brief` generation to work in production (it's read via `platform/env.server.ts`, same pattern as the Supabase keys) — set it via `vercel env add ANTHROPIC_API_KEY production` or the dashboard.
 
 ## Accounts & services this project depends on
 
@@ -36,18 +42,19 @@ Known gaps in what's built so far:
 | Resend | Transactional email (signup confirmation, etc.) via custom SMTP | domain `getlifeos.tech`, verified |
 | Vercel Domains | `getlifeos.tech` registration + DNS | DNS is auto-managed by Vercel since the domain was bought there |
 | GitHub | Source control, CI | `dgray4224/lifeos` |
+| Anthropic | Weekly Operating Brief generation (`claude-sonnet-5`, forced tool-use) | API key in `ANTHROPIC_API_KEY`; set locally, **still needs setting in Vercel production** |
 
 ## Tech stack
 
-Next.js (App Router) · TypeScript · Tailwind CSS · Supabase (Postgres, Auth, RLS) · Zod · React Hook Form · Vitest · Playwright · Vercel
+Next.js (App Router) · TypeScript · Tailwind CSS · Supabase (Postgres, Auth, RLS) · Zod · React Hook Form · Anthropic SDK · Vitest · Playwright · Vercel
 
 ## Project structure
 
 ```
-app/            Routes. (auth) = login/signup, (app) = authenticated shell (dashboard, onboarding, log/*, plan/*)
-platform/       Platform core: auth session/actions, Supabase clients, env validation, shared UI, AI provider interface
+app/            Routes. (auth) = login/signup, (app) = authenticated shell (dashboard, onboarding, log/*, plan/*, review/*)
+platform/       Platform core: auth session/actions, Supabase clients, env validation, shared UI, AI provider (Anthropic + stub)
 domains/        Domain modules: identity, goals, nutrition, recovery, learning, coaching, onboarding, weight, sleep,
-                tasks, parameters, recipes, mealplan, grocery, prep
+                tasks, parameters, recipes, mealplan, grocery, prep, review
 supabase/       Migrations, dev seed data, local Supabase config, custom email templates
 scripts/        seed.ts — dev-only founder profile seeder
 tests/          unit/ (Vitest) and e2e/ (Playwright)
@@ -60,7 +67,7 @@ tests/          unit/ (Vitest) and e2e/ (Playwright)
 1. **Install tooling**: Node.js (LTS), then enable pnpm via `corepack enable` (or `npm i -g pnpm`).
 2. **Install dependencies**: `pnpm install`
 3. **Get Supabase credentials**: from your Supabase project → Settings → API, copy the Project URL, `anon` public key, and `service_role` key.
-4. **Configure env**: copy `.env.local.example` to `.env.local` and fill in the three values above. `ANTHROPIC_API_KEY` is reserved for Phase 4 and unused right now. Leave `ALLOW_SEED=false` unless you're about to run the seed script.
+4. **Configure env**: copy `.env.local.example` to `.env.local` and fill in the three values above, plus `ANTHROPIC_API_KEY` (from console.anthropic.com) if you want `/review/brief` to actually generate — without it, `getAIProvider()` falls back to a stub that throws instead of silently faking a result. Leave `ALLOW_SEED=false` unless you're about to run the seed script.
 5. **Link and migrate**:
    ```
    pnpm dlx supabase login --token <a personal access token from supabase.com/dashboard/account/tokens>
@@ -99,8 +106,8 @@ Local dev's `enable_confirmations` is on in `supabase/config.toml`; if you run a
 
 ## Testing
 
-- **Unit** (`tests/unit/`): Zod schema validation for every onboarding and log domain, the onboarding-answers → structured-output transform (`domains/onboarding/transform.ts`), the deterministic Phase 2 logic (`computeSevenDayMovingAverage`, `computeSleepDurationMinutes`, `recommendNextAction`), the deterministic Phase 3 logic (`calculateNutritionParameters`, `generateMealPlan`, `generateGroceryList`, `generatePrepPlan`), env validation, and the `optionalNumberValue`/`optionalStringValue` form helpers (see Form patterns below). Run with `pnpm test`.
-- **E2E** (`tests/e2e/`): a Playwright smoke test covering signup → email confirmation → all onboarding steps → dashboard. Requires `supabase start` (Docker) running alongside `pnpm dev`; not yet run in this environment (see Status above). Phases 2 and 3's UI flows (Today screen, all five log types, the full parameters → meal plan → grocery list → prep plan chain) were verified manually via browser automation against both local dev and production instead.
+- **Unit** (`tests/unit/`): Zod schema validation for every onboarding and log domain, the onboarding-answers → structured-output transform (`domains/onboarding/transform.ts`), the deterministic Phase 2 logic (`computeSevenDayMovingAverage`, `computeSleepDurationMinutes`, `recommendNextAction`), the deterministic Phase 3 logic (`calculateNutritionParameters`, `generateMealPlan`, `generateGroceryList`, `generatePrepPlan`), the deterministic Phase 4 logic (`computeWeeklyMetrics`), env validation, and the `optionalNumberValue`/`optionalStringValue` form helpers (see Form patterns below). Run with `pnpm test`. The AI call itself (`AnthropicProvider`) isn't unit tested — it's a thin, mostly-untestable wrapper around a real API call; its Zod-validated output contract is what's tested indirectly by exercising `weeklyBriefSchema` and by manual end-to-end runs against the real API (see Status above).
+- **E2E** (`tests/e2e/`): a Playwright smoke test covering signup → email confirmation → all onboarding steps → dashboard. Requires `supabase start` (Docker) running alongside `pnpm dev`; not yet run in this environment (see Status above). Phases 2-4's UI flows (Today screen, all five log types, the full parameters → meal plan → grocery list → prep plan chain, and a full weekly review → AI brief → approve → regenerate cycle) were verified manually via browser automation against both local dev and production instead.
 
 ## Form patterns worth knowing
 
