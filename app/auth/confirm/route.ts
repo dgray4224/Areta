@@ -25,11 +25,15 @@ export async function GET(request: NextRequest) {
     if (!error) {
       return NextResponse.redirect(new URL(next, request.url));
     }
+    console.error("[auth/confirm] exchangeCodeForSession failed:", error.message, error.status);
   } else if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
     if (!error) {
       return NextResponse.redirect(new URL(next, request.url));
     }
+    console.error("[auth/confirm] verifyOtp failed:", error.message, error.status);
+  } else {
+    console.error("[auth/confirm] missing code and token_hash/type", Object.fromEntries(searchParams));
   }
 
   return NextResponse.redirect(new URL("/login?error=confirmation_failed", request.url));
