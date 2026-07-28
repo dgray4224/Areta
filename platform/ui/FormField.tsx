@@ -39,3 +39,21 @@ export function SelectInput(props: SelectHTMLAttributes<HTMLSelectElement>) {
 export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className={fieldClass} rows={props.rows ?? 3} />;
 }
+
+/** Use as `register(name, { setValueAs: optionalNumberValue })` for
+ * optional numeric fields. react-hook-form's `valueAsNumber: true` turns an
+ * empty input into `NaN` rather than `undefined`, which fails
+ * `z.number().optional()` with a confusing "expected number, received NaN"
+ * error instead of just treating a blank field as not answered. */
+export function optionalNumberValue(value: string): number | undefined {
+  return value === "" ? undefined : Number(value);
+}
+
+/** Use as `register(name, { setValueAs: optionalStringValue })` for an
+ * optional `<select>` with a blank placeholder option (`<option value="">`).
+ * Without this, the placeholder submits `""`, which fails
+ * `z.enum([...]).optional()` — only `undefined` is treated as "not
+ * answered", not the empty string a blank <select> naturally produces. */
+export function optionalStringValue(value: string): string | undefined {
+  return value === "" ? undefined : value;
+}

@@ -67,16 +67,18 @@ export async function saveOnboardingStep(
     ? existing.completedSteps
     : [...existing.completedSteps, step];
 
+  // Supabase's generated Update/Insert types reject a computed [step] key
+  // (they can't statically verify it against the known column list), so
+  // the payload is built as a loose record and cast at the boundary.
+  const payload: Record<string, unknown> = {
+    user_id: userId,
+    completed_steps: completedSteps,
+    [step]: data,
+  };
+
   const { error } = await supabase
     .from("onboarding_responses")
-    .upsert(
-      {
-        user_id: userId,
-        [step]: data,
-        completed_steps: completedSteps,
-      },
-      { onConflict: "user_id" }
-    );
+    .upsert(payload as never, { onConflict: "user_id" });
 
   if (error) {
     throw new Error(`Failed to save onboarding step "${step}": ${error.message}`);

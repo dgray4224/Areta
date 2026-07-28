@@ -7,7 +7,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { learningSchema, type LearningInput } from "@/domains/learning/schema";
 import { saveLearningStep } from "@/domains/learning/service";
 import { StepShell } from "@/platform/ui/StepShell";
-import { FormField, TextInput, SelectInput, TextArea } from "@/platform/ui/FormField";
+import {
+  FormField,
+  TextInput,
+  SelectInput,
+  TextArea,
+  optionalNumberValue,
+  optionalStringValue,
+} from "@/platform/ui/FormField";
 
 export function LearningForm({
   userId,
@@ -24,7 +31,11 @@ export function LearningForm({
   const [isPending, startTransition] = useTransition();
   const [serverError, setServerError] = useState<string | null>(null);
 
-  const { register, handleSubmit } = useForm<LearningInput>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LearningInput>({
     resolver: zodResolver(learningSchema),
     defaultValues,
   });
@@ -63,8 +74,11 @@ export function LearningForm({
           <TextArea id="currentProjects" {...register("currentProjects")} />
         </FormField>
         <div className="grid grid-cols-2 gap-4">
-          <FormField label="Preferred format" htmlFor="preferredFormat">
-            <SelectInput id="preferredFormat" {...register("preferredFormat")}>
+          <FormField label="Preferred format" htmlFor="preferredFormat" error={errors.preferredFormat?.message}>
+            <SelectInput
+              id="preferredFormat"
+              {...register("preferredFormat", { setValueAs: optionalStringValue })}
+            >
               <option value="">—</option>
               <option value="reading">Reading</option>
               <option value="video">Video</option>
@@ -78,7 +92,7 @@ export function LearningForm({
               id="weeklyAvailableHours"
               type="number"
               min={0}
-              {...register("weeklyAvailableHours", { valueAsNumber: true })}
+              {...register("weeklyAvailableHours", { setValueAs: optionalNumberValue })}
             />
           </FormField>
         </div>

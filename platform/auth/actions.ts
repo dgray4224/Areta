@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/platform/supabase/server";
 
 export type ActionResult<T = undefined> =
@@ -12,7 +13,19 @@ export async function signUpWithPassword(
   password: string
 ): Promise<ActionResult<{ requiresEmailConfirmation: boolean }>> {
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const origin = (await headers()).get("origin");
+
+  // Without custom SMTP, the hosted project can only use Supabase's default
+  // confirmation email template — but that template's link still honors
+  // emailRedirectTo, so our own /auth/confirm route runs after Supabase
+  // verifies the token without needing to touch the template at all.
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: origin ? `${origin}/auth/confirm?next=/onboarding` : undefined,
+    },
+  });
 
   if (error) {
     return { ok: false, error: error.message };

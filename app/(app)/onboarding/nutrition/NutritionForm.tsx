@@ -7,7 +7,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { nutritionSchema, type NutritionInput } from "@/domains/nutrition/schema";
 import { saveNutritionStep } from "@/domains/nutrition/service";
 import { StepShell } from "@/platform/ui/StepShell";
-import { FormField, TextInput, SelectInput } from "@/platform/ui/FormField";
+import {
+  FormField,
+  TextInput,
+  SelectInput,
+  optionalNumberValue,
+  optionalStringValue,
+} from "@/platform/ui/FormField";
 
 export function NutritionForm({
   userId,
@@ -56,14 +62,19 @@ export function NutritionForm({
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <div className="grid grid-cols-3 gap-4">
           <FormField label="Height" htmlFor="height" error={errors.height?.message}>
-            <TextInput id="height" type="number" step="0.1" {...register("height", { valueAsNumber: true })} />
+            <TextInput
+              id="height"
+              type="number"
+              step="0.1"
+              {...register("height", { setValueAs: optionalNumberValue })}
+            />
           </FormField>
           <FormField label="Current weight" htmlFor="currentWeight" error={errors.currentWeight?.message}>
             <TextInput
               id="currentWeight"
               type="number"
               step="0.1"
-              {...register("currentWeight", { valueAsNumber: true })}
+              {...register("currentWeight", { setValueAs: optionalNumberValue })}
             />
           </FormField>
           <FormField label="Target weight" htmlFor="targetWeight" error={errors.targetWeight?.message}>
@@ -71,7 +82,7 @@ export function NutritionForm({
               id="targetWeight"
               type="number"
               step="0.1"
-              {...register("targetWeight", { valueAsNumber: true })}
+              {...register("targetWeight", { setValueAs: optionalNumberValue })}
             />
           </FormField>
         </div>
@@ -91,10 +102,19 @@ export function NutritionForm({
 
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Meals per day" htmlFor="mealsPerDay" error={errors.mealsPerDay?.message}>
-            <TextInput id="mealsPerDay" type="number" min={1} max={10} {...register("mealsPerDay", { valueAsNumber: true })} />
+            <TextInput
+              id="mealsPerDay"
+              type="number"
+              min={1}
+              max={10}
+              {...register("mealsPerDay", { setValueAs: optionalNumberValue })}
+            />
           </FormField>
-          <FormField label="Cooking ability" htmlFor="cookingAbility">
-            <SelectInput id="cookingAbility" {...register("cookingAbility")}>
+          <FormField label="Cooking ability" htmlFor="cookingAbility" error={errors.cookingAbility?.message}>
+            <SelectInput
+              id="cookingAbility"
+              {...register("cookingAbility", { setValueAs: optionalStringValue })}
+            >
               <option value="">—</option>
               <option value="beginner">Beginner</option>
               <option value="intermediate">Intermediate</option>
@@ -114,8 +134,15 @@ export function NutritionForm({
         </FormField>
 
         <div className="grid grid-cols-2 gap-4">
-          <FormField label="Tracking preference" htmlFor="trackingPreference">
-            <SelectInput id="trackingPreference" {...register("trackingPreference")}>
+          <FormField
+            label="Tracking preference"
+            htmlFor="trackingPreference"
+            error={errors.trackingPreference?.message}
+          >
+            <SelectInput
+              id="trackingPreference"
+              {...register("trackingPreference", { setValueAs: optionalStringValue })}
+            >
               <option value="">—</option>
               <option value="detailed">Detailed</option>
               <option value="simple">Simple</option>
@@ -126,7 +153,7 @@ export function NutritionForm({
             <TextInput
               id="proteinTargetGrams"
               type="number"
-              {...register("proteinTargetGrams", { valueAsNumber: true })}
+              {...register("proteinTargetGrams", { setValueAs: optionalNumberValue })}
             />
           </FormField>
         </div>
