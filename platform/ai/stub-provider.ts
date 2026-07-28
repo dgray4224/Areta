@@ -1,9 +1,10 @@
 import type { AIProvider } from "@/platform/ai/provider";
 import type { StructuredGenerationRequest, StructuredGenerationResult } from "@/platform/ai/types";
 
-/** Phase 0/1 has no AI generation (CLAUDE.md §21). This exists only to prove
- * the `AIProvider` interface compiles against a real consumer shape ahead of
- * Phase 4 — nothing in the app imports it yet, and no AI SDK is installed. */
+/** Fallback used by `getAIProvider()` (platform/ai/get-provider.ts) when no
+ * ANTHROPIC_API_KEY is configured — e.g. local dev without a key, or a
+ * misconfigured deploy — so a missing key fails loudly at call time instead
+ * of silently returning fabricated data. */
 export class UnimplementedAIProvider implements AIProvider {
   async generateStructured<T>(
     _request: StructuredGenerationRequest<T>

@@ -27,21 +27,48 @@ export type StoredParameter = GeneratedParameter & {
   approvedAt: string | null;
 };
 
+const LB_PER_KG = 2.2046226218;
+
+/** Converts a logged weight (lb or kg) to the unit system a profile uses
+ * (imperial -> lb, metric -> kg), so it can substitute directly for the
+ * onboarding-entered current weight. */
+function convertLoggedWeight(weight: number, loggedUnit: "lb" | "kg", targetUnits: "metric" | "imperial"): number {
+  const wantsLb = targetUnits === "imperial";
+  if (wantsLb === (loggedUnit === "lb")) return weight;
+  return wantsLb ? weight * LB_PER_KG : weight / LB_PER_KG;
+}
+
 /**
- * Recomputes nutrition parameters from the user's onboarding answers +
- * profile and stores them as pending (unapproved) proposals — regenerating
- * always resets approval per CLAUDE.md rule 24, even on a recalculation.
+ * Recomputes nutrition parameters from the user's most recent logged
+ * weight (falling back to the onboarding-entered value if nothing has been
+ * logged yet) plus onboarding answers and profile, and stores them as
+ * pending (unapproved) proposals — regenerating always resets approval per
+ * CLAUDE.md rule 24, even on a recalculation. Preferring the logged weight
+ * over the static onboarding value is what makes this a *recalculation
+ * from observed outcomes* (rule 23) rather than a one-time estimate.
  */
 export async function generateNutritionParameters(userId: string): Promise<ActionResult> {
   const supabase = await createClient();
 
-  const [{ data: profile }, { data: responses }, { data: domain }] = await Promise.all([
-    supabase.from("profiles").select("units").eq("id", userId).single(),
-    supabase.from("onboarding_responses").select("nutrition").eq("user_id", userId).single(),
-    supabase.from("domains").select("id").eq("user_id", userId).eq("key", "nutrition").single(),
-  ]);
+  const [{ data: profile }, { data: responses }, { data: domain }, { data: latestWeightLog }] =
+    await Promise.all([
+      supabase.from("profiles").select("units").eq("id", userId).single(),
+      supabase.from("onboarding_responses").select("nutrition").eq("user_id", userId).single(),
+      supabase.from("domains").select("id").eq("user_id", userId).eq("key", "nutrition").single(),
+      supabase
+        .from("weight_logs")
+        .select("weight, unit, logged_at")
+        .eq("user_id", userId)
+        .order("logged_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
   const nutrition = (responses?.nutrition ?? {}) as NutritionInput;
+  const units = (profile?.units as "metric" | "imperial") ?? "imperial";
+  const currentWeight = latestWeightLog
+    ? convertLoggedWeight(latestWeightLog.weight, latestWeightLog.unit as "lb" | "kg", units)
+    : nutrition.currentWeight;
 
   let targetDate: string | undefined;
   if (domain?.id) {
@@ -57,9 +84,9 @@ export async function generateNutritionParameters(userId: string): Promise<Actio
   }
 
   const { parameters, missingInputs } = calculateNutritionParameters({
-    units: (profile?.units as "metric" | "imperial") ?? "imperial",
+    units,
     height: nutrition.height,
-    currentWeight: nutrition.currentWeight,
+    currentWeight,
     targetWeight: nutrition.targetWeight,
     age: nutrition.age,
     sex: nutrition.sex,
@@ -173,6 +200,24 @@ export async function approveNutritionParameters(
     return { ok: false, error: `Failed to approve nutrition parameters: ${failed.error.message}` };
   }
 
+  return { ok: true, data: undefined };
+}
+
+/** Approves all currently-generated nutrition parameters as-is, without
+ * per-field edits — used by weekly regeneration, where the user approves
+ * the week's plan as a bundle rather than re-reviewing every number (the
+ * brief they approve already surfaces the proposed changes). */
+export async function approveAllNutritionParameters(userId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("generated_parameters")
+    .update({ approved: true, approved_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("domain", "nutrition");
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
   return { ok: true, data: undefined };
 }
 

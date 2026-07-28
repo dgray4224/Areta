@@ -77,6 +77,36 @@ export type Database = {
           },
         ]
       }
+      ai_runs: {
+        Row: {
+          created_at: string
+          error: string | null
+          id: string
+          model: string
+          purpose: string
+          success: boolean
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          model: string
+          purpose: string
+          success: boolean
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          model?: string
+          purpose?: string
+          success?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
       daily_actions: {
         Row: {
           created_at: string
@@ -890,6 +920,53 @@ export type Database = {
         }
         Relationships: []
       }
+      recommendations: {
+        Row: {
+          accepted: boolean | null
+          confidence: number | null
+          created_at: string
+          field: string
+          id: string
+          previous_value: Json | null
+          proposed_value: Json | null
+          reason: string
+          user_id: string
+          weekly_review_id: string | null
+        }
+        Insert: {
+          accepted?: boolean | null
+          confidence?: number | null
+          created_at?: string
+          field: string
+          id?: string
+          previous_value?: Json | null
+          proposed_value?: Json | null
+          reason: string
+          user_id: string
+          weekly_review_id?: string | null
+        }
+        Update: {
+          accepted?: boolean | null
+          confidence?: number | null
+          created_at?: string
+          field?: string
+          id?: string
+          previous_value?: Json | null
+          proposed_value?: Json | null
+          reason?: string
+          user_id?: string
+          weekly_review_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recommendations_weekly_review_id_fkey"
+            columns: ["weekly_review_id"]
+            isOneToOne: false
+            referencedRelation: "weekly_reviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       recovery_logs: {
         Row: {
           approved_exercises: string | null
@@ -1074,6 +1151,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      weekly_reviews: {
+        Row: {
+          answers: Json
+          approved_at: string | null
+          brief: Json | null
+          created_at: string
+          id: string
+          metrics: Json
+          status: string
+          user_id: string
+          week_start: string
+        }
+        Insert: {
+          answers?: Json
+          approved_at?: string | null
+          brief?: Json | null
+          created_at?: string
+          id?: string
+          metrics?: Json
+          status?: string
+          user_id: string
+          week_start: string
+        }
+        Update: {
+          answers?: Json
+          approved_at?: string | null
+          brief?: Json | null
+          created_at?: string
+          id?: string
+          metrics?: Json
+          status?: string
+          user_id?: string
+          week_start?: string
+        }
+        Relationships: []
       }
       weight_logs: {
         Row: {

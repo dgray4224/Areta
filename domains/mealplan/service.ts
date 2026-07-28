@@ -26,7 +26,10 @@ function splitKeywords(text: string | undefined | null): string[] {
  * was built from — but the plan itself still needs an explicit approve
  * step (see approveMealPlan) before it's "active" (CLAUDE.md rule 10).
  */
-export async function generateAndSaveMealPlan(userId: string): Promise<ActionResult<{ warnings: string[] }>> {
+export async function generateAndSaveMealPlan(
+  userId: string,
+  options?: { extraExcludeKeywords?: string[] }
+): Promise<ActionResult<{ warnings: string[] }>> {
   const [calorieTarget, proteinTarget] = await Promise.all([
     getApprovedNutritionValue(userId, "calorie_target"),
     getApprovedNutritionValue(userId, "protein_target_g"),
@@ -57,6 +60,7 @@ export async function generateAndSaveMealPlan(userId: string): Promise<ActionRes
   const excludeKeywords = [
     ...splitKeywords(nutrition.allergies),
     ...splitKeywords(nutrition.dislikedFoods),
+    ...(options?.extraExcludeKeywords ?? []),
   ];
 
   const { days, warnings } = generateMealPlan({
