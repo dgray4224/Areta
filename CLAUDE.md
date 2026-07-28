@@ -2,7 +2,7 @@
 
 # LifeOS — Personal Execution and Weekly Regeneration Platform
 
-> **Build status:** Phase 0 (Foundation) and Phase 1 (Onboarding and Personal OS) are complete, deployed, and verified against the live Supabase project. Phase 2 (Today screen and daily logging) is next. See [`README.md`](./README.md) for setup, current status detail, and known gaps — this file remains the product spec and stays unchanged as phases ship.
+> **Build status:** Phase 0 (Foundation), Phase 1 (Onboarding and Personal OS), and Phase 2 (Today screen and daily logging) are complete, deployed, and verified against the live Supabase project. Phase 3 (meal/grocery planning) is next. See [`README.md`](./README.md) for setup, current status detail, and known gaps — this file remains the product spec and stays unchanged as phases ship.
 
 ## 1. Product Mission
 
