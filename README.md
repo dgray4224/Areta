@@ -17,6 +17,8 @@ Personal execution and weekly-regeneration platform. Full product spec, phase pl
 
 This closes out the phases in CLAUDE.md §6. See `CLAUDE.md` for the full spec if further work continues past this MVP.
 
+**Design pass (logo + data-oriented dashboard): done**, deployed, and verified in production. A simple SVG regeneration-cycle mark (`app/icon.svg`, `platform/ui/Logo.tsx`) serves as the favicon and app/auth header branding. The dashboard's new Trends section (`app/(app)/dashboard/trends-data.ts`, `platform/ui/charts/*`) renders five real charts from actual logged data — weight (emphasis form: raw weigh-ins de-emphasized, 7-day moving average as the accent line), sleep duration, nutrition calories vs. the approved target, task completion rate, and recovery pain/swelling — built with `recharts` and colored per the dataviz skill's validated palette, mapped onto the app's existing Tailwind neutral scale rather than a separate chart-specific gray ramp.
+
 Known gaps in what's built so far:
 - The Playwright e2e spec (`tests/e2e/`) is written but requires a local Supabase stack via Docker (`supabase start`), which hasn't been available in this environment — it hasn't actually been run yet. Phases 2 and 3 were verified with unit tests plus manual browser testing instead.
 - `confirmOnboarding`'s multi-table write (`domains/onboarding/write-output.ts`) is sequential inserts, not a single DB transaction — a partial failure mid-write can leave some tables written and others not. Fine for a single-user MVP; worth hardening with a Postgres function before this is multi-user.
@@ -31,7 +33,7 @@ Known gaps in what's built so far:
 - The Weekly Operating Brief only covers the qualitative sections (summary, progress, priorities, changes, risks, highest-leverage action). CLAUDE.md's full spec also calls for an AI-organized recovery plan, a learning plan, appointments, and a regenerated daily schedule — none of those exist yet; recovery in particular should probably stay closer to "organize clinician instructions" than a model-generated plan even when built (CLAUDE.md rule 11).
 - The Recommendation Feedback Loop (CLAUDE.md §8) only goes as far as accept/reject at approval time (`recommendations.accepted`). There's no outcome/rating step in a later review, and no "use successful strategies more often" logic reading that history back — the durable-memory Layer 4 (a `memories` table with confidence/expiration/user-confirmed status) isn't built.
 - `weekly_reviews`/`recommendations`/`ai_runs` have RLS but no per-user rate limiting on `generateWeeklyBrief` — a user could re-trigger AI generation repeatedly. Fine for a single founder account; worth adding before multi-user.
-- `ANTHROPIC_API_KEY` must be set in Vercel's environment variables for `/review/brief` generation to work in production (it's read via `platform/env.server.ts`, same pattern as the Supabase keys) — set it via `vercel env add ANTHROPIC_API_KEY production` or the dashboard.
+- Chart light-mode colors (`platform/ui/charts/colors.ts`) haven't been visually verified live — the dark-mode render was confirmed in the browser and the light values follow the same `prefers-color-scheme` pattern already proven elsewhere in the app, but worth a manual check in an actual light-mode browser/OS before calling it fully verified.
 
 ## Accounts & services this project depends on
 
@@ -42,17 +44,17 @@ Known gaps in what's built so far:
 | Resend | Transactional email (signup confirmation, etc.) via custom SMTP | domain `getlifeos.tech`, verified |
 | Vercel Domains | `getlifeos.tech` registration + DNS | DNS is auto-managed by Vercel since the domain was bought there |
 | GitHub | Source control, CI | `dgray4224/lifeos` |
-| Anthropic | Weekly Operating Brief generation (`claude-sonnet-5`, forced tool-use) | API key in `ANTHROPIC_API_KEY`; set locally, **still needs setting in Vercel production** |
+| Anthropic | Weekly Operating Brief generation (`claude-sonnet-5`, forced tool-use) | API key in `ANTHROPIC_API_KEY`, set both locally and in Vercel production |
 
 ## Tech stack
 
-Next.js (App Router) · TypeScript · Tailwind CSS · Supabase (Postgres, Auth, RLS) · Zod · React Hook Form · Anthropic SDK · Vitest · Playwright · Vercel
+Next.js (App Router) · TypeScript · Tailwind CSS · Supabase (Postgres, Auth, RLS) · Zod · React Hook Form · Anthropic SDK · Recharts · Vitest · Playwright · Vercel
 
 ## Project structure
 
 ```
 app/            Routes. (auth) = login/signup, (app) = authenticated shell (dashboard, onboarding, log/*, plan/*, review/*)
-platform/       Platform core: auth session/actions, Supabase clients, env validation, shared UI, AI provider (Anthropic + stub)
+platform/       Platform core: auth session/actions, Supabase clients, env validation, shared UI (incl. charts/), AI provider (Anthropic + stub)
 domains/        Domain modules: identity, goals, nutrition, recovery, learning, coaching, onboarding, weight, sleep,
                 tasks, parameters, recipes, mealplan, grocery, prep, review
 supabase/       Migrations, dev seed data, local Supabase config, custom email templates
