@@ -120,7 +120,9 @@ React Hook Form + Zod's `.optional()` doesn't mean what you'd expect for blank f
 
 ## Deployment
 
-Vercel is connected to this GitHub repo (project `lifeos` under `project-190`) and auto-deploys every push to `master`, with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` set for both Production and Preview environments. GitHub Actions CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests, and a build on every push and PR.
+Vercel is connected to this GitHub repo (project `lifeos` under `project-190`) and auto-deploys every push to `master`, with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `ANTHROPIC_API_KEY` set for Production (the first three also for Preview). GitHub Actions CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests, and a build on every push and PR.
+
+**Env var changes require a redeploy** — Vercel snapshots environment variables into each deployment, so adding/changing one (e.g. via `vercel env add`) only takes effect on the next deploy. Trigger one with `vercel --prod` (or just push) after any env var change.
 
 The app is aliased to two domains: the Vercel-issued `lifeos-eosin-nine.vercel.app` and the custom `getlifeos.tech` (apex redirects to `www.getlifeos.tech`). Supabase's Auth → URL Configuration allow-list includes `http://localhost:3000/**`, both `.vercel.app` production/preview patterns, and both `getlifeos.tech` and `www.getlifeos.tech`.
 
@@ -128,4 +130,4 @@ If you add a new migration, remember to run `pnpm dlx supabase db push` against 
 
 ## Development rules
 
-See `CLAUDE.md` §20 for the full list. The short version: deterministic code for calculations, AI only for interpretation/generation (not built yet), validate all AI output, no one user's data baked into platform logic (see `supabase/seed/dev-seed.ts` for how the founder's dev profile is kept isolated), require user approval before any generated plan goes live.
+See `CLAUDE.md` §20 for the full list. The short version: deterministic code for calculations, AI only for interpretation/generation (Phase 4's `AnthropicProvider` is the one place this happens — see `platform/ai/`), validate all AI output (Zod schema, with a retry on failure — see `platform/ai/anthropic-provider.ts`), no one user's data baked into platform logic (see `supabase/seed/dev-seed.ts` for how the founder's dev profile is kept isolated), require user approval before any generated plan goes live.

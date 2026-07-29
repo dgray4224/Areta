@@ -2,7 +2,7 @@
 
 # LifeOS — Personal Execution and Weekly Regeneration Platform
 
-> **Build status:** Phase 0 (Foundation), Phase 1 (Onboarding and Personal OS), Phase 2 (Today screen and daily logging), Phase 3 (Outcome-to-Operating-Parameters engine, meal planning, grocery list, Sunday prep), and Phase 4 (weekly review and AI-generated regeneration) are complete, deployed, and verified against the live Supabase project, including a real Anthropic-backed weekly brief generation. See [`README.md`](./README.md) for setup, current status detail, and known gaps — this file remains the product spec and stays unchanged as phases ship.
+> **Build status:** Phase 0 (Foundation), Phase 1 (Onboarding and Personal OS), Phase 2 (Today screen and daily logging), Phase 3 (Outcome-to-Operating-Parameters engine, meal planning, grocery list, Sunday prep), and Phase 4 (weekly review and AI-generated regeneration) are complete, deployed, and verified against the live Supabase project, including a real Anthropic-backed weekly brief generation. A post-MVP design pass (logo, dashboard trend charts) has also shipped. See [`README.md`](./README.md) for setup, current status detail, and known gaps — this file remains the product spec and stays unchanged as phases ship.
 
 ## 1. Product Mission
 
