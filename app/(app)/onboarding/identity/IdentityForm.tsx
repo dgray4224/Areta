@@ -24,6 +24,9 @@ export function IdentityForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [serverError, setServerError] = useState<string | null>(null);
+  const timezoneOptions = getTimezoneOptions();
+  const storedTimezoneIsUnrecognized =
+    !!defaultValues.timeZone && !timezoneOptions.some((tz) => tz.value === defaultValues.timeZone);
 
   const {
     register,
@@ -77,12 +80,26 @@ export function IdentityForm({
           <TextInput id="fullName" {...register("fullName")} />
         </FormField>
 
-        <FormField label="Time zone" htmlFor="timeZone" error={errors.timeZone?.message}>
+        <FormField
+          label="Time zone"
+          htmlFor="timeZone"
+          error={errors.timeZone?.message}
+          hint={
+            storedTimezoneIsUnrecognized
+              ? `"${defaultValues.timeZone}" isn't a real time zone — pick your actual one below`
+              : undefined
+          }
+        >
           <SelectInput id="timeZone" {...register("timeZone")}>
             <option value="">—</option>
-            {getTimezoneOptions().map((tz) => (
-              <option key={tz} value={tz}>
-                {tz}
+            {storedTimezoneIsUnrecognized ? (
+              <option value={defaultValues.timeZone}>
+                ⚠ {defaultValues.timeZone} (not recognized)
+              </option>
+            ) : null}
+            {timezoneOptions.map((tz) => (
+              <option key={tz.value} value={tz.value}>
+                {tz.label}
               </option>
             ))}
           </SelectInput>
