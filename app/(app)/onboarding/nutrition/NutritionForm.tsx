@@ -2,9 +2,19 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ACTIVITY_LEVELS, nutritionSchema, type NutritionInput } from "@/domains/nutrition/schema";
+import {
+  ACTIVITY_LEVELS,
+  nutritionSchema,
+  type NutritionInput,
+  FOOD_PREFERENCE_SUGGESTIONS,
+  ALLERGY_SUGGESTIONS,
+  DISLIKED_FOOD_SUGGESTIONS,
+  FAVORITE_MEAL_SUGGESTIONS,
+  GROCERY_STORE_SUGGESTIONS,
+  APPLIANCE_SUGGESTIONS,
+} from "@/domains/nutrition/schema";
 import { saveNutritionStep } from "@/domains/nutrition/service";
 import { StepShell } from "@/platform/ui/StepShell";
 import {
@@ -14,6 +24,7 @@ import {
   optionalNumberValue,
   optionalStringValue,
 } from "@/platform/ui/FormField";
+import { TagPicker } from "@/platform/ui/TagPicker";
 
 export function NutritionForm({
   userId,
@@ -32,6 +43,7 @@ export function NutritionForm({
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors },
   } = useForm<NutritionInput>({
@@ -137,16 +149,60 @@ export function NutritionForm({
         </div>
 
         <FormField label="Food preferences" htmlFor="foodPreferences">
-          <TextInput id="foodPreferences" {...register("foodPreferences")} />
+          <Controller
+            name="foodPreferences"
+            control={control}
+            render={({ field }) => (
+              <TagPicker
+                id="foodPreferences"
+                suggestions={FOOD_PREFERENCE_SUGGESTIONS}
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </FormField>
         <FormField label="Allergies" htmlFor="allergies">
-          <TextInput id="allergies" {...register("allergies")} />
+          <Controller
+            name="allergies"
+            control={control}
+            render={({ field }) => (
+              <TagPicker
+                id="allergies"
+                suggestions={ALLERGY_SUGGESTIONS}
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </FormField>
         <FormField label="Disliked foods" htmlFor="dislikedFoods">
-          <TextInput id="dislikedFoods" {...register("dislikedFoods")} />
+          <Controller
+            name="dislikedFoods"
+            control={control}
+            render={({ field }) => (
+              <TagPicker
+                id="dislikedFoods"
+                suggestions={DISLIKED_FOOD_SUGGESTIONS}
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </FormField>
         <FormField label="Favorite meals" htmlFor="favoriteMeals">
-          <TextInput id="favoriteMeals" {...register("favoriteMeals")} />
+          <Controller
+            name="favoriteMeals"
+            control={control}
+            render={({ field }) => (
+              <TagPicker
+                id="favoriteMeals"
+                suggestions={FAVORITE_MEAL_SUGGESTIONS}
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </FormField>
 
         <div className="grid grid-cols-2 gap-4">
@@ -195,13 +251,35 @@ export function NutritionForm({
         </div>
 
         <FormField label="Grocery store(s)" htmlFor="groceryStores">
-          <TextInput id="groceryStores" {...register("groceryStores")} />
+          <Controller
+            name="groceryStores"
+            control={control}
+            render={({ field }) => (
+              <TagPicker
+                id="groceryStores"
+                suggestions={GROCERY_STORE_SUGGESTIONS}
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </FormField>
         <FormField label="Budget" htmlFor="budget">
           <TextInput id="budget" {...register("budget")} />
         </FormField>
         <FormField label="Appliances available" htmlFor="appliances">
-          <TextInput id="appliances" {...register("appliances")} />
+          <Controller
+            name="appliances"
+            control={control}
+            render={({ field }) => (
+              <TagPicker
+                id="appliances"
+                suggestions={APPLIANCE_SUGGESTIONS}
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </FormField>
 
         <div className="grid grid-cols-2 gap-4">

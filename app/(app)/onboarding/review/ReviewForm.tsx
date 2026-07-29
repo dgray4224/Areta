@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { confirmOnboarding } from "@/domains/onboarding/orchestrator";
 import type { OnboardingOutput, OnboardingResponses } from "@/domains/onboarding/types";
+import { DOMAIN_LABELS } from "@/domains/goals/schema";
 import { StepShell } from "@/platform/ui/StepShell";
 import { FormField, TextInput, TextArea } from "@/platform/ui/FormField";
 
@@ -90,7 +91,7 @@ export function ReviewForm({
                 key={d}
                 className="rounded-full bg-neutral-200 px-3 py-1 text-xs dark:bg-neutral-800"
               >
-                {d}
+                {DOMAIN_LABELS[d] ?? d}
               </span>
             ))}
           </div>

@@ -73,8 +73,8 @@ export const founderNutrition: NutritionInput = nutritionSchema.parse({
   height: 69, // 5'9"
   currentWeight: 220,
   targetWeight: 200,
-  favoriteMeals: "Breakfast",
-  groceryStores: "Costco",
+  favoriteMeals: ["Breakfast"],
+  groceryStores: ["Costco"],
   cookingAbility: "intermediate",
   trackingPreference: "simple",
   proteinTargetGrams: 170,
@@ -93,9 +93,9 @@ export const founderRecovery: RecoveryInput = recoverySchema.parse({
 } satisfies RecoveryInput);
 
 export const founderLearning: LearningInput = learningSchema.parse({
-  careerDirection: "AI solutions engineering",
-  currentSkills: "Software development",
-  desiredSkills: "AI engineering, Microsoft Fabric, data engineering, production AI apps",
+  careerDirection: ["AI solutions engineering"],
+  currentSkills: ["Software development"],
+  desiredSkills: ["AI engineering", "Microsoft Fabric", "data engineering", "production AI apps"],
   preferredFormat: "project",
   weeklyAvailableHours: 5,
   formalCoursePlans: "OMSA begins early January",

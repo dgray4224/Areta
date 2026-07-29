@@ -18,7 +18,7 @@ describe("goalSchema", () => {
   });
 
   it("rejects an unknown domain", () => {
-    expect(goalSchema.safeParse({ ...validGoal, domainKey: "finance" }).success).toBe(false);
+    expect(goalSchema.safeParse({ ...validGoal, domainKey: "astrology" }).success).toBe(false);
   });
 
   it("rejects confidence outside 1-5", () => {

@@ -2,12 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { coachingSchema, type CoachingInput } from "@/domains/coaching/schema";
+import {
+  coachingSchema,
+  type CoachingInput,
+  NEVER_RECOMMEND_SUGGESTIONS,
+} from "@/domains/coaching/schema";
 import { saveCoachingStep } from "@/domains/coaching/service";
 import { StepShell } from "@/platform/ui/StepShell";
-import { FormField, SelectInput, TextInput } from "@/platform/ui/FormField";
+import { FormField, SelectInput } from "@/platform/ui/FormField";
+import { TagPicker } from "@/platform/ui/TagPicker";
 
 export function CoachingForm({
   userId,
@@ -23,14 +28,11 @@ export function CoachingForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [serverError, setServerError] = useState<string | null>(null);
-  const [neverRecommendText, setNeverRecommendText] = useState(
-    (defaultValues.neverRecommend ?? []).join(", ")
-  );
 
   const {
     register,
+    control,
     handleSubmit,
-    setValue,
     formState: { errors },
   } = useForm<CoachingInput>({
     resolver: zodResolver(coachingSchema),
@@ -48,11 +50,7 @@ export function CoachingForm({
   const onSubmit = (values: CoachingInput) => {
     setServerError(null);
     startTransition(async () => {
-      const neverRecommend = neverRecommendText
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const result = await saveCoachingStep(userId, { ...values, neverRecommend });
+      const result = await saveCoachingStep(userId, values);
       if (!result.ok) {
         setServerError(result.error);
         return;
@@ -104,18 +102,19 @@ export function CoachingForm({
         <FormField
           label="Never recommend"
           htmlFor="neverRecommend"
-          hint="Comma-separated foods or activities LifeOS should never suggest"
+          hint="Foods or activities LifeOS should never suggest"
         >
-          <TextInput
-            id="neverRecommend"
-            value={neverRecommendText}
-            onChange={(e) => {
-              setNeverRecommendText(e.target.value);
-              setValue(
-                "neverRecommend",
-                e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
-              );
-            }}
+          <Controller
+            name="neverRecommend"
+            control={control}
+            render={({ field }) => (
+              <TagPicker
+                id="neverRecommend"
+                suggestions={NEVER_RECOMMEND_SUGGESTIONS}
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
           />
         </FormField>
 

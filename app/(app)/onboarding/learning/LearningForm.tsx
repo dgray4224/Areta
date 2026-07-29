@@ -2,9 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { learningSchema, type LearningInput } from "@/domains/learning/schema";
+import {
+  learningSchema,
+  type LearningInput,
+  CAREER_DIRECTION_SUGGESTIONS,
+  CURRENT_SKILL_SUGGESTIONS,
+  DESIRED_SKILL_SUGGESTIONS,
+} from "@/domains/learning/schema";
 import { saveLearningStep } from "@/domains/learning/service";
 import { StepShell } from "@/platform/ui/StepShell";
 import {
@@ -15,6 +21,7 @@ import {
   optionalNumberValue,
   optionalStringValue,
 } from "@/platform/ui/FormField";
+import { TagPicker } from "@/platform/ui/TagPicker";
 
 export function LearningForm({
   userId,
@@ -33,6 +40,7 @@ export function LearningForm({
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors },
   } = useForm<LearningInput>({
@@ -62,13 +70,46 @@ export function LearningForm({
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <FormField label="Career direction" htmlFor="careerDirection">
-          <TextInput id="careerDirection" {...register("careerDirection")} />
+          <Controller
+            name="careerDirection"
+            control={control}
+            render={({ field }) => (
+              <TagPicker
+                id="careerDirection"
+                suggestions={CAREER_DIRECTION_SUGGESTIONS}
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </FormField>
         <FormField label="Current skills" htmlFor="currentSkills">
-          <TextArea id="currentSkills" {...register("currentSkills")} />
+          <Controller
+            name="currentSkills"
+            control={control}
+            render={({ field }) => (
+              <TagPicker
+                id="currentSkills"
+                suggestions={CURRENT_SKILL_SUGGESTIONS}
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </FormField>
         <FormField label="Desired skills" htmlFor="desiredSkills">
-          <TextArea id="desiredSkills" {...register("desiredSkills")} />
+          <Controller
+            name="desiredSkills"
+            control={control}
+            render={({ field }) => (
+              <TagPicker
+                id="desiredSkills"
+                suggestions={DESIRED_SKILL_SUGGESTIONS}
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </FormField>
         <FormField label="Current projects" htmlFor="currentProjects">
           <TextArea id="currentProjects" {...register("currentProjects")} />

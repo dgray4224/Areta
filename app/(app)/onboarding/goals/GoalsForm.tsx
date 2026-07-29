@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { goalsStepSchema, type GoalsStepInput } from "@/domains/goals/schema";
-import { DOMAIN_KEYS } from "@/domains/goals/schema";
+import { DOMAIN_KEYS, DOMAIN_LABELS } from "@/domains/goals/schema";
 import { saveGoalsStep } from "@/domains/goals/service";
 import { StepShell } from "@/platform/ui/StepShell";
 import { FormField, TextInput, SelectInput, TextArea } from "@/platform/ui/FormField";
@@ -118,7 +118,7 @@ export function GoalsForm({
                 <SelectInput id={`goals.${index}.domainKey`} {...register(`goals.${index}.domainKey`)}>
                   {DOMAIN_KEYS.map((key) => (
                     <option key={key} value={key}>
-                      {key[0].toUpperCase() + key.slice(1)}
+                      {DOMAIN_LABELS[key]}
                     </option>
                   ))}
                 </SelectInput>

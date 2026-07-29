@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OnboardingOutput, OnboardingResponses } from "@/domains/onboarding/types";
 import type { ActionResult } from "@/platform/auth/actions";
+import { DOMAIN_LABELS } from "@/domains/goals/schema";
 
 /**
  * No `next/headers` or `server-only` imports here on purpose: this module
@@ -10,13 +11,6 @@ import type { ActionResult } from "@/platform/auth/actions";
  * service-role admin client instead. Keeping this file free of Next-only
  * imports is what makes that sharing possible.
  */
-
-const DOMAIN_LABELS: Record<string, string> = {
-  nutrition: "Nutrition",
-  recovery: "Recovery",
-  learning: "Learning",
-  general: "General",
-};
 
 /**
  * Writes the (user-edited, user-approved) Onboarding output across

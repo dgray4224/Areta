@@ -11,12 +11,9 @@ function currentWeekStart(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function splitKeywords(text: string | undefined | null): string[] {
-  if (!text) return [];
-  return text
-    .split(/[,;]/)
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+function normalizeKeywords(list: string[] | undefined | null): string[] {
+  if (!list) return [];
+  return list.map((s) => s.trim().toLowerCase()).filter(Boolean);
 }
 
 /**
@@ -58,8 +55,8 @@ export async function generateAndSaveMealPlan(
   }));
 
   const excludeKeywords = [
-    ...splitKeywords(nutrition.allergies),
-    ...splitKeywords(nutrition.dislikedFoods),
+    ...normalizeKeywords(nutrition.allergies),
+    ...normalizeKeywords(nutrition.dislikedFoods),
     ...(options?.extraExcludeKeywords ?? []),
   ];
 
