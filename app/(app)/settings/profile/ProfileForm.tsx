@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { identitySchema, WEEKDAYS, type IdentityInput } from "@/domains/identity/schema";
 import { updateProfile } from "@/domains/identity/service";
 import { FormField, TextInput, SelectInput } from "@/platform/ui/FormField";
+import { detectTimezone, getTimezoneOptions } from "@/platform/ui/timezones";
 
 export function ProfileForm({
   userId,
@@ -23,11 +24,20 @@ export function ProfileForm({
   const {
     register,
     handleSubmit,
+    getValues,
+    setValue,
     formState: { errors },
   } = useForm<IdentityInput>({
     resolver: zodResolver(identitySchema),
     defaultValues,
   });
+
+  useEffect(() => {
+    if (!getValues("timeZone")) {
+      setValue("timeZone", detectTimezone(), { shouldValidate: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onSubmit = (values: IdentityInput) => {
     setServerError(null);
@@ -49,13 +59,15 @@ export function ProfileForm({
         <TextInput id="fullName" {...register("fullName")} />
       </FormField>
 
-      <FormField
-        label="Time zone"
-        htmlFor="timeZone"
-        error={errors.timeZone?.message}
-        hint="e.g. America/New_York"
-      >
-        <TextInput id="timeZone" {...register("timeZone")} />
+      <FormField label="Time zone" htmlFor="timeZone" error={errors.timeZone?.message}>
+        <SelectInput id="timeZone" {...register("timeZone")}>
+          <option value="">—</option>
+          {getTimezoneOptions().map((tz) => (
+            <option key={tz} value={tz}>
+              {tz}
+            </option>
+          ))}
+        </SelectInput>
       </FormField>
 
       <FormField label="Units" htmlFor="units" error={errors.units?.message}>
@@ -83,11 +95,19 @@ export function ProfileForm({
         <TextInput id="workStatus" {...register("workStatus")} />
       </FormField>
 
-      <FormField label="Work hours (optional)" htmlFor="workHoursNote">
+      <FormField
+        label="Specific work hours or blocked time (optional)"
+        htmlFor="workHoursNote"
+        hint="e.g. 9am-5pm ET weekdays, standing meetings until 6 on Tuesdays — anything LifeOS should plan around, not a weekly total"
+      >
         <TextInput id="workHoursNote" {...register("workHoursNote")} />
       </FormField>
 
-      <FormField label="School commitments (optional)" htmlFor="schoolCommitments">
+      <FormField
+        label="Class schedule or deadlines (optional)"
+        htmlFor="schoolCommitments"
+        hint="e.g. Tuesday/Thursday evening classes, exams the second week of October"
+      >
         <TextInput id="schoolCommitments" {...register("schoolCommitments")} />
       </FormField>
 
