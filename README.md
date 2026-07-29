@@ -17,7 +17,9 @@ Personal execution and weekly-regeneration platform. Full product spec, phase pl
 
 This closes out the phases in CLAUDE.md §6. See `CLAUDE.md` for the full spec if further work continues past this MVP.
 
-**Design pass (logo + data-oriented dashboard): done**, deployed, and verified in production. A simple SVG regeneration-cycle mark (`app/icon.svg`, `platform/ui/Logo.tsx`) serves as the favicon and app/auth header branding. The dashboard's new Trends section (`app/(app)/dashboard/trends-data.ts`, `platform/ui/charts/*`) renders five real charts from actual logged data — weight (emphasis form: raw weigh-ins de-emphasized, 7-day moving average as the accent line), sleep duration, nutrition calories vs. the approved target, task completion rate, and recovery pain/swelling — built with `recharts` and colored per the dataviz skill's validated palette, mapped onto the app's existing Tailwind neutral scale rather than a separate chart-specific gray ramp.
+**Design pass (logo + data-oriented dashboard): done**, deployed, and verified in production. A simple SVG regeneration-cycle mark (`app/icon.svg`, `platform/ui/Logo.tsx`) serves as the favicon and app/auth header branding. The dashboard's new Trends section (`app/(app)/dashboard/trends-data.ts`, `platform/ui/charts/*`) renders five real charts from actual logged data — weight (emphasis form: raw weigh-ins de-emphasized, 7-day moving average as the accent line), sleep duration, nutrition calories vs. the approved target, task completion rate, and recovery pain/swelling — built with `recharts` and colored per the dataviz skill's validated palette, mapped onto the app's existing Tailwind neutral scale rather than a separate chart-specific gray ramp. Both light and dark mode confirmed live in the browser.
+
+**Settings (Profile / Appearance / Account): done**, deployed, and verified in production. `/settings/profile` edits the same identity fields captured during onboarding without redoing the interview. `/settings/appearance` adds a real System/Light/Dark theme picker — Tailwind's `dark:` variant now reads a `.dark` class (`platform/theme/theme.ts`) instead of `prefers-color-scheme` directly, set by a blocking pre-hydration script (zero flash) and kept live on "System" by `ThemeSync`; charts follow the same class via a `MutationObserver`. `/settings/account` has a real JSON data export (CLAUDE.md's First-Week MVP "Data export" requirement) and a confirm-gated "Restart onboarding" action, scoped to onboarding-derived data only (goals/phases/domains/weekly_outcomes/onboarding_responses/personalization — never logged activity, meal plans, or past reviews).
 
 Known gaps in what's built so far:
 - The Playwright e2e spec (`tests/e2e/`) is written but requires a local Supabase stack via Docker (`supabase start`), which hasn't been available in this environment — it hasn't actually been run yet. Phases 2 and 3 were verified with unit tests plus manual browser testing instead.
@@ -33,7 +35,8 @@ Known gaps in what's built so far:
 - The Weekly Operating Brief only covers the qualitative sections (summary, progress, priorities, changes, risks, highest-leverage action). CLAUDE.md's full spec also calls for an AI-organized recovery plan, a learning plan, appointments, and a regenerated daily schedule — none of those exist yet; recovery in particular should probably stay closer to "organize clinician instructions" than a model-generated plan even when built (CLAUDE.md rule 11).
 - The Recommendation Feedback Loop (CLAUDE.md §8) only goes as far as accept/reject at approval time (`recommendations.accepted`). There's no outcome/rating step in a later review, and no "use successful strategies more often" logic reading that history back — the durable-memory Layer 4 (a `memories` table with confidence/expiration/user-confirmed status) isn't built.
 - `weekly_reviews`/`recommendations`/`ai_runs` have RLS but no per-user rate limiting on `generateWeeklyBrief` — a user could re-trigger AI generation repeatedly. Fine for a single founder account; worth adding before multi-user.
-- Chart light-mode colors (`platform/ui/charts/colors.ts`) haven't been visually verified live — the dark-mode render was confirmed in the browser and the light values follow the same `prefers-color-scheme` pattern already proven elsewhere in the app, but worth a manual check in an actual light-mode browser/OS before calling it fully verified.
+- No account deletion — Settings > Account can export data and restart onboarding, but there's no self-serve way to delete the account itself (would need the Supabase admin API and a much more serious confirmation flow than the onboarding-restart one). Contact-the-founder is the current path.
+- Root layout's `<html>` carries `suppressHydrationWarning` because of the theme init script — this is the standard, narrow, intentional use (React only skips the warning for that element's own attributes), but worth knowing it's there if a *real* hydration bug ever needs debugging on that element.
 
 ## Accounts & services this project depends on
 
@@ -53,10 +56,10 @@ Next.js (App Router) · TypeScript · Tailwind CSS · Supabase (Postgres, Auth, 
 ## Project structure
 
 ```
-app/            Routes. (auth) = login/signup, (app) = authenticated shell (dashboard, onboarding, log/*, plan/*, review/*)
-platform/       Platform core: auth session/actions, Supabase clients, env validation, shared UI (incl. charts/), AI provider (Anthropic + stub)
+app/            Routes. (auth) = login/signup, (app) = authenticated shell (dashboard, onboarding, log/*, plan/*, review/*, settings/*)
+platform/       Platform core: auth session/actions, Supabase clients, env validation, shared UI (incl. charts/), theme/, AI provider (Anthropic + stub)
 domains/        Domain modules: identity, goals, nutrition, recovery, learning, coaching, onboarding, weight, sleep,
-                tasks, parameters, recipes, mealplan, grocery, prep, review
+                tasks, parameters, recipes, mealplan, grocery, prep, review, account
 supabase/       Migrations, dev seed data, local Supabase config, custom email templates
 scripts/        seed.ts — dev-only founder profile seeder
 tests/          unit/ (Vitest) and e2e/ (Playwright)
