@@ -28,11 +28,13 @@ export function LearningForm({
   defaultValues,
   stepIndex,
   totalSteps,
+  backHref,
 }: {
   userId: string;
   defaultValues: Partial<LearningInput>;
   stepIndex: number;
   totalSteps: number;
+  backHref?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -56,7 +58,7 @@ export function LearningForm({
         setServerError(result.error);
         return;
       }
-      router.push("/onboarding/coaching");
+      router.push("/onboarding");
     });
   };
 
@@ -66,7 +68,7 @@ export function LearningForm({
       description="What are you working toward professionally or academically?"
       currentStep={stepIndex}
       totalSteps={totalSteps}
-      backHref="/onboarding/recovery"
+      backHref={backHref}
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <FormField label="Career direction" htmlFor="careerDirection">

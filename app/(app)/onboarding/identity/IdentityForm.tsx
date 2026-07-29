@@ -64,7 +64,7 @@ export function IdentityForm({
         setServerError(result.error);
         return;
       }
-      router.push("/onboarding/goals");
+      router.push("/onboarding");
     });
   };
 

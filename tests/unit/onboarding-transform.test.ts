@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { transformOnboarding, firstIncompleteStep } from "@/domains/onboarding/transform";
-import { ONBOARDING_STEPS } from "@/domains/onboarding/types";
-import type { OnboardingResponses } from "@/domains/onboarding/types";
+import {
+  transformOnboarding,
+  firstIncompleteStep,
+  effectiveSteps,
+  stepPosition,
+} from "@/domains/onboarding/transform";
+import type { OnboardingResponses, OnboardingStepKey } from "@/domains/onboarding/types";
 import {
   founderIdentity,
   founderGoals,
@@ -11,6 +15,8 @@ import {
   founderCoaching,
 } from "@/supabase/seed/dev-seed";
 
+const founderCompletedSteps: OnboardingStepKey[] = effectiveSteps(founderGoals);
+
 const founderResponses: OnboardingResponses = {
   userId: "test-user",
   identity: founderIdentity,
@@ -19,7 +25,7 @@ const founderResponses: OnboardingResponses = {
   recovery: founderRecovery,
   learning: founderLearning,
   coaching: founderCoaching,
-  completedSteps: ONBOARDING_STEPS,
+  completedSteps: founderCompletedSteps,
 };
 
 describe("transformOnboarding", () => {
@@ -94,13 +100,72 @@ describe("transformOnboarding", () => {
   });
 });
 
-describe("firstIncompleteStep", () => {
-  it("returns the first step not yet completed", () => {
-    expect(firstIncompleteStep([])).toBe("identity");
-    expect(firstIncompleteStep(["identity"])).toBe("goals");
+describe("effectiveSteps", () => {
+  it("includes nutrition, recovery, and learning when goals exist in those domains", () => {
+    expect(effectiveSteps(founderGoals)).toEqual([
+      "identity",
+      "goals",
+      "nutrition",
+      "recovery",
+      "learning",
+      "coaching",
+    ]);
   });
 
-  it("returns null once every step is complete", () => {
-    expect(firstIncompleteStep(ONBOARDING_STEPS)).toBeNull();
+  it("omits domain-specific steps entirely when no goal targets them", () => {
+    const nonModuleGoals = founderGoals.map((g) => ({ ...g, domainKey: "family" as const }));
+    expect(effectiveSteps(nonModuleGoals)).toEqual(["identity", "goals", "coaching"]);
+  });
+
+  it("includes only the domain-specific steps that apply", () => {
+    const mixedGoals = [
+      { ...founderGoals[0], domainKey: "nutrition" as const },
+      { ...founderGoals[1], domainKey: "family" as const },
+    ];
+    expect(effectiveSteps(mixedGoals)).toEqual(["identity", "goals", "nutrition", "coaching"]);
+  });
+});
+
+describe("stepPosition", () => {
+  it("computes stepIndex/totalSteps/backHref from the effective sequence", () => {
+    expect(stepPosition("nutrition", founderGoals)).toEqual({
+      stepIndex: 3,
+      totalSteps: 7,
+      backHref: "/onboarding/goals",
+    });
+    expect(stepPosition("coaching", founderGoals)).toEqual({
+      stepIndex: 6,
+      totalSteps: 7,
+      backHref: "/onboarding/learning",
+    });
+  });
+
+  it("has no backHref for the first step", () => {
+    expect(stepPosition("identity", founderGoals).backHref).toBeUndefined();
+  });
+});
+
+describe("firstIncompleteStep", () => {
+  it("returns the first step not yet completed", () => {
+    expect(firstIncompleteStep({ ...founderResponses, completedSteps: [] })).toBe("identity");
+    expect(firstIncompleteStep({ ...founderResponses, completedSteps: ["identity"] })).toBe(
+      "goals"
+    );
+  });
+
+  it("returns null once every effective step is complete", () => {
+    expect(firstIncompleteStep(founderResponses)).toBeNull();
+  });
+
+  it("skips domain-specific steps that don't apply to the user's goals", () => {
+    const nonModuleResponses: OnboardingResponses = {
+      ...founderResponses,
+      goals: founderGoals.map((g) => ({ ...g, domainKey: "family" as const })),
+      completedSteps: ["identity"],
+    };
+    expect(firstIncompleteStep(nonModuleResponses)).toBe("goals");
+    expect(
+      firstIncompleteStep({ ...nonModuleResponses, completedSteps: ["identity", "goals"] })
+    ).toBe("coaching");
   });
 });

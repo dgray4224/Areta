@@ -6,13 +6,39 @@ import type {
   WeeklyOutcomeDraft,
   PersonalizationProfileDraft,
 } from "@/domains/onboarding/types";
-import { ONBOARDING_STEPS } from "@/domains/onboarding/types";
-import type { DomainKey } from "@/domains/goals/schema";
+import type { DomainKey, Goal } from "@/domains/goals/schema";
 
-export function firstIncompleteStep(
-  completedSteps: OnboardingStepKey[]
-): OnboardingStepKey | null {
-  return ONBOARDING_STEPS.find((step) => !completedSteps.includes(step)) ?? null;
+/** The onboarding sequence is per-user: Nutrition/Recovery/Learning only
+ * appear when the user actually picked that area as a goal category, so a
+ * user with e.g. only a Family goal never sees the Nutrition questionnaire. */
+export function effectiveSteps(goals: Goal[]): OnboardingStepKey[] {
+  const domains = new Set(goals.map((g) => g.domainKey));
+  const steps: OnboardingStepKey[] = ["identity", "goals"];
+  if (domains.has("nutrition")) steps.push("nutrition");
+  if (domains.has("recovery")) steps.push("recovery");
+  if (domains.has("learning")) steps.push("learning");
+  steps.push("coaching");
+  return steps;
+}
+
+/** Progress-bar position and "Back" target for a step page, computed from
+ * the user's current effective sequence rather than a fixed order. */
+export function stepPosition(
+  step: OnboardingStepKey,
+  goals: Goal[]
+): { stepIndex: number; totalSteps: number; backHref: string | undefined } {
+  const steps = effectiveSteps(goals);
+  const idx = steps.indexOf(step);
+  return {
+    stepIndex: idx + 1,
+    totalSteps: steps.length + 1, // +1 for the review screen
+    backHref: idx > 0 ? `/onboarding/${steps[idx - 1]}` : undefined,
+  };
+}
+
+export function firstIncompleteStep(responses: OnboardingResponses): OnboardingStepKey | null {
+  const steps = effectiveSteps(responses.goals);
+  return steps.find((step) => !responses.completedSteps.includes(step)) ?? null;
 }
 
 /**

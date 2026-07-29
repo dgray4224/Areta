@@ -31,11 +31,13 @@ export function NutritionForm({
   defaultValues,
   stepIndex,
   totalSteps,
+  backHref,
 }: {
   userId: string;
   defaultValues: Partial<NutritionInput>;
   stepIndex: number;
   totalSteps: number;
+  backHref?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -59,7 +61,7 @@ export function NutritionForm({
         setServerError(result.error);
         return;
       }
-      router.push("/onboarding/recovery");
+      router.push("/onboarding");
     });
   };
 
@@ -69,7 +71,7 @@ export function NutritionForm({
       description="Preferences only — LifeOS derives calorie and protein targets later, not you."
       currentStep={stepIndex}
       totalSteps={totalSteps}
-      backHref="/onboarding/goals"
+      backHref={backHref}
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <div className="grid grid-cols-3 gap-4">
@@ -230,8 +232,9 @@ export function NutritionForm({
 
         <div className="grid grid-cols-2 gap-4">
           <FormField
-            label="Available prep time (minutes)"
+            label="Prep time per week (minutes)"
             htmlFor="availablePrepTimeMinutes"
+            hint="Total time for your weekly meal-prep session (e.g. Sunday), not per day"
           >
             <TextInput
               id="availablePrepTimeMinutes"
@@ -240,7 +243,11 @@ export function NutritionForm({
               {...register("availablePrepTimeMinutes", { setValueAs: optionalNumberValue })}
             />
           </FormField>
-          <FormField label="Household servings" htmlFor="householdServings">
+          <FormField
+            label="Household servings"
+            htmlFor="householdServings"
+            hint="How many people each meal should feed"
+          >
             <TextInput
               id="householdServings"
               type="number"
@@ -264,7 +271,11 @@ export function NutritionForm({
             )}
           />
         </FormField>
-        <FormField label="Budget" htmlFor="budget">
+        <FormField
+          label="Weekly grocery budget"
+          htmlFor="budget"
+          hint="Roughly how much you want to spend on groceries per week"
+        >
           <TextInput id="budget" {...register("budget")} />
         </FormField>
         <FormField label="Appliances available" htmlFor="appliances">
@@ -284,18 +295,19 @@ export function NutritionForm({
 
         <div className="grid grid-cols-2 gap-4">
           <FormField
-            label="Tracking preference"
+            label="Meal-logging detail"
             htmlFor="trackingPreference"
             error={errors.trackingPreference?.message}
+            hint="How much detail you want to enter when logging a meal later"
           >
             <SelectInput
               id="trackingPreference"
               {...register("trackingPreference", { setValueAs: optionalStringValue })}
             >
               <option value="">—</option>
-              <option value="detailed">Detailed</option>
-              <option value="simple">Simple</option>
-              <option value="none">None</option>
+              <option value="detailed">Detailed — full calories, protein, carbs, fat, fiber</option>
+              <option value="simple">Simple — quick estimate only</option>
+              <option value="none">None — skip nutrition logging</option>
             </SelectInput>
           </FormField>
           <FormField label="Protein target (g), if known" htmlFor="proteinTargetGrams">

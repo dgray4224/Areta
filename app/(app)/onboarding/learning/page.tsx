@@ -1,18 +1,26 @@
+import { redirect } from "next/navigation";
 import { requireUser } from "@/platform/auth/session";
 import { getOnboardingResponses } from "@/domains/onboarding/store";
-import { ONBOARDING_STEPS, TOTAL_ONBOARDING_SCREENS } from "@/domains/onboarding/types";
+import { effectiveSteps, stepPosition } from "@/domains/onboarding/transform";
 import { LearningForm } from "./LearningForm";
 
 export default async function LearningStepPage() {
   const user = await requireUser();
   const responses = await getOnboardingResponses(user.id);
 
+  if (!effectiveSteps(responses.goals).includes("learning")) {
+    redirect("/onboarding");
+  }
+
+  const { stepIndex, totalSteps, backHref } = stepPosition("learning", responses.goals);
+
   return (
     <LearningForm
       userId={user.id}
       defaultValues={responses.learning ?? {}}
-      stepIndex={ONBOARDING_STEPS.indexOf("learning") + 1}
-      totalSteps={TOTAL_ONBOARDING_SCREENS}
+      stepIndex={stepIndex}
+      totalSteps={totalSteps}
+      backHref={backHref}
     />
   );
 }

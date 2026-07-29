@@ -14,11 +14,13 @@ export function RecoveryForm({
   defaultValues,
   stepIndex,
   totalSteps,
+  backHref,
 }: {
   userId: string;
   defaultValues: RecoveryInput;
   stepIndex: number;
   totalSteps: number;
+  backHref?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -41,7 +43,7 @@ export function RecoveryForm({
         setServerError(result.error);
         return;
       }
-      router.push("/onboarding/learning");
+      router.push("/onboarding");
     });
   };
 
@@ -53,7 +55,7 @@ export function RecoveryForm({
         setServerError(result.error);
         return;
       }
-      router.push("/onboarding/learning");
+      router.push("/onboarding");
     });
   };
 
@@ -63,7 +65,7 @@ export function RecoveryForm({
       description="If you're managing an injury or surgery recovery, LifeOS can organize your clinician's instructions — it will never invent medical guidance."
       currentStep={stepIndex}
       totalSteps={totalSteps}
-      backHref="/onboarding/nutrition"
+      backHref={backHref}
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <FormField label="Surgery or injury date" htmlFor="injuryOrSurgeryDate">

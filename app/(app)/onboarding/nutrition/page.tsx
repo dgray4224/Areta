@@ -1,18 +1,26 @@
+import { redirect } from "next/navigation";
 import { requireUser } from "@/platform/auth/session";
 import { getOnboardingResponses } from "@/domains/onboarding/store";
-import { ONBOARDING_STEPS, TOTAL_ONBOARDING_SCREENS } from "@/domains/onboarding/types";
+import { effectiveSteps, stepPosition } from "@/domains/onboarding/transform";
 import { NutritionForm } from "./NutritionForm";
 
 export default async function NutritionStepPage() {
   const user = await requireUser();
   const responses = await getOnboardingResponses(user.id);
 
+  if (!effectiveSteps(responses.goals).includes("nutrition")) {
+    redirect("/onboarding");
+  }
+
+  const { stepIndex, totalSteps, backHref } = stepPosition("nutrition", responses.goals);
+
   return (
     <NutritionForm
       userId={user.id}
       defaultValues={responses.nutrition ?? {}}
-      stepIndex={ONBOARDING_STEPS.indexOf("nutrition") + 1}
-      totalSteps={TOTAL_ONBOARDING_SCREENS}
+      stepIndex={stepIndex}
+      totalSteps={totalSteps}
+      backHref={backHref}
     />
   );
 }

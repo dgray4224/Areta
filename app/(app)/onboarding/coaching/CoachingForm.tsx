@@ -19,11 +19,13 @@ export function CoachingForm({
   defaultValues,
   stepIndex,
   totalSteps,
+  backHref,
 }: {
   userId: string;
   defaultValues: Partial<CoachingInput>;
   stepIndex: number;
   totalSteps: number;
+  backHref?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -55,7 +57,7 @@ export function CoachingForm({
         setServerError(result.error);
         return;
       }
-      router.push("/onboarding/review");
+      router.push("/onboarding");
     });
   };
 
@@ -65,7 +67,7 @@ export function CoachingForm({
       description="This shapes tone and pacing, not the underlying targets."
       currentStep={stepIndex}
       totalSteps={totalSteps}
-      backHref="/onboarding/learning"
+      backHref={backHref}
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <FormField label="Tone" htmlFor="tone" error={errors.tone?.message}>

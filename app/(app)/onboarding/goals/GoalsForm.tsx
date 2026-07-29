@@ -9,6 +9,7 @@ import { DOMAIN_KEYS, DOMAIN_LABELS } from "@/domains/goals/schema";
 import { saveGoalsStep } from "@/domains/goals/service";
 import { StepShell } from "@/platform/ui/StepShell";
 import { FormField, TextInput, SelectInput, TextArea } from "@/platform/ui/FormField";
+import { chipBase, chipSelected, chipUnselected } from "@/platform/ui/TagPicker";
 
 const EMPTY_GOAL: GoalsStepInput["goals"][number] = {
   domainKey: "general",
@@ -50,6 +51,15 @@ export function GoalsForm({
 
   const { fields, append, remove } = useFieldArray({ control, name: "goals" });
 
+  const toggleDomain = (key: (typeof DOMAIN_KEYS)[number]) => {
+    const existingIndex = fields.findIndex((f) => f.domainKey === key);
+    if (existingIndex >= 0) {
+      remove(existingIndex);
+    } else {
+      append({ ...EMPTY_GOAL, domainKey: key });
+    }
+  };
+
   const onSubmit = (values: GoalsStepInput) => {
     setServerError(null);
     startTransition(async () => {
@@ -58,7 +68,7 @@ export function GoalsForm({
         setServerError(result.error);
         return;
       }
-      router.push("/onboarding/nutrition");
+      router.push("/onboarding");
     });
   };
 
@@ -71,6 +81,33 @@ export function GoalsForm({
       backHref="/onboarding/identity"
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
+        <div>
+          <p className="text-sm font-medium">What areas do you want to work on?</p>
+          <p className="mt-1 text-xs text-neutral-500">
+            Pick any that apply — LifeOS only asks follow-up questions for the areas you choose.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {DOMAIN_KEYS.map((key) => {
+              const isSelected = fields.some((f) => f.domainKey === key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => toggleDomain(key)}
+                  className={`${chipBase} ${isSelected ? chipSelected : chipUnselected}`}
+                >
+                  {DOMAIN_LABELS[key]}
+                </button>
+              );
+            })}
+          </div>
+          {fields.length === 0 ? (
+            <p className="mt-3 text-sm text-neutral-500">
+              Pick at least one area above to get started.
+            </p>
+          ) : null}
+        </div>
+
         {fields.map((field, index) => (
           <div
             key={field.id}

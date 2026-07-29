@@ -6,6 +6,6 @@ import { firstIncompleteStep } from "@/domains/onboarding/transform";
 export default async function OnboardingIndexPage() {
   const user = await requireUser();
   const responses = await getOnboardingResponses(user.id);
-  const nextStep = firstIncompleteStep(responses.completedSteps);
+  const nextStep = firstIncompleteStep(responses);
   redirect(nextStep ? `/onboarding/${nextStep}` : "/onboarding/review");
 }

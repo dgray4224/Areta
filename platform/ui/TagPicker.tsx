@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 
-const chipBase =
+export const chipBase =
   "rounded-full border px-3 py-1 text-xs transition-colors";
-const chipSelected =
+export const chipSelected =
   "border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900";
-const chipUnselected =
+export const chipUnselected =
   "border-neutral-300 bg-transparent text-neutral-600 hover:border-neutral-400 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-neutral-600";
 
 const fieldClass =

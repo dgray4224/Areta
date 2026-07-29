@@ -11,7 +11,7 @@ export async function getOnboardingReview(
   userId: string
 ): Promise<{ responses: OnboardingResponses; output: OnboardingOutput | null }> {
   const responses = await getOnboardingResponses(userId);
-  const allStepsDone = firstIncompleteStep(responses.completedSteps) === null;
+  const allStepsDone = firstIncompleteStep(responses) === null;
   const output = allStepsDone ? transformOnboarding(responses) : null;
   return { responses, output };
 }

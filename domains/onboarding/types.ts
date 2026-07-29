@@ -15,22 +15,6 @@ export type OnboardingStepKey =
   | "learning"
   | "coaching";
 
-/** Order drives the resumable-step redirect and the progress bar.
- * Recovery is skippable (CLAUDE.md Phase 1 "optional module") but still
- * occupies a slot in the sequence. */
-export const ONBOARDING_STEPS: OnboardingStepKey[] = [
-  "identity",
-  "goals",
-  "nutrition",
-  "recovery",
-  "learning",
-  "coaching",
-];
-
-/** Step count + 1 for the final review/confirm screen, used to size the
- * progress bar consistently across all onboarding pages. */
-export const TOTAL_ONBOARDING_SCREENS = ONBOARDING_STEPS.length + 1;
-
 export type OnboardingResponses = {
   userId: string;
   identity: IdentityInput | null;
