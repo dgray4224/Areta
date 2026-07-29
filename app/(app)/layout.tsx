@@ -25,11 +25,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </Link>
           </nav>
         </div>
-        <form action={signOut}>
-          <button type="submit" className="text-sm text-neutral-500 hover:underline">
-            Sign out
-          </button>
-        </form>
+        <div className="flex items-center gap-3 text-sm text-neutral-500">
+          <Link href="/settings" className="hover:underline">
+            Settings
+          </Link>
+          <form action={signOut}>
+            <button type="submit" className="hover:underline">
+              Sign out
+            </button>
+          </form>
+        </div>
       </header>
       <main>{children}</main>
     </div>

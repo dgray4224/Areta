@@ -46,14 +46,19 @@ const DARK = {
 
 export type ChartColors = typeof LIGHT;
 
+/** Tracks the `.dark` class on <html> (platform/theme/theme.ts owns
+ * setting it — from a manual Appearance choice or live OS-preference
+ * changes via ThemeSync) rather than matchMedia directly, so charts follow
+ * the same resolved theme as the rest of the UI instead of always
+ * reflecting raw OS preference regardless of an explicit user choice. */
 function subscribe(callback: () => void) {
-  const mq = window.matchMedia("(prefers-color-scheme: dark)");
-  mq.addEventListener("change", callback);
-  return () => mq.removeEventListener("change", callback);
+  const observer = new MutationObserver(callback);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  return () => observer.disconnect();
 }
 
 function getSnapshot() {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return document.documentElement.classList.contains("dark");
 }
 
 function getServerSnapshot() {
@@ -61,7 +66,7 @@ function getServerSnapshot() {
 }
 
 /** useSyncExternalStore (not effect+setState) is the correct way to
- * subscribe to an external browser API like matchMedia — SSR-safe via
+ * subscribe to external mutable state like a DOM class — SSR-safe via
  * getServerSnapshot, and avoids the effect+setState cascading-render
  * anti-pattern. */
 export function useChartColors(): ChartColors {

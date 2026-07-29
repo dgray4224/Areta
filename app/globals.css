@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Manual theme control (Settings -> Appearance): dark: utilities respond
+ * to a `.dark` class on <html> instead of prefers-color-scheme directly.
+ * "System" mode still tracks OS preference — platform/theme/theme.ts
+ * resolves it into this same class, both on first load (blocking script,
+ * no flash) and live (ThemeSync's matchMedia listener). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -38,31 +45,29 @@
   --chart-critical: #d03b3b;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 
-    --chart-text-primary: #fafafa; /* neutral-50 */
-    --chart-text-secondary: #a3a3a3; /* neutral-400 */
-    --chart-text-muted: #737373; /* neutral-500 */
-    --chart-gridline: #262626; /* neutral-800 */
-    --chart-baseline: #404040; /* neutral-700 */
+  --chart-text-primary: #fafafa; /* neutral-50 */
+  --chart-text-secondary: #a3a3a3; /* neutral-400 */
+  --chart-text-muted: #737373; /* neutral-500 */
+  --chart-gridline: #262626; /* neutral-800 */
+  --chart-baseline: #404040; /* neutral-700 */
 
-    --chart-series-1: #3987e5;
-    --chart-series-2: #d95926;
-    --chart-series-3: #199e70;
-    --chart-series-4: #c98500;
-    --chart-series-5: #d55181;
+  --chart-series-1: #3987e5;
+  --chart-series-2: #d95926;
+  --chart-series-3: #199e70;
+  --chart-series-4: #c98500;
+  --chart-series-5: #d55181;
 
-    --chart-sequential: #3987e5;
-    --chart-sequential-light: #184f95;
+  --chart-sequential: #3987e5;
+  --chart-sequential-light: #184f95;
 
-    --chart-good: #0ca30c;
-    --chart-warning: #fab219;
-    --chart-serious: #ec835a;
-    --chart-critical: #e66767;
-  }
+  --chart-good: #0ca30c;
+  --chart-warning: #fab219;
+  --chart-serious: #ec835a;
+  --chart-critical: #e66767;
 }
 
 body {
