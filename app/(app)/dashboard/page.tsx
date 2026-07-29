@@ -3,8 +3,14 @@ import Link from "next/link";
 import { requireUser } from "@/platform/auth/session";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { getDashboardData } from "./data";
+import { getDashboardTrends } from "./trends-data";
 import { TaskItem } from "./TaskItem";
 import { AddTaskForm } from "./AddTaskForm";
+import { WeightTrendChart } from "@/platform/ui/charts/WeightTrendChart";
+import { SleepTrendChart } from "@/platform/ui/charts/SleepTrendChart";
+import { NutritionAdherenceChart } from "@/platform/ui/charts/NutritionAdherenceChart";
+import { TaskCompletionChart } from "@/platform/ui/charts/TaskCompletionChart";
+import { RecoveryTrendChart } from "@/platform/ui/charts/RecoveryTrendChart";
 
 const QUICK_LOG_LINKS = [
   { href: "/log/weight", label: "Weight" },
@@ -21,6 +27,8 @@ export default async function DashboardPage() {
   if (!data.profile.onboardingCompletedAt) {
     redirect("/onboarding");
   }
+
+  const trends = await getDashboardTrends(user.id);
 
   const requiredTasks = data.todayTasks.filter((t) => t.isRequired);
   const optionalTasks = data.todayTasks.filter((t) => !t.isRequired);
@@ -75,6 +83,42 @@ export default async function DashboardPage() {
             }}
           />
         </div>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-sm font-medium text-neutral-500">Trends</h2>
+        <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+          <p className="mb-1 text-sm font-medium">
+            Weight <span className="text-neutral-400">· last 30 days</span>
+          </p>
+          <WeightTrendChart data={trends.weight.data} unit={trends.weight.unit} />
+        </div>
+        <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+          <p className="mb-1 text-sm font-medium">
+            Sleep <span className="text-neutral-400">· last 30 days</span>
+          </p>
+          <SleepTrendChart data={trends.sleep} />
+        </div>
+        <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+          <p className="mb-1 text-sm font-medium">
+            Nutrition <span className="text-neutral-400">· last 30 days</span>
+          </p>
+          <NutritionAdherenceChart data={trends.nutrition.data} target={trends.nutrition.target} />
+        </div>
+        <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+          <p className="mb-1 text-sm font-medium">
+            Task completion <span className="text-neutral-400">· last 30 days</span>
+          </p>
+          <TaskCompletionChart data={trends.tasks} />
+        </div>
+        {trends.recovery.length > 0 ? (
+          <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+            <p className="mb-1 text-sm font-medium">
+              Recovery <span className="text-neutral-400">· last 30 days</span>
+            </p>
+            <RecoveryTrendChart data={trends.recovery} />
+          </div>
+        ) : null}
       </section>
 
       <section className="space-y-3">

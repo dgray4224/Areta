@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/platform/auth/session";
 import { ensureProfile } from "@/domains/identity/service";
 import { signOut } from "@/platform/auth/actions";
+import { Logo } from "@/platform/ui/Logo";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -11,7 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
       <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
         <div className="flex items-center gap-4">
-          <span className="font-semibold">LifeOS</span>
+          <Logo />
           <nav className="flex items-center gap-3 text-sm text-neutral-500">
             <Link href="/dashboard" className="hover:underline">
               Today

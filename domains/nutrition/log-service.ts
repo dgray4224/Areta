@@ -45,3 +45,39 @@ export async function getNutritionLogsForDate(userId: string, date: string) {
   }
   return data ?? [];
 }
+
+export type DailyNutritionTotal = { date: string; calories: number; protein: number };
+
+/** Sums same-day entries before returning — a day can have several food
+ * log rows (one per meal), so this is daily totals, not raw rows. */
+export async function getNutritionDailyTotals(
+  userId: string,
+  days = 30
+): Promise<DailyNutritionTotal[]> {
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - (days - 1));
+  const sinceIso = since.toISOString().slice(0, 10);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("nutrition_logs")
+    .select("date, calories, protein")
+    .eq("user_id", userId)
+    .gte("date", sinceIso);
+
+  if (error) {
+    throw new Error(`Failed to load nutrition totals: ${error.message}`);
+  }
+
+  const byDate = new Map<string, { calories: number; protein: number }>();
+  for (const row of data ?? []) {
+    const existing = byDate.get(row.date) ?? { calories: 0, protein: 0 };
+    existing.calories += row.calories ?? 0;
+    existing.protein += row.protein ?? 0;
+    byDate.set(row.date, existing);
+  }
+
+  return Array.from(byDate.entries())
+    .map(([date, totals]) => ({ date, ...totals }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}

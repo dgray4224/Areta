@@ -12,10 +12,56 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Chart tokens (dataviz skill palette). Surfaces/ink map onto the app's
+   existing Tailwind neutral scale (the "brand" already in use throughout
+   the UI); the categorical/sequential/status hues are the validated
+   values from the skill's reference palette, unmodified. */
+:root {
+  --chart-text-primary: #171717; /* neutral-900 */
+  --chart-text-secondary: #737373; /* neutral-500 */
+  --chart-text-muted: #a3a3a3; /* neutral-400 */
+  --chart-gridline: #e5e5e5; /* neutral-200 */
+  --chart-baseline: #d4d4d4; /* neutral-300 */
+
+  --chart-series-1: #2a78d6; /* blue */
+  --chart-series-2: #eb6834; /* orange */
+  --chart-series-3: #1baf7a; /* aqua */
+  --chart-series-4: #eda100; /* yellow */
+  --chart-series-5: #e87ba4; /* magenta */
+
+  --chart-sequential: #2a78d6;
+  --chart-sequential-light: #b7d3f6;
+
+  --chart-good: #0ca30c;
+  --chart-warning: #fab219;
+  --chart-serious: #ec835a;
+  --chart-critical: #d03b3b;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --chart-text-primary: #fafafa; /* neutral-50 */
+    --chart-text-secondary: #a3a3a3; /* neutral-400 */
+    --chart-text-muted: #737373; /* neutral-500 */
+    --chart-gridline: #262626; /* neutral-800 */
+    --chart-baseline: #404040; /* neutral-700 */
+
+    --chart-series-1: #3987e5;
+    --chart-series-2: #d95926;
+    --chart-series-3: #199e70;
+    --chart-series-4: #c98500;
+    --chart-series-5: #d55181;
+
+    --chart-sequential: #3987e5;
+    --chart-sequential-light: #184f95;
+
+    --chart-good: #0ca30c;
+    --chart-warning: #fab219;
+    --chart-serious: #ec835a;
+    --chart-critical: #e66767;
   }
 }
 

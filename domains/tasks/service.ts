@@ -99,3 +99,43 @@ export async function getTasksForDate(userId: string, date: string) {
   }
   return data ?? [];
 }
+
+export type DailyTaskCompletion = { date: string; completionPercent: number; total: number };
+
+export async function getTaskCompletionByDay(
+  userId: string,
+  days = 30
+): Promise<DailyTaskCompletion[]> {
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - (days - 1));
+  const sinceIso = since.toISOString().slice(0, 10);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("daily_actions")
+    .select("date, status")
+    .eq("user_id", userId)
+    .gte("date", sinceIso);
+
+  if (error) {
+    throw new Error(`Failed to load task completion: ${error.message}`);
+  }
+
+  const byDate = new Map<string, { completed: number; total: number }>();
+  for (const row of data ?? []) {
+    const existing = byDate.get(row.date) ?? { completed: 0, total: 0 };
+    existing.total += 1;
+    if (row.status === "completed" || row.status === "partially_completed") {
+      existing.completed += 1;
+    }
+    byDate.set(row.date, existing);
+  }
+
+  return Array.from(byDate.entries())
+    .map(([date, { completed, total }]) => ({
+      date,
+      total,
+      completionPercent: total > 0 ? Math.round((completed / total) * 100) : 0,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
