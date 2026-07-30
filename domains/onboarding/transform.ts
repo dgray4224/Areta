@@ -10,11 +10,19 @@ import type { DomainKey, Goal } from "@/domains/goals/schema";
 
 /** The onboarding sequence is per-user: Nutrition/Recovery/Learning only
  * appear when the user actually picked that area as a goal category, so a
- * user with e.g. only a Family goal never sees the Nutrition questionnaire. */
+ * user with e.g. only a Family goal never sees the Nutrition questionnaire.
+ * V1 is health-only (see domains/goals/schema.ts V1_DOMAIN_KEYS) — picking
+ * "health" unconditionally unlocks Nutrition/Exercise/Sleep. The individual
+ * domain checks stay alongside `wantsHealth` (not replaced by it) so a
+ * future phase reintroducing fine-grained pillar chips needs no changes
+ * here. */
 export function effectiveSteps(goals: Goal[]): OnboardingStepKey[] {
   const domains = new Set(goals.map((g) => g.domainKey));
+  const wantsHealth = domains.has("health");
   const steps: OnboardingStepKey[] = ["identity", "goals"];
-  if (domains.has("nutrition")) steps.push("nutrition");
+  if (wantsHealth || domains.has("nutrition")) steps.push("nutrition");
+  if (wantsHealth || domains.has("exercise")) steps.push("exercise");
+  if (wantsHealth || domains.has("sleep")) steps.push("sleep");
   if (domains.has("recovery")) steps.push("recovery");
   if (domains.has("learning")) steps.push("learning");
   steps.push("coaching");
@@ -102,7 +110,18 @@ function deriveActiveDomains(
 ): DomainKey[] {
   const domains = new Set<DomainKey>();
   for (const goal of goals) {
-    domains.add(goal.domainKey);
+    if (goal.domainKey === "health") {
+      // V1's single bundled "Health" goal fans out into its constituent
+      // pillars here so nutrition/exercise's parameter engines (which look
+      // up a `domains` row by specific key, e.g. "nutrition") keep working
+      // unchanged — see write-output.ts for the corresponding goal->domain
+      // link resolution.
+      domains.add("nutrition");
+      domains.add("exercise");
+      domains.add("sleep");
+    } else {
+      domains.add(goal.domainKey);
+    }
   }
   if (recovery && !recovery.skipped) {
     domains.add("recovery");
@@ -119,6 +138,9 @@ function deriveDailyCheckinFields(activeDomains: DomainKey[]): string[] {
   if (activeDomains.includes("nutrition")) {
     fields.add("weight");
     fields.add("nutrition");
+  }
+  if (activeDomains.includes("exercise")) {
+    fields.add("exercise");
   }
   if (activeDomains.includes("recovery")) {
     fields.add("recovery");

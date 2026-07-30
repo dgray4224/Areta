@@ -2,14 +2,18 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { approveNutritionParameters, type StoredParameter } from "@/domains/parameters/service";
+import { approveGeneratedParameters, type StoredParameter } from "@/domains/parameters/service";
 
 export function ParametersForm({
   userId,
+  domain,
   parameters,
+  redirectTo,
 }: {
   userId: string;
+  domain: string;
   parameters: StoredParameter[];
+  redirectTo: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -29,12 +33,12 @@ export function ParametersForm({
         const raw = values[p.name];
         edits[p.name] = typeof p.value === "number" ? Number(raw) : raw;
       }
-      const result = await approveNutritionParameters(userId, edits);
+      const result = await approveGeneratedParameters(userId, domain, edits);
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      router.push("/plan");
+      router.push(redirectTo);
     });
   };
 

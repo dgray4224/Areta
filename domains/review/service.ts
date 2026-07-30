@@ -7,7 +7,7 @@ import { weeklyReviewAnswersSchema, type WeeklyReviewAnswers } from "@/domains/r
 import { weeklyBriefSchema, type WeeklyBrief } from "@/domains/review/brief-schema";
 import { buildWeeklyReviewContext } from "@/domains/review/context-builder";
 import { getAIProvider } from "@/platform/ai/get-provider";
-import { getApprovedNutritionValue } from "@/domains/parameters/service";
+import { getApprovedParameterValue } from "@/domains/parameters/service";
 import type { TaskStatus } from "@/domains/tasks/schema";
 import { reviewWeekStart, todayIso } from "@/domains/review/dates";
 
@@ -87,8 +87,8 @@ async function fetchMetrics(
       .eq("user_id", userId)
       .gte("date", weekStart)
       .lte("date", weekEnd),
-    getApprovedNutritionValue(userId, "calorie_target"),
-    getApprovedNutritionValue(userId, "protein_target_g"),
+    getApprovedParameterValue(userId, "nutrition", "calorie_target"),
+    getApprovedParameterValue(userId, "nutrition", "protein_target_g"),
   ]);
 
   const weightLogs = (weightLogsRaw ?? []).map((w) => ({
@@ -217,9 +217,9 @@ export async function generateWeeklyBrief(userId: string): Promise<ActionResult>
         .order("week_start", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      getApprovedNutritionValue(userId, "expected_weekly_rate_lb"),
-      getApprovedNutritionValue(userId, "calorie_target"),
-      getApprovedNutritionValue(userId, "protein_target_g"),
+      getApprovedParameterValue(userId, "nutrition", "expected_weekly_rate_lb"),
+      getApprovedParameterValue(userId, "nutrition", "calorie_target"),
+      getApprovedParameterValue(userId, "nutrition", "protein_target_g"),
     ]);
 
   const previousBrief = previousReview?.brief as WeeklyBrief | null;

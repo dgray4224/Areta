@@ -3,23 +3,36 @@
 import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
 import { calculateNutritionParameters } from "@/domains/parameters/nutrition-calc";
+import { calculateExerciseParameters } from "@/domains/parameters/exercise-calc";
 import type { NutritionInput } from "@/domains/nutrition/schema";
+import type { ExerciseInput } from "@/domains/exercise/schema";
 import type { GeneratedParameter } from "@/domains/parameters/types";
 
-/** Display order for the parameters engine emits, since Supabase doesn't
- * preserve insertion order across separate rows. */
-const NUTRITION_PARAMETER_ORDER = [
-  "maintenance_calories",
-  "calorie_target",
-  "protein_target_g",
-  "fat_minimum_g",
-  "carbohydrate_range_g",
-  "fiber_target_g",
-  "hydration_target_oz",
-  "expected_weekly_rate_lb",
-  "weigh_in_cadence",
-  "adjustment_threshold",
-];
+/** Display order per domain, since Supabase doesn't preserve insertion
+ * order across separate rows. Domains not listed here fall back to
+ * whatever order the DB returns. */
+const PARAMETER_ORDER: Record<string, string[]> = {
+  nutrition: [
+    "maintenance_calories",
+    "calorie_target",
+    "protein_target_g",
+    "fat_minimum_g",
+    "carbohydrate_range_g",
+    "fiber_target_g",
+    "hydration_target_oz",
+    "expected_weekly_rate_lb",
+    "weigh_in_cadence",
+    "adjustment_threshold",
+  ],
+  exercise: [
+    "sessions_per_week",
+    "phase_structure",
+    "phase_length_weeks",
+    "weekly_progression_cap_pct",
+    "deload_frequency_weeks",
+    "primary_focus",
+  ],
+};
 
 export type StoredParameter = GeneratedParameter & {
   dbId: string;
@@ -38,14 +51,49 @@ function convertLoggedWeight(weight: number, loggedUnit: "lb" | "kg", targetUnit
   return wantsLb ? weight * LB_PER_KG : weight / LB_PER_KG;
 }
 
+/** Shared write path for every domain's generated parameters — writing
+ * always resets approval (CLAUDE.md rule 24), even on a recalculation. */
+async function writeGeneratedParameters(
+  userId: string,
+  domain: string,
+  parameters: GeneratedParameter[]
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("generated_parameters").upsert(
+    parameters.map((param) => ({
+      user_id: userId,
+      domain,
+      name: param.id,
+      value: param.value,
+      unit: param.unit ?? null,
+      range_min: param.range?.min ?? null,
+      range_max: param.range?.max ?? null,
+      source: param.source,
+      assumptions: param.assumptions,
+      rationale: param.rationale,
+      confidence: param.confidence,
+      safety_bounds: param.safetyBounds ?? [],
+      review_date: param.reviewDate ?? null,
+      requires_user_approval: param.requiresUserApproval,
+      requires_professional_approval: param.requiresProfessionalApproval ?? false,
+      approved: false,
+      approved_at: null,
+    })),
+    { onConflict: "user_id,domain,name" }
+  );
+  if (error) {
+    return { ok: false, error: `Failed to save ${domain} parameters: ${error.message}` };
+  }
+  return { ok: true, data: undefined };
+}
+
 /**
  * Recomputes nutrition parameters from the user's most recent logged
  * weight (falling back to the onboarding-entered value if nothing has been
  * logged yet) plus onboarding answers and profile, and stores them as
- * pending (unapproved) proposals — regenerating always resets approval per
- * CLAUDE.md rule 24, even on a recalculation. Preferring the logged weight
- * over the static onboarding value is what makes this a *recalculation
- * from observed outcomes* (rule 23) rather than a one-time estimate.
+ * pending (unapproved) proposals. Preferring the logged weight over the
+ * static onboarding value is what makes this a *recalculation from
+ * observed outcomes* (rule 23) rather than a one-time estimate.
  */
 export async function generateNutritionParameters(userId: string): Promise<ActionResult> {
   const supabase = await createClient();
@@ -103,45 +151,50 @@ export async function generateNutritionParameters(userId: string): Promise<Actio
     };
   }
 
-  const { error } = await supabase.from("generated_parameters").upsert(
-    parameters.map((param) => ({
-      user_id: userId,
-      domain: param.domain,
-      name: param.id,
-      value: param.value,
-      unit: param.unit ?? null,
-      range_min: param.range?.min ?? null,
-      range_max: param.range?.max ?? null,
-      source: param.source,
-      assumptions: param.assumptions,
-      rationale: param.rationale,
-      confidence: param.confidence,
-      safety_bounds: param.safetyBounds ?? [],
-      review_date: param.reviewDate ?? null,
-      requires_user_approval: param.requiresUserApproval,
-      requires_professional_approval: param.requiresProfessionalApproval ?? false,
-      approved: false,
-      approved_at: null,
-    })),
-    { onConflict: "user_id,domain,name" }
-  );
-  if (error) {
-    return { ok: false, error: `Failed to save nutrition parameters: ${error.message}` };
-  }
-
-  return { ok: true, data: undefined };
+  return writeGeneratedParameters(userId, "nutrition", parameters);
 }
 
-export async function getNutritionParameters(userId: string): Promise<StoredParameter[]> {
+/** Recomputes exercise parameters from the Exercise onboarding step's
+ * answers. Unlike nutrition, there's no logged-data override yet — phase
+ * length/archetype are direct stated inputs, not derived from a trend. */
+export async function generateExerciseParameters(userId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data: responses } = await supabase
+    .from("onboarding_responses")
+    .select("exercise")
+    .eq("user_id", userId)
+    .single();
+
+  const exercise = (responses?.exercise ?? {}) as ExerciseInput;
+
+  const { parameters, missingInputs } = calculateExerciseParameters({
+    archetype: exercise.archetype,
+    experienceLevel: exercise.experienceLevel,
+    trainingPhaseLengthWeeks: exercise.trainingPhaseLengthWeeks,
+    daysPerWeekAvailable: exercise.daysPerWeekAvailable,
+    sessionLengthMinutesAvailable: exercise.sessionLengthMinutesAvailable,
+  });
+
+  if (parameters.length === 0) {
+    return {
+      ok: false,
+      error: `Add ${missingInputs.join(" and ")} in onboarding before LifeOS can build your training parameters.`,
+    };
+  }
+
+  return writeGeneratedParameters(userId, "exercise", parameters);
+}
+
+export async function getGeneratedParameters(userId: string, domain: string): Promise<StoredParameter[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("generated_parameters")
     .select("*")
     .eq("user_id", userId)
-    .eq("domain", "nutrition");
+    .eq("domain", domain);
 
   if (error) {
-    throw new Error(`Failed to load nutrition parameters: ${error.message}`);
+    throw new Error(`Failed to load ${domain} parameters: ${error.message}`);
   }
 
   const rows = (data ?? []).map(
@@ -169,16 +222,16 @@ export async function getNutritionParameters(userId: string): Promise<StoredPara
     })
   );
 
-  return rows.sort(
-    (a, b) => NUTRITION_PARAMETER_ORDER.indexOf(a.id) - NUTRITION_PARAMETER_ORDER.indexOf(b.id)
-  );
+  const order = PARAMETER_ORDER[domain] ?? [];
+  return rows.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 }
 
-/** Approves the current set of nutrition parameters, applying any
+/** Approves the current set of a domain's parameters, applying any
  * user-edited values first (CLAUDE.md: "The user may edit or reject any
  * generated parameter"). `edits` maps parameter name -> new raw value. */
-export async function approveNutritionParameters(
+export async function approveGeneratedParameters(
   userId: string,
+  domain: string,
   edits: Record<string, string | number>
 ): Promise<ActionResult> {
   const supabase = await createClient();
@@ -190,30 +243,29 @@ export async function approveNutritionParameters(
         .from("generated_parameters")
         .update({ value, approved: true, approved_at: approvedAt })
         .eq("user_id", userId)
-        .eq("domain", "nutrition")
+        .eq("domain", domain)
         .eq("name", name)
     )
   );
 
   const failed = results.find((r) => r.error);
   if (failed?.error) {
-    return { ok: false, error: `Failed to approve nutrition parameters: ${failed.error.message}` };
+    return { ok: false, error: `Failed to approve ${domain} parameters: ${failed.error.message}` };
   }
 
   return { ok: true, data: undefined };
 }
 
-/** Approves all currently-generated nutrition parameters as-is, without
+/** Approves all currently-generated parameters for a domain as-is, without
  * per-field edits — used by weekly regeneration, where the user approves
- * the week's plan as a bundle rather than re-reviewing every number (the
- * brief they approve already surfaces the proposed changes). */
-export async function approveAllNutritionParameters(userId: string): Promise<ActionResult> {
+ * the week's plan as a bundle rather than re-reviewing every number. */
+export async function approveAllGeneratedParameters(userId: string, domain: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { error } = await supabase
     .from("generated_parameters")
     .update({ approved: true, approved_at: new Date().toISOString() })
     .eq("user_id", userId)
-    .eq("domain", "nutrition");
+    .eq("domain", domain);
 
   if (error) {
     return { ok: false, error: error.message };
@@ -221,8 +273,9 @@ export async function approveAllNutritionParameters(userId: string): Promise<Act
   return { ok: true, data: undefined };
 }
 
-export async function getApprovedNutritionValue(
+export async function getApprovedParameterValue(
   userId: string,
+  domain: string,
   name: string
 ): Promise<number | null> {
   const supabase = await createClient();
@@ -230,7 +283,7 @@ export async function getApprovedNutritionValue(
     .from("generated_parameters")
     .select("value, approved")
     .eq("user_id", userId)
-    .eq("domain", "nutrition")
+    .eq("domain", domain)
     .eq("name", name)
     .eq("approved", true)
     .maybeSingle();

@@ -2,7 +2,7 @@
 
 import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
-import { getApprovedNutritionValue } from "@/domains/parameters/service";
+import { getApprovedParameterValue } from "@/domains/parameters/service";
 import { getAllRecipes } from "@/domains/recipes/service";
 import { generateMealPlan, type RecipeForPlanning } from "@/domains/mealplan/generate";
 import type { NutritionInput } from "@/domains/nutrition/schema";
@@ -28,8 +28,8 @@ export async function generateAndSaveMealPlan(
   options?: { extraExcludeKeywords?: string[] }
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const [calorieTarget, proteinTarget] = await Promise.all([
-    getApprovedNutritionValue(userId, "calorie_target"),
-    getApprovedNutritionValue(userId, "protein_target_g"),
+    getApprovedParameterValue(userId, "nutrition", "calorie_target"),
+    getApprovedParameterValue(userId, "nutrition", "protein_target_g"),
   ]);
 
   if (calorieTarget === null || proteinTarget === null) {

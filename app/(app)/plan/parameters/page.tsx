@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { requireUser } from "@/platform/auth/session";
 import { EmptyState } from "@/platform/ui/EmptyState";
-import { getNutritionParameters } from "@/domains/parameters/service";
+import { getGeneratedParameters, generateNutritionParameters } from "@/domains/parameters/service";
 import { GenerateParametersButton } from "./GenerateParametersButton";
 import { ParametersForm } from "./ParametersForm";
 
 export default async function ParametersPage() {
   const user = await requireUser();
-  const parameters = await getNutritionParameters(user.id);
+  const parameters = await getGeneratedParameters(user.id, "nutrition");
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
@@ -26,12 +26,23 @@ export default async function ParametersPage() {
         <EmptyState
           title="No targets calculated yet"
           description="LifeOS derives calorie and protein targets from your height, weight, age, and activity level."
-          action={<GenerateParametersButton userId={user.id} />}
+          action={
+            <GenerateParametersButton userId={user.id} generateAction={generateNutritionParameters} />
+          }
         />
       ) : (
         <>
-          <GenerateParametersButton userId={user.id} label="Recalculate from latest onboarding answers" />
-          <ParametersForm userId={user.id} parameters={parameters} />
+          <GenerateParametersButton
+            userId={user.id}
+            generateAction={generateNutritionParameters}
+            label="Recalculate from latest onboarding answers"
+          />
+          <ParametersForm
+            userId={user.id}
+            domain="nutrition"
+            parameters={parameters}
+            redirectTo="/plan"
+          />
         </>
       )}
     </div>

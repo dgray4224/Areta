@@ -5,14 +5,14 @@ import { useRouter } from "next/navigation";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { goalsStepSchema, type GoalsStepInput } from "@/domains/goals/schema";
-import { DOMAIN_KEYS, DOMAIN_LABELS } from "@/domains/goals/schema";
+import { V1_DOMAIN_KEYS, DOMAIN_LABELS } from "@/domains/goals/schema";
 import { saveGoalsStep } from "@/domains/goals/service";
 import { StepShell } from "@/platform/ui/StepShell";
 import { FormField, TextInput, SelectInput, TextArea } from "@/platform/ui/FormField";
 import { chipBase, chipSelected, chipUnselected } from "@/platform/ui/TagPicker";
 
 const EMPTY_GOAL: GoalsStepInput["goals"][number] = {
-  domainKey: "general",
+  domainKey: "health",
   outcome: "",
   why: "",
   targetDate: "",
@@ -51,7 +51,7 @@ export function GoalsForm({
 
   const { fields, append, remove } = useFieldArray({ control, name: "goals" });
 
-  const toggleDomain = (key: (typeof DOMAIN_KEYS)[number]) => {
+  const toggleDomain = (key: (typeof V1_DOMAIN_KEYS)[number]) => {
     const existingIndex = fields.findIndex((f) => f.domainKey === key);
     if (existingIndex >= 0) {
       remove(existingIndex);
@@ -87,7 +87,7 @@ export function GoalsForm({
             Pick any that apply — LifeOS only asks follow-up questions for the areas you choose.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {DOMAIN_KEYS.map((key) => {
+            {V1_DOMAIN_KEYS.map((key) => {
               const isSelected = fields.some((f) => f.domainKey === key);
               return (
                 <button
@@ -153,7 +153,7 @@ export function GoalsForm({
                 error={errors.goals?.[index]?.domainKey?.message}
               >
                 <SelectInput id={`goals.${index}.domainKey`} {...register(`goals.${index}.domainKey`)}>
-                  {DOMAIN_KEYS.map((key) => (
+                  {V1_DOMAIN_KEYS.map((key) => (
                     <option key={key} value={key}>
                       {DOMAIN_LABELS[key]}
                     </option>

@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { requireUser } from "@/platform/auth/session";
-import { getNutritionParameters } from "@/domains/parameters/service";
+import { getGeneratedParameters } from "@/domains/parameters/service";
 import { getMealPlanForWeek } from "@/domains/mealplan/service";
 import { getGroceryListForWeek } from "@/domains/grocery/service";
 import { getPrepPlanForWeek } from "@/domains/prep/service";
+import { getWorkoutPlanForWeek } from "@/domains/workoutplan/service";
 
 function StatusBadge({ status }: { status: "not_started" | "pending" | "done" }) {
   const styles = {
@@ -21,11 +22,13 @@ function StatusBadge({ status }: { status: "not_started" | "pending" | "done" })
 
 export default async function PlanPage() {
   const user = await requireUser();
-  const [parameters, mealPlan, groceryItems, prepPlan] = await Promise.all([
-    getNutritionParameters(user.id),
+  const [parameters, mealPlan, groceryItems, prepPlan, exerciseParameters, workoutPlan] = await Promise.all([
+    getGeneratedParameters(user.id, "nutrition"),
     getMealPlanForWeek(user.id),
     getGroceryListForWeek(user.id),
     getPrepPlanForWeek(user.id),
+    getGeneratedParameters(user.id, "exercise"),
+    getWorkoutPlanForWeek(user.id),
   ]);
 
   const parametersStatus =
@@ -42,6 +45,18 @@ export default async function PlanPage() {
         : "pending";
   const groceryStatus = groceryItems.length === 0 ? "not_started" : "done";
   const prepStatus = !prepPlan || prepPlan.steps.length === 0 ? "not_started" : "done";
+  const exerciseParametersStatus =
+    exerciseParameters.length === 0
+      ? "not_started"
+      : exerciseParameters.every((p) => p.approved)
+        ? "done"
+        : "pending";
+  const workoutPlanStatus =
+    !workoutPlan || workoutPlan.items.length === 0
+      ? "not_started"
+      : workoutPlan.status === "active"
+        ? "done"
+        : "pending";
 
   const steps = [
     {
@@ -67,6 +82,18 @@ export default async function PlanPage() {
       title: "4. Sunday prep plan",
       description: "An ordered cooking and portioning workflow for the week's meals.",
       status: prepStatus,
+    },
+    {
+      href: "/plan/exercise-parameters",
+      title: "5. Training parameters",
+      description: "Sessions/week, phase structure, and progression calculated from your Exercise onboarding answers.",
+      status: exerciseParametersStatus,
+    },
+    {
+      href: "/plan/workouts",
+      title: "6. Workout plan",
+      description: "A weekly schedule built from your training parameters, equipment, and the exercise library.",
+      status: workoutPlanStatus,
     },
   ] as const;
 

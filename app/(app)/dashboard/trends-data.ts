@@ -6,7 +6,7 @@ import { getRecentRecoveryLogs } from "@/domains/recovery/log-service";
 import { getNutritionDailyTotals } from "@/domains/nutrition/log-service";
 import { getTaskCompletionByDay } from "@/domains/tasks/service";
 import { computeSevenDayMovingAverage } from "@/domains/weight/trend";
-import { getApprovedNutritionValue } from "@/domains/parameters/service";
+import { getApprovedParameterValue } from "@/domains/parameters/service";
 import type { WeightTrendDatum } from "@/platform/ui/charts/WeightTrendChart";
 import type { SleepTrendDatum } from "@/platform/ui/charts/SleepTrendChart";
 import type { NutritionAdherenceDatum } from "@/platform/ui/charts/NutritionAdherenceChart";
@@ -35,7 +35,7 @@ export async function getDashboardTrends(userId: string): Promise<DashboardTrend
       getRecentRecoveryLogs(userId, TREND_DAYS),
       getNutritionDailyTotals(userId, TREND_DAYS),
       getTaskCompletionByDay(userId, TREND_DAYS),
-      getApprovedNutritionValue(userId, "calorie_target"),
+      getApprovedParameterValue(userId, "nutrition", "calorie_target"),
     ]);
 
   const preferredUnit: "lb" | "kg" = profile?.units === "metric" ? "kg" : "lb";

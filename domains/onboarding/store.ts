@@ -7,6 +7,12 @@ type OnboardingResponsesDbRow = {
   identity: OnboardingResponses["identity"];
   goals: OnboardingResponses["goals"];
   nutrition: OnboardingResponses["nutrition"];
+  exercise: OnboardingResponses["exercise"];
+  /** Column is named `sleep` (not `sleep_goals`) so it matches the
+   * `OnboardingStepKey` literal "sleep" — saveOnboardingStep writes
+   * `[step]: data` directly as the column name, so step key and column
+   * name must match exactly, same as every other step. */
+  sleep: OnboardingResponses["sleepGoals"];
   recovery: OnboardingResponses["recovery"];
   learning: OnboardingResponses["learning"];
   coaching: OnboardingResponses["coaching"];
@@ -20,6 +26,8 @@ function fromRow(row: OnboardingResponsesDbRow | null, userId: string): Onboardi
       identity: null,
       goals: [],
       nutrition: null,
+      exercise: null,
+      sleepGoals: null,
       recovery: null,
       learning: null,
       coaching: null,
@@ -31,6 +39,8 @@ function fromRow(row: OnboardingResponsesDbRow | null, userId: string): Onboardi
     identity: row.identity ?? null,
     goals: row.goals ?? [],
     nutrition: row.nutrition ?? null,
+    exercise: row.exercise ?? null,
+    sleepGoals: row.sleep ?? null,
     recovery: row.recovery ?? null,
     learning: row.learning ?? null,
     coaching: row.coaching ?? null,

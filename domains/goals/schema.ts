@@ -9,6 +9,8 @@ export const DOMAIN_KEYS = [
   "recovery",
   "learning",
   "health",
+  "exercise",
+  "sleep",
   "work",
   "finance",
   "family",
@@ -26,6 +28,8 @@ export const DOMAIN_LABELS: Record<DomainKey, string> = {
   recovery: "Recovery",
   learning: "Learning",
   health: "Health",
+  exercise: "Exercise",
+  sleep: "Sleep",
   work: "Work / Career",
   finance: "Finance",
   family: "Family",
@@ -36,6 +40,14 @@ export const DOMAIN_LABELS: Record<DomainKey, string> = {
   social: "Social / Community",
   general: "General / Other",
 };
+
+/** LifeOS V1 scope is health-only (CLAUDE.md is being narrowed for this
+ * phase) — the Goals step only offers this list, not the full DOMAIN_KEYS.
+ * Picking "Health" unconditionally unlocks the Nutrition/Exercise/Sleep
+ * onboarding steps (see effectiveSteps in domains/onboarding/transform.ts).
+ * Swapping this list is all a future phase needs to reintroduce
+ * fine-grained categories or other life areas — no data model change. */
+export const V1_DOMAIN_KEYS: readonly DomainKey[] = ["health"];
 
 export const goalSchema = z.object({
   domainKey: z.enum(DOMAIN_KEYS),

@@ -76,11 +76,17 @@ export async function writeOnboardingOutput(
 
   const goalIdByOutcome = new Map<string, string>();
   for (const goal of output.rankedGoals) {
+    // V1's bundled "Health" goal has no "health" row in `domains` (see
+    // deriveActiveDomains in transform.ts — it fans out into nutrition/
+    // exercise/sleep rows instead), so link it to "nutrition" specifically:
+    // that's the one downstream consumer (generateNutritionParameters) that
+    // looks up a goal's target date via its linked domain today.
+    const domainLookupKey = goal.domainKey === "health" ? "nutrition" : goal.domainKey;
     const { data, error } = await supabase
       .from("goals")
       .insert({
         user_id: userId,
-        domain_id: domainIdByKey.get(goal.domainKey) ?? null,
+        domain_id: domainIdByKey.get(domainLookupKey) ?? null,
         outcome: goal.outcome,
         why: goal.why ?? null,
         target_date: goal.targetDate || null,

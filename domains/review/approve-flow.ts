@@ -7,7 +7,7 @@ import type { WeeklyBrief } from "@/domains/review/brief-schema";
 import type { WeeklyReviewAnswers } from "@/domains/review/schema";
 import {
   generateNutritionParameters,
-  approveAllNutritionParameters,
+  approveAllGeneratedParameters,
 } from "@/domains/parameters/service";
 import { generateAndSaveMealPlan } from "@/domains/mealplan/service";
 import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
@@ -72,7 +72,7 @@ export async function approveWeeklyReview(
 
   const paramResult = await generateNutritionParameters(userId);
   if (paramResult.ok) {
-    await approveAllNutritionParameters(userId);
+    await approveAllGeneratedParameters(userId, "nutrition");
   }
 
   const answers = review.answers as WeeklyReviewAnswers | null;

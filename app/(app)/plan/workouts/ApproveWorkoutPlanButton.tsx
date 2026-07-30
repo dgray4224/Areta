@@ -2,17 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { ActionResult } from "@/platform/auth/actions";
+import { approveWorkoutPlan } from "@/domains/workoutplan/service";
 
-export function GenerateParametersButton({
-  userId,
-  generateAction,
-  label = "Calculate my nutrition targets",
-}: {
-  userId: string;
-  generateAction: (userId: string) => Promise<ActionResult>;
-  label?: string;
-}) {
+export function ApproveWorkoutPlanButton({ userId }: { userId: string }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +12,7 @@ export function GenerateParametersButton({
   const onClick = () => {
     setError(null);
     startTransition(async () => {
-      const result = await generateAction(userId);
+      const result = await approveWorkoutPlan(userId);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -35,9 +27,9 @@ export function GenerateParametersButton({
         type="button"
         onClick={onClick}
         disabled={isPending}
-        className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+        className="w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
       >
-        {isPending ? "Calculating…" : label}
+        {isPending ? "Approving…" : "Approve workout plan"}
       </button>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
     </div>

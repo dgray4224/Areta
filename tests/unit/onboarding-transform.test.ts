@@ -22,6 +22,8 @@ const founderResponses: OnboardingResponses = {
   identity: founderIdentity,
   goals: founderGoals,
   nutrition: founderNutrition,
+  exercise: null,
+  sleepGoals: null,
   recovery: founderRecovery,
   learning: founderLearning,
   coaching: founderCoaching,
@@ -60,6 +62,19 @@ describe("transformOnboarding", () => {
     expect(output.dailyCheckinFields).not.toContain("recovery");
   });
 
+  it("expands a single 'health' goal into nutrition/exercise/sleep active domains", () => {
+    const healthResponses: OnboardingResponses = {
+      ...founderResponses,
+      goals: [{ ...founderGoals[0], domainKey: "health" as const }],
+      recovery: null,
+    };
+    const output = transformOnboarding(healthResponses);
+    expect(output.activeDomains).toEqual(
+      expect.arrayContaining(["nutrition", "exercise", "sleep"])
+    );
+    expect(output.dailyCheckinFields).toEqual(expect.arrayContaining(["exercise", "sleep"]));
+  });
+
   it("carries goal constraints and recovery restrictions into known constraints", () => {
     const output = transformOnboarding(founderResponses);
     expect(output.knownConstraints.length).toBeGreaterThan(0);
@@ -72,6 +87,8 @@ describe("transformOnboarding", () => {
       identity: { ...founderIdentity, fullName: "Alex" },
       goals: [],
       nutrition: null,
+      exercise: null,
+      sleepGoals: null,
       recovery: null,
       learning: null,
       coaching: null,
@@ -89,6 +106,8 @@ describe("transformOnboarding", () => {
       identity: founderIdentity,
       goals: [],
       nutrition: null,
+      exercise: null,
+      sleepGoals: null,
       recovery: null,
       learning: null,
       coaching: null,
@@ -123,6 +142,18 @@ describe("effectiveSteps", () => {
       { ...founderGoals[1], domainKey: "family" as const },
     ];
     expect(effectiveSteps(mixedGoals)).toEqual(["identity", "goals", "nutrition", "coaching"]);
+  });
+
+  it("a single 'health' goal unlocks nutrition, exercise, and sleep (V1 bundling)", () => {
+    const healthGoal = [{ ...founderGoals[0], domainKey: "health" as const }];
+    expect(effectiveSteps(healthGoal)).toEqual([
+      "identity",
+      "goals",
+      "nutrition",
+      "exercise",
+      "sleep",
+      "coaching",
+    ]);
   });
 });
 

@@ -227,6 +227,75 @@ export type Database = {
         }
         Relationships: []
       }
+      exercise_logs: {
+        Row: {
+          archetype: string | null
+          created_at: string
+          date: string
+          duration_minutes: number | null
+          id: string
+          notes: string | null
+          perceived_exertion: number | null
+          user_id: string
+        }
+        Insert: {
+          archetype?: string | null
+          created_at?: string
+          date: string
+          duration_minutes?: number | null
+          id?: string
+          notes?: string | null
+          perceived_exertion?: number | null
+          user_id: string
+        }
+        Update: {
+          archetype?: string | null
+          created_at?: string
+          date?: string
+          duration_minutes?: number | null
+          id?: string
+          notes?: string | null
+          perceived_exertion?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      exercises: {
+        Row: {
+          archetype_tags: string[]
+          created_at: string
+          difficulty: string
+          equipment_required: string[]
+          id: string
+          instructions: string | null
+          movement_pattern: string
+          name: string
+          primary_muscle_groups: string[]
+        }
+        Insert: {
+          archetype_tags?: string[]
+          created_at?: string
+          difficulty: string
+          equipment_required?: string[]
+          id?: string
+          instructions?: string | null
+          movement_pattern: string
+          name: string
+          primary_muscle_groups?: string[]
+        }
+        Update: {
+          archetype_tags?: string[]
+          created_at?: string
+          difficulty?: string
+          equipment_required?: string[]
+          id?: string
+          instructions?: string | null
+          movement_pattern?: string
+          name?: string
+          primary_muscle_groups?: string[]
+        }
+        Relationships: []
+      }
       generated_parameters: {
         Row: {
           approved: boolean
@@ -607,12 +676,14 @@ export type Database = {
           coaching: Json
           completed_steps: string[]
           created_at: string
+          exercise: Json
           goals: Json
           id: string
           identity: Json
           learning: Json
           nutrition: Json
           recovery: Json | null
+          sleep: Json
           updated_at: string
           user_id: string
         }
@@ -620,12 +691,14 @@ export type Database = {
           coaching?: Json
           completed_steps?: string[]
           created_at?: string
+          exercise?: Json
           goals?: Json
           id?: string
           identity?: Json
           learning?: Json
           nutrition?: Json
           recovery?: Json | null
+          sleep?: Json
           updated_at?: string
           user_id: string
         }
@@ -633,12 +706,14 @@ export type Database = {
           coaching?: Json
           completed_steps?: string[]
           created_at?: string
+          exercise?: Json
           goals?: Json
           id?: string
           identity?: Json
           learning?: Json
           nutrition?: Json
           recovery?: Json | null
+          sleep?: Json
           updated_at?: string
           user_id?: string
         }
@@ -1218,6 +1293,93 @@ export type Database = {
           unit?: string
           user_id?: string
           weight?: number
+        }
+        Relationships: []
+      }
+      workout_plan_items: {
+        Row: {
+          created_at: string
+          day_of_week: number
+          duration_minutes: number | null
+          exercise_id: string
+          id: string
+          reps: number | null
+          session_order: number
+          sets: number | null
+          user_id: string
+          workout_plan_id: string
+        }
+        Insert: {
+          created_at?: string
+          day_of_week: number
+          duration_minutes?: number | null
+          exercise_id: string
+          id?: string
+          reps?: number | null
+          session_order?: number
+          sets?: number | null
+          user_id: string
+          workout_plan_id: string
+        }
+        Update: {
+          created_at?: string
+          day_of_week?: number
+          duration_minutes?: number | null
+          exercise_id?: string
+          id?: string
+          reps?: number | null
+          session_order?: number
+          sets?: number | null
+          user_id?: string
+          workout_plan_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workout_plan_items_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workout_plan_items_workout_plan_id_fkey"
+            columns: ["workout_plan_id"]
+            isOneToOne: false
+            referencedRelation: "workout_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workout_plans: {
+        Row: {
+          created_at: string
+          id: string
+          phase_focus: string | null
+          sessions_per_week: number | null
+          status: string
+          updated_at: string
+          user_id: string
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          phase_focus?: string | null
+          sessions_per_week?: number | null
+          status?: string
+          updated_at?: string
+          user_id: string
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          phase_focus?: string | null
+          sessions_per_week?: number | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+          week_start?: string
         }
         Relationships: []
       }

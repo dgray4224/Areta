@@ -76,6 +76,8 @@ async function main() {
     identity: founderIdentity,
     goals: founderGoals,
     nutrition: founderNutrition,
+    exercise: null,
+    sleepGoals: null,
     recovery: founderRecovery,
     learning: founderLearning,
     coaching: founderCoaching,
