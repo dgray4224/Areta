@@ -1,23 +1,9 @@
 export function LogoMark({ size = 24 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
-      <rect width="64" height="64" rx="16" fill="#2a78d6" />
-      <path d="M20 26a12 12 0 0 1 21-8" stroke="white" strokeWidth="4.5" strokeLinecap="round" />
-      <path
-        d="M41 12v8h-8"
-        stroke="white"
-        strokeWidth="4.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M44 38a12 12 0 0 1-21 8" stroke="white" strokeWidth="4.5" strokeLinecap="round" />
-      <path
-        d="M23 52v-8h8"
-        stroke="white"
-        strokeWidth="4.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <rect width="64" height="64" rx="16" fill="#c85a3a" />
+      <path d="M32 14 L48 50 L39 50 L35.5 41.5 L28.5 41.5 L25 50 L16 50 Z" fill="#1c130f" />
+      <rect x="27" y="37" width="10" height="5" fill="#c85a3a" />
     </svg>
   );
 }
@@ -26,7 +12,7 @@ export function Logo({ size = 22 }: { size?: number }) {
   return (
     <span className="flex items-center gap-2 font-semibold">
       <LogoMark size={size} />
-      LifeOS
+      Areta
     </span>
   );
 }
