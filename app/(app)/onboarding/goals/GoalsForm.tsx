@@ -8,7 +8,7 @@ import { goalsStepSchema, type GoalsStepInput } from "@/domains/goals/schema";
 import { V1_DOMAIN_KEYS, DOMAIN_LABELS } from "@/domains/goals/schema";
 import { saveGoalsStep } from "@/domains/goals/service";
 import { StepShell } from "@/platform/ui/StepShell";
-import { FormField, TextInput, SelectInput, TextArea } from "@/platform/ui/FormField";
+import { FormField, TextInput, SelectInput } from "@/platform/ui/FormField";
 import { chipBase, chipSelected, chipUnselected } from "@/platform/ui/TagPicker";
 
 const EMPTY_GOAL: GoalsStepInput["goals"][number] = {
@@ -127,7 +127,7 @@ export function GoalsForm({
             </div>
 
             <FormField
-              label="Desired outcome"
+              label="Goal"
               htmlFor={`goals.${index}.outcome`}
               error={errors.goals?.[index]?.outcome?.message}
               hint='e.g. "Weigh 200 pounds by February"'
@@ -135,12 +135,12 @@ export function GoalsForm({
               <TextInput id={`goals.${index}.outcome`} {...register(`goals.${index}.outcome`)} />
             </FormField>
 
-            <FormField label="Why it matters" htmlFor={`goals.${index}.why`}>
-              <TextArea id={`goals.${index}.why`} {...register(`goals.${index}.why`)} />
-            </FormField>
-
             <div className="grid grid-cols-2 gap-4">
-              <FormField label="Target date" htmlFor={`goals.${index}.targetDate`}>
+              <FormField
+                label="Target date"
+                htmlFor={`goals.${index}.targetDate`}
+                hint="Approximately when do you want to accomplish this?"
+              >
                 <TextInput
                   id={`goals.${index}.targetDate`}
                   type="date"
@@ -162,48 +162,18 @@ export function GoalsForm({
               </FormField>
             </div>
 
-            <FormField label="Starting point" htmlFor={`goals.${index}.startingState`}>
-              <TextInput id={`goals.${index}.startingState`} {...register(`goals.${index}.startingState`)} />
+            <FormField label="Priority (1 = highest)" htmlFor={`goals.${index}.priority`}>
+              <SelectInput
+                id={`goals.${index}.priority`}
+                {...register(`goals.${index}.priority`, { valueAsNumber: true })}
+              >
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </SelectInput>
             </FormField>
-
-            <FormField label="Constraints" htmlFor={`goals.${index}.constraints`}>
-              <TextInput id={`goals.${index}.constraints`} {...register(`goals.${index}.constraints`)} />
-            </FormField>
-
-            <FormField label="What success looks like" htmlFor={`goals.${index}.successCriteria`}>
-              <TextInput id={`goals.${index}.successCriteria`} {...register(`goals.${index}.successCriteria`)} />
-            </FormField>
-
-            <FormField label="Known obstacles" htmlFor={`goals.${index}.knownObstacles`}>
-              <TextInput id={`goals.${index}.knownObstacles`} {...register(`goals.${index}.knownObstacles`)} />
-            </FormField>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField label="Priority (1 = highest)" htmlFor={`goals.${index}.priority`}>
-                <SelectInput
-                  id={`goals.${index}.priority`}
-                  {...register(`goals.${index}.priority`, { valueAsNumber: true })}
-                >
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </SelectInput>
-              </FormField>
-              <FormField label="Confidence (1-5)" htmlFor={`goals.${index}.confidence`}>
-                <SelectInput
-                  id={`goals.${index}.confidence`}
-                  {...register(`goals.${index}.confidence`, { valueAsNumber: true })}
-                >
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </SelectInput>
-              </FormField>
-            </div>
           </div>
         ))}
 

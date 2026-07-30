@@ -12,7 +12,6 @@ import {
   founderNutrition,
   founderRecovery,
   founderLearning,
-  founderCoaching,
 } from "@/supabase/seed/dev-seed";
 
 const founderCompletedSteps: OnboardingStepKey[] = effectiveSteps(founderGoals);
@@ -23,10 +22,8 @@ const founderResponses: OnboardingResponses = {
   goals: founderGoals,
   nutrition: founderNutrition,
   exercise: null,
-  sleepGoals: null,
   recovery: founderRecovery,
   learning: founderLearning,
-  coaching: founderCoaching,
   completedSteps: founderCompletedSteps,
 };
 
@@ -62,7 +59,7 @@ describe("transformOnboarding", () => {
     expect(output.dailyCheckinFields).not.toContain("recovery");
   });
 
-  it("expands a single 'health' goal into nutrition/exercise/sleep active domains", () => {
+  it("expands a single 'health' goal into nutrition/exercise/sleep active domains for downstream tracking (not an onboarding step)", () => {
     const healthResponses: OnboardingResponses = {
       ...founderResponses,
       goals: [{ ...founderGoals[0], domainKey: "health" as const }],
@@ -88,10 +85,8 @@ describe("transformOnboarding", () => {
       goals: [],
       nutrition: null,
       exercise: null,
-      sleepGoals: null,
       recovery: null,
       learning: null,
-      coaching: null,
       completedSteps: [],
     };
     const output = transformOnboarding(minimalResponses);
@@ -100,17 +95,15 @@ describe("transformOnboarding", () => {
     expect(output.activeDomains).toHaveLength(0);
   });
 
-  it("applies personalization defaults when coaching answers are missing", () => {
+  it("always applies personalization defaults, since coaching is no longer an onboarding step", () => {
     const minimalResponses: OnboardingResponses = {
       userId: "minimal-user",
       identity: founderIdentity,
       goals: [],
       nutrition: null,
       exercise: null,
-      sleepGoals: null,
       recovery: null,
       learning: null,
-      coaching: null,
       completedSteps: [],
     };
     const output = transformOnboarding(minimalResponses);
@@ -127,13 +120,12 @@ describe("effectiveSteps", () => {
       "nutrition",
       "recovery",
       "learning",
-      "coaching",
     ]);
   });
 
   it("omits domain-specific steps entirely when no goal targets them", () => {
     const nonModuleGoals = founderGoals.map((g) => ({ ...g, domainKey: "family" as const }));
-    expect(effectiveSteps(nonModuleGoals)).toEqual(["identity", "goals", "coaching"]);
+    expect(effectiveSteps(nonModuleGoals)).toEqual(["identity", "goals"]);
   });
 
   it("includes only the domain-specific steps that apply", () => {
@@ -141,19 +133,12 @@ describe("effectiveSteps", () => {
       { ...founderGoals[0], domainKey: "nutrition" as const },
       { ...founderGoals[1], domainKey: "family" as const },
     ];
-    expect(effectiveSteps(mixedGoals)).toEqual(["identity", "goals", "nutrition", "coaching"]);
+    expect(effectiveSteps(mixedGoals)).toEqual(["identity", "goals", "nutrition"]);
   });
 
-  it("a single 'health' goal unlocks nutrition, exercise, and sleep (V1 bundling)", () => {
+  it("a single 'health' goal unlocks nutrition and exercise as onboarding steps (V1 bundling); sleep stays a tracked domain without a step", () => {
     const healthGoal = [{ ...founderGoals[0], domainKey: "health" as const }];
-    expect(effectiveSteps(healthGoal)).toEqual([
-      "identity",
-      "goals",
-      "nutrition",
-      "exercise",
-      "sleep",
-      "coaching",
-    ]);
+    expect(effectiveSteps(healthGoal)).toEqual(["identity", "goals", "nutrition", "exercise"]);
   });
 });
 
@@ -161,13 +146,13 @@ describe("stepPosition", () => {
   it("computes stepIndex/totalSteps/backHref from the effective sequence", () => {
     expect(stepPosition("nutrition", founderGoals)).toEqual({
       stepIndex: 3,
-      totalSteps: 7,
+      totalSteps: 6,
       backHref: "/onboarding/goals",
     });
-    expect(stepPosition("coaching", founderGoals)).toEqual({
-      stepIndex: 6,
-      totalSteps: 7,
-      backHref: "/onboarding/learning",
+    expect(stepPosition("learning", founderGoals)).toEqual({
+      stepIndex: 5,
+      totalSteps: 6,
+      backHref: "/onboarding/recovery",
     });
   });
 
@@ -197,6 +182,6 @@ describe("firstIncompleteStep", () => {
     expect(firstIncompleteStep(nonModuleResponses)).toBe("goals");
     expect(
       firstIncompleteStep({ ...nonModuleResponses, completedSteps: ["identity", "goals"] })
-    ).toBe("coaching");
+    ).toBeNull();
   });
 });

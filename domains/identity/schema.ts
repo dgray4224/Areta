@@ -10,17 +10,26 @@ export const identitySchema = z.object({
   units: z.enum(["metric", "imperial"]),
   wakeTime: timeString,
   bedTime: timeString,
-  workStatus: z.string().min(1, "Work status is required"),
-  workHoursNote: z.string().optional(),
-  schoolCommitments: z.string().optional(),
   /** 0 = Sunday .. 6 = Saturday, matches the DB check constraint. */
   weeklyReviewDay: z.number().int().min(0).max(6),
   groceryDay: z.number().int().min(0).max(6),
   mealPrepDay: z.number().int().min(0).max(6),
-  learningTimeMinutesPerWeek: z.number().int().min(0),
 });
 
 export type IdentityInput = z.infer<typeof identitySchema>;
+
+/** Work/school context — deliberately not part of onboarding (CLAUDE.md
+ * is being trimmed for this phase; this can be deciphered from a future
+ * calendar integration instead). Lives in Settings -> Personalization,
+ * fully optional. Still the same `profiles` columns as before. */
+export const workScheduleSchema = z.object({
+  workStatus: z.string().optional(),
+  workHoursNote: z.string().optional(),
+  schoolCommitments: z.string().optional(),
+  learningTimeMinutesPerWeek: z.number().int().min(0).optional(),
+});
+
+export type WorkScheduleInput = z.infer<typeof workScheduleSchema>;
 
 /** 0 = Sunday .. 6 = Saturday, for weekday <select> options. */
 export const WEEKDAYS = [

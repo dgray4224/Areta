@@ -13,7 +13,7 @@ export default async function ProfileSettingsPage() {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "full_name, time_zone, units, wake_time, bed_time, work_status, work_hours_note, school_commitments, weekly_review_day, grocery_day, meal_prep_day, learning_time_minutes_per_week"
+      "full_name, time_zone, units, wake_time, bed_time, weekly_review_day, grocery_day, meal_prep_day"
     )
     .eq("id", user.id)
     .single();
@@ -24,13 +24,9 @@ export default async function ProfileSettingsPage() {
     units: (profile?.units as IdentityInput["units"]) ?? undefined,
     wakeTime: trimSeconds(profile?.wake_time ?? null),
     bedTime: trimSeconds(profile?.bed_time ?? null),
-    workStatus: profile?.work_status ?? undefined,
-    workHoursNote: profile?.work_hours_note ?? undefined,
-    schoolCommitments: profile?.school_commitments ?? undefined,
     weeklyReviewDay: profile?.weekly_review_day ?? undefined,
     groceryDay: profile?.grocery_day ?? undefined,
     mealPrepDay: profile?.meal_prep_day ?? undefined,
-    learningTimeMinutesPerWeek: profile?.learning_time_minutes_per_week ?? undefined,
   };
 
   return (

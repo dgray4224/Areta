@@ -4,13 +4,12 @@ import { useState } from "react";
 
 export const chipBase =
   "rounded-full border px-3 py-1 text-xs transition-colors";
-export const chipSelected =
-  "border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900";
+export const chipSelected = "border-brand-fill bg-brand-fill text-brand-ink";
 export const chipUnselected =
   "border-neutral-300 bg-transparent text-neutral-600 hover:border-neutral-400 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-neutral-600";
 
 const fieldClass =
-  "mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900";
+  "mt-1 w-full rounded-xl border border-neutral-300 bg-card px-3 py-2 text-sm outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/30 dark:border-neutral-700";
 
 /**
  * "Select all that apply" picker: suggested options render as toggle chips,

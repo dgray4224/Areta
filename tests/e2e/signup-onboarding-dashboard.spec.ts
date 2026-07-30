@@ -51,29 +51,24 @@ test("signup, confirm, onboard, and reach a personalized dashboard", async ({ pa
   await page.getByRole("button", { name: /log in/i }).click();
 
   await expect(page).toHaveURL(/\/onboarding\/identity/);
-  await page.getByLabel("Name").fill("E2E Tester");
+  await page.getByLabel("Preferred Name").fill("E2E Tester");
   await page.getByLabel("Time zone").fill("America/New_York");
   await page.getByLabel("Typical wake time").fill("07:00");
   await page.getByLabel("Typical bedtime").fill("23:00");
-  await page.getByLabel("Work status").fill("Remote");
   await page.getByRole("button", { name: /continue/i }).click();
 
+  // V1 onboarding offers a single "Health" area, which unlocks the
+  // Nutrition and Exercise steps (see V1_DOMAIN_KEYS in domains/goals/schema.ts).
   await expect(page).toHaveURL(/\/onboarding\/goals/);
-  await page.getByLabel("Desired outcome").fill("Ship the LifeOS MVP");
+  await page.getByRole("button", { name: "Health" }).click();
+  await page.getByLabel("Goal").fill("Ship the LifeOS MVP");
   await page.getByRole("button", { name: /continue/i }).click();
 
   await expect(page).toHaveURL(/\/onboarding\/nutrition/);
   await page.getByRole("button", { name: /continue/i }).click();
 
-  // Exercises the optional Recovery module's skip path.
-  await expect(page).toHaveURL(/\/onboarding\/recovery/);
-  await page.getByRole("button", { name: /not applicable/i }).click();
-
-  await expect(page).toHaveURL(/\/onboarding\/learning/);
+  await expect(page).toHaveURL(/\/onboarding\/exercise/);
   await page.getByRole("button", { name: /continue/i }).click();
-
-  await expect(page).toHaveURL(/\/onboarding\/coaching/);
-  await page.getByRole("button", { name: /review and finish/i }).click();
 
   await expect(page).toHaveURL(/\/onboarding\/review/);
   await page.getByRole("button", { name: /approve and activate/i }).click();
@@ -81,5 +76,4 @@ test("signup, confirm, onboard, and reach a personalized dashboard", async ({ pa
   await expect(page).toHaveURL(/\/dashboard/);
   await expect(page.getByText("E2E Tester")).toBeVisible();
   await expect(page.getByText("Ship the LifeOS MVP")).toBeVisible();
-  await expect(page.getByText("recovery", { exact: true })).not.toBeVisible();
 });

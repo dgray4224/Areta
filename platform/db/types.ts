@@ -617,6 +617,45 @@ export type Database = {
         }
         Relationships: []
       }
+      memories: {
+        Row: {
+          confidence: number
+          content: string
+          created_at: string
+          evidence: string | null
+          id: string
+          last_confirmed_at: string | null
+          review_date: string | null
+          type: string
+          user_confirmed: boolean
+          user_id: string
+        }
+        Insert: {
+          confidence?: number
+          content: string
+          created_at?: string
+          evidence?: string | null
+          id?: string
+          last_confirmed_at?: string | null
+          review_date?: string | null
+          type: string
+          user_confirmed?: boolean
+          user_id: string
+        }
+        Update: {
+          confidence?: number
+          content?: string
+          created_at?: string
+          evidence?: string | null
+          id?: string
+          last_confirmed_at?: string | null
+          review_date?: string | null
+          type?: string
+          user_confirmed?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
       nutrition_logs: {
         Row: {
           calories: number | null
@@ -937,6 +976,44 @@ export type Database = {
           work_status?: string | null
         }
         Relationships: []
+      }
+      prompt_events: {
+        Row: {
+          answered: boolean
+          dismissed: boolean
+          id: string
+          memory_id: string | null
+          shown_at: string
+          trigger_id: string
+          user_id: string
+        }
+        Insert: {
+          answered?: boolean
+          dismissed?: boolean
+          id?: string
+          memory_id?: string | null
+          shown_at?: string
+          trigger_id: string
+          user_id: string
+        }
+        Update: {
+          answered?: boolean
+          dismissed?: boolean
+          id?: string
+          memory_id?: string | null
+          shown_at?: string
+          trigger_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prompt_events_memory_id_fkey"
+            columns: ["memory_id"]
+            isOneToOne: false
+            referencedRelation: "memories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       recipes: {
         Row: {

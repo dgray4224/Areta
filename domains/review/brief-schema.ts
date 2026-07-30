@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MOTIVATION_QUOTE_IDS } from "@/domains/motivation/quotes";
 
 /**
  * The AI-generated portion of CLAUDE.md §10's WeeklyOperatingBrief.
@@ -53,6 +54,10 @@ export const weeklyBriefSchema = z.object({
     })
   ),
   highestLeverageAction: z.string(),
+  /** An id from the curated MOTIVATION_QUOTES bank (domains/motivation/quotes.ts)
+   * — the model selects, it never generates the quote text itself, so a
+   * fabricated or misattributed quote can't pass schema validation. */
+  weeklyMottoId: z.enum(MOTIVATION_QUOTE_IDS),
 });
 
 export type WeeklyBrief = z.infer<typeof weeklyBriefSchema>;

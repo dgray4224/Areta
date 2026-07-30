@@ -41,7 +41,6 @@ export function IdentityForm({
       weeklyReviewDay: 0,
       groceryDay: 6,
       mealPrepDay: 0,
-      learningTimeMinutesPerWeek: 180,
       ...defaultValues,
     },
   });
@@ -76,7 +75,7 @@ export function IdentityForm({
       totalSteps={totalSteps}
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-        <FormField label="Name" htmlFor="fullName" error={errors.fullName?.message}>
+        <FormField label="Preferred Name" htmlFor="fullName" error={errors.fullName?.message}>
           <TextInput id="fullName" {...register("fullName")} />
         </FormField>
 
@@ -121,31 +120,6 @@ export function IdentityForm({
           </FormField>
         </div>
 
-        <FormField
-          label="Work status"
-          htmlFor="workStatus"
-          error={errors.workStatus?.message}
-          hint="e.g. Remote full-time, on leave, part-time"
-        >
-          <TextInput id="workStatus" {...register("workStatus")} />
-        </FormField>
-
-        <FormField
-          label="Specific work hours or blocked time (optional)"
-          htmlFor="workHoursNote"
-          hint="e.g. 9am-5pm ET weekdays, standing meetings until 6 on Tuesdays — anything LifeOS should plan around, not a weekly total"
-        >
-          <TextInput id="workHoursNote" {...register("workHoursNote")} />
-        </FormField>
-
-        <FormField
-          label="Class schedule or deadlines (optional)"
-          htmlFor="schoolCommitments"
-          hint="e.g. Tuesday/Thursday evening classes, exams the second week of October"
-        >
-          <TextInput id="schoolCommitments" {...register("schoolCommitments")} />
-        </FormField>
-
         <div className="grid grid-cols-3 gap-4">
           <FormField
             label="Weekly review day"
@@ -179,19 +153,6 @@ export function IdentityForm({
             </SelectInput>
           </FormField>
         </div>
-
-        <FormField
-          label="Available learning time (minutes/week)"
-          htmlFor="learningTimeMinutesPerWeek"
-          error={errors.learningTimeMinutesPerWeek?.message}
-        >
-          <TextInput
-            id="learningTimeMinutesPerWeek"
-            type="number"
-            min={0}
-            {...register("learningTimeMinutesPerWeek", { valueAsNumber: true })}
-          />
-        </FormField>
 
         {serverError ? <p className="text-sm text-red-600">{serverError}</p> : null}
 

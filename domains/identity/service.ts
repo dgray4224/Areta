@@ -1,6 +1,6 @@
 "use server";
 
-import { identitySchema } from "@/domains/identity/schema";
+import { identitySchema, workScheduleSchema } from "@/domains/identity/schema";
 import { saveOnboardingStep } from "@/domains/onboarding/store";
 import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
@@ -33,13 +33,36 @@ export async function updateProfile(userId: string, input: unknown): Promise<Act
       units: parsed.data.units,
       wake_time: parsed.data.wakeTime,
       bed_time: parsed.data.bedTime,
-      work_status: parsed.data.workStatus,
-      work_hours_note: parsed.data.workHoursNote || null,
-      school_commitments: parsed.data.schoolCommitments || null,
       weekly_review_day: parsed.data.weeklyReviewDay,
       grocery_day: parsed.data.groceryDay,
       meal_prep_day: parsed.data.mealPrepDay,
-      learning_time_minutes_per_week: parsed.data.learningTimeMinutesPerWeek,
+    })
+    .eq("id", userId);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, data: undefined };
+}
+
+/** Settings -> Personalization "Work & School" subsection — a separate,
+ * fully optional partial update on the same `profiles` row as
+ * updateProfile, so this can be edited independently of core schedule
+ * identity. */
+export async function updateWorkSchedule(userId: string, input: unknown): Promise<ActionResult> {
+  const parsed = workScheduleSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      work_status: parsed.data.workStatus || null,
+      work_hours_note: parsed.data.workHoursNote || null,
+      school_commitments: parsed.data.schoolCommitments || null,
+      learning_time_minutes_per_week: parsed.data.learningTimeMinutesPerWeek ?? null,
     })
     .eq("id", userId);
 

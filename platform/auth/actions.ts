@@ -50,6 +50,36 @@ export async function signInWithPassword(
   return { ok: true, data: undefined };
 }
 
+/** Always returns ok, even if no account matches — Supabase doesn't
+ * distinguish "sent" from "no such user" in its response, and neither
+ * should we, so this can't be used to enumerate registered emails. */
+export async function requestPasswordReset(email: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const origin = (await headers()).get("origin");
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: origin ? `${origin}/auth/confirm?next=/reset-password` : undefined,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, data: undefined };
+}
+
+/** Only succeeds with a valid recovery session — established by clicking
+ * the email link from requestPasswordReset, which lands on /auth/confirm
+ * and exchanges the code for a session before redirecting here. */
+export async function updatePassword(password: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.auth.updateUser({ password });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, data: undefined };
+}
+
 export async function signOut(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();

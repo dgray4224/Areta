@@ -20,6 +20,7 @@ import {
   FOUNDER_EMAIL,
   FOUNDER_PASSWORD,
   founderIdentity,
+  founderWorkSchedule,
   founderGoals,
   founderNutrition,
   founderRecovery,
@@ -77,10 +78,8 @@ async function main() {
     goals: founderGoals,
     nutrition: founderNutrition,
     exercise: null,
-    sleepGoals: null,
     recovery: founderRecovery,
     learning: founderLearning,
-    coaching: founderCoaching,
     completedSteps: founderCompletedSteps,
   };
 
@@ -92,7 +91,6 @@ async function main() {
       nutrition: responses.nutrition,
       recovery: responses.recovery,
       learning: responses.learning,
-      coaching: responses.coaching,
       completed_steps: responses.completedSteps,
     },
     { onConflict: "user_id" }
@@ -105,6 +103,33 @@ async function main() {
   if (!result.ok) {
     throw new Error(result.error);
   }
+
+  // Coaching and work/school are no longer onboarding steps — seed them the
+  // same way Settings -> Personalization would, straight onto the live rows.
+  const { error: workScheduleError } = await supabase
+    .from("profiles")
+    .update({
+      work_status: founderWorkSchedule.workStatus || null,
+      work_hours_note: founderWorkSchedule.workHoursNote || null,
+      school_commitments: founderWorkSchedule.schoolCommitments || null,
+      learning_time_minutes_per_week: founderWorkSchedule.learningTimeMinutesPerWeek ?? null,
+    })
+    .eq("id", userId);
+  if (workScheduleError) throw workScheduleError;
+
+  const { error: coachingError } = await supabase.from("personalization_profiles").upsert(
+    {
+      user_id: userId,
+      tone: founderCoaching.tone,
+      planning_style: founderCoaching.planningStyle,
+      reminder_preference: founderCoaching.reminderPreference,
+      explanation_depth: founderCoaching.explanationDepth,
+      reschedule_missed_tasks: founderCoaching.rescheduleMissedTasks,
+      never_recommend: founderCoaching.neverRecommend,
+    },
+    { onConflict: "user_id" }
+  );
+  if (coachingError) throw coachingError;
 
   console.log("Seed complete.");
   console.log(`  Email:    ${FOUNDER_EMAIL}`);

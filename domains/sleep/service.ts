@@ -1,19 +1,9 @@
 "use server";
 
-import { sleepLogSchema, sleepGoalsSchema } from "@/domains/sleep/schema";
+import { sleepLogSchema } from "@/domains/sleep/schema";
 import { computeSleepDurationMinutes } from "@/domains/sleep/duration";
-import { saveOnboardingStep } from "@/domains/onboarding/store";
 import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
-
-export async function saveSleepGoalsStep(userId: string, input: unknown): Promise<ActionResult> {
-  const parsed = sleepGoalsSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  }
-  await saveOnboardingStep(userId, "sleep", parsed.data);
-  return { ok: true, data: undefined };
-}
 
 export async function logSleep(userId: string, input: unknown): Promise<ActionResult> {
   const parsed = sleepLogSchema.safeParse(input);

@@ -2,7 +2,11 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { publicEnv } from "@/platform/env";
 
-const AUTH_ROUTES = ["/login", "/signup"];
+const AUTH_ROUTES = ["/login", "/signup", "/forgot-password"];
+// Deliberately not in AUTH_ROUTES: clicking the reset-password email link
+// establishes a real (temporary) session, and redirecting that away to
+// /dashboard the way a normal logged-in visit to /login would break the
+// whole flow — this route needs to stay reachable while logged in.
 const PROTECTED_PREFIXES = ["/dashboard", "/onboarding"];
 
 /** Refreshes the Supabase session cookie on every request and gates

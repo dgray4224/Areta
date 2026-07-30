@@ -12,20 +12,24 @@ import type { DomainKey, Goal } from "@/domains/goals/schema";
  * appear when the user actually picked that area as a goal category, so a
  * user with e.g. only a Family goal never sees the Nutrition questionnaire.
  * V1 is health-only (see domains/goals/schema.ts V1_DOMAIN_KEYS) — picking
- * "health" unconditionally unlocks Nutrition/Exercise/Sleep. The individual
+ * "health" unconditionally unlocks Nutrition/Exercise. The individual
  * domain checks stay alongside `wantsHealth` (not replaced by it) so a
  * future phase reintroducing fine-grained pillar chips needs no changes
- * here. */
+ * here.
+ *
+ * Sleep and Coaching are deliberately never onboarding steps: Sleep's
+ * target bedtime/wake are already covered by Identity's wake/bedtime
+ * fields (everything else sleep-related is asked contextually later, see
+ * domains/prompts), and Coaching lives in Settings -> Personalization,
+ * defaulted rather than asked. */
 export function effectiveSteps(goals: Goal[]): OnboardingStepKey[] {
   const domains = new Set(goals.map((g) => g.domainKey));
   const wantsHealth = domains.has("health");
   const steps: OnboardingStepKey[] = ["identity", "goals"];
   if (wantsHealth || domains.has("nutrition")) steps.push("nutrition");
   if (wantsHealth || domains.has("exercise")) steps.push("exercise");
-  if (wantsHealth || domains.has("sleep")) steps.push("sleep");
   if (domains.has("recovery")) steps.push("recovery");
   if (domains.has("learning")) steps.push("learning");
-  steps.push("coaching");
   return steps;
 }
 
@@ -57,7 +61,7 @@ export function firstIncompleteStep(responses: OnboardingResponses): OnboardingS
  * goals/phases/weekly-outcomes records.
  */
 export function transformOnboarding(responses: OnboardingResponses): OnboardingOutput {
-  const { identity, goals, recovery, coaching } = responses;
+  const { identity, goals, recovery } = responses;
 
   const activeDomains = deriveActiveDomains(goals, recovery);
   const rankedGoals = rankGoals(goals);
@@ -83,13 +87,16 @@ export function transformOnboarding(responses: OnboardingResponses): OnboardingO
 
   const knownConstraints = deriveKnownConstraints(goals, recovery);
 
+  // Coaching preferences are no longer an onboarding step (see
+  // effectiveSteps) — these defaults are what every account starts with,
+  // editable anytime afterward in Settings -> Personalization.
   const initialPersonalizationProfile: PersonalizationProfileDraft = {
-    tone: coaching?.tone ?? "gentle",
-    planningStyle: coaching?.planningStyle ?? "flexible",
-    reminderPreference: coaching?.reminderPreference ?? "minimal",
-    explanationDepth: coaching?.explanationDepth ?? "brief",
-    rescheduleMissedTasks: coaching?.rescheduleMissedTasks ?? true,
-    neverRecommend: coaching?.neverRecommend ?? [],
+    tone: "gentle",
+    planningStyle: "flexible",
+    reminderPreference: "minimal",
+    explanationDepth: "brief",
+    rescheduleMissedTasks: true,
+    neverRecommend: [],
   };
 
   return {

@@ -53,7 +53,7 @@ describe("generatePrepPlan", () => {
     expect(step?.instruction.indexOf("Slow Roast")).toBeLessThan(step?.instruction.indexOf("Quick Thing") ?? -1);
   });
 
-  it("sums prep + cook minutes across unique recipes only", () => {
+  it("sums prep time but only counts the longest cook time, since cooking overlaps", () => {
     const result = generatePrepPlan({
       uniqueRecipes: [
         recipe({ prepMinutes: 10, cookMinutes: 20 }),
@@ -61,7 +61,8 @@ describe("generatePrepPlan", () => {
       ],
       totalMealCount: 5,
     });
-    expect(result.estimatedMinutes).toBe(50);
+    // prep: 10 + 5 = 15 (serial, hands-on). cook: max(20, 15) = 20 (overlaps).
+    expect(result.estimatedMinutes).toBe(35);
   });
 
   it("identifies multi-serving recipes as expected leftovers", () => {

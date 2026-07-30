@@ -3,9 +3,9 @@
 import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
 import { computeWeeklyMetrics, type WeeklyMetrics } from "@/domains/review/metrics";
-import { weeklyReviewAnswersSchema, type WeeklyReviewAnswers } from "@/domains/review/schema";
 import { weeklyBriefSchema, type WeeklyBrief } from "@/domains/review/brief-schema";
 import { buildWeeklyReviewContext } from "@/domains/review/context-builder";
+import { getRecentMemories } from "@/domains/memory/service";
 import { getAIProvider } from "@/platform/ai/get-provider";
 import { getApprovedParameterValue } from "@/domains/parameters/service";
 import type { TaskStatus } from "@/domains/tasks/schema";
@@ -13,24 +13,24 @@ import { reviewWeekStart, todayIso } from "@/domains/review/dates";
 
 const LB_PER_KG = 2.2046226218;
 
-const WEEKLY_BRIEF_INSTRUCTIONS = `You are the weekly regeneration engine for LifeOS, a personal execution platform. Given a user's current phase, active goals, this week's deterministically-calculated metrics, their own answers to review questions, and (if any) last week's priorities, produce a WeeklyOperatingBrief.
+const WEEKLY_BRIEF_INSTRUCTIONS = `You are the weekly regeneration engine for LifeOS, a personal execution platform. Given a user's current phase, active goals, this week's deterministically-calculated metrics, durable memory LifeOS has learned about them over time, and (if any) last week's priorities, produce a WeeklyOperatingBrief.
 
 Rules:
-- Never invent medical advice or recovery progression. Do not suggest changes to brace settings, weight-bearing status, exercise intensity, running, jumping, return to sport, or medication — that is exclusively a clinician's call. A recovery-domain goal should usually get "insufficient_data" progress unless the user's own answers clearly describe clinician-approved progress.
-- Classify each active goal's progress as "ahead", "on_track", "at_risk", or "insufficient_data" based on the metrics and the user's own answers — never assume.
+- Never invent medical advice or recovery progression. Do not suggest changes to brace settings, weight-bearing status, exercise intensity, running, jumping, return to sport, or medication — that is exclusively a clinician's call. A recovery-domain goal should usually get "insufficient_data" progress unless durable memory clearly describes clinician-approved progress.
+- Classify each active goal's progress as "ahead", "on_track", "at_risk", or "insufficient_data" based on the metrics and the durable memory — never assume.
 - If metrics.isDataSparse is true, most goals should likely be "insufficient_data" rather than a confident status, since there isn't enough logged data to trust yet.
-- "changes" are proposed changes to operating parameters or the plan (e.g. field: "calorie_target", "meal_plan_variety", "task_load"), each with a reason grounded in the metrics/answers. Describe changes qualitatively — do not invent a specific new numeric target yourself; deterministic code recalculates exact numbers separately. previousValue/proposedValue can be short labels like "moderate" -> "lower" when a specific number isn't yet known.
+- "changes" are proposed changes to operating parameters or the plan (e.g. field: "calorie_target", "meal_plan_variety", "task_load"), each with a reason grounded in the metrics/memory. Describe changes qualitatively — do not invent a specific new numeric target yourself; deterministic code recalculates exact numbers separately. previousValue/proposedValue can be short labels like "moderate" -> "lower" when a specific number isn't yet known.
 - Distinguish adherence issues (plan was fine, user didn't follow it), plan-design issues (plan was unrealistic or unpleasant), outcome issues (followed the plan, but the result didn't happen), and data-quality issues (not enough reliable data) — never default to blaming the user's discipline when the metrics point elsewhere.
 - Priorities: at most 3, ranked 1-3, each tied to a specific goal or domain.
 - Be honest, not falsely encouraging. If adherence was poor, say so plainly and explain the likely cause using the classification above.
-- Keep the executive summary to 2-4 sentences.`;
+- Keep the executive summary to 2-4 sentences.
+- weeklyMottoId: pick the id from motivationQuoteBank whose themes best match this user's real priorities or struggles this week. Never invent a quote or use one outside the provided bank — only return one of the given ids.`;
 
 export type WeeklyReviewView = {
   id: string;
   weekStart: string;
   status: "draft" | "answered" | "generated" | "approved";
   metrics: WeeklyMetrics | null;
-  answers: WeeklyReviewAnswers | null;
   brief: WeeklyBrief | null;
 };
 
@@ -137,7 +137,6 @@ export async function getOrCreateWeeklyReview(userId: string): Promise<WeeklyRev
       weekStart: existing.week_start,
       status: existing.status as WeeklyReviewView["status"],
       metrics: existing.metrics as WeeklyMetrics,
-      answers: existing.answers as WeeklyReviewAnswers,
       brief: existing.brief as WeeklyBrief | null,
     };
   }
@@ -158,32 +157,8 @@ export async function getOrCreateWeeklyReview(userId: string): Promise<WeeklyRev
     weekStart: created.week_start,
     status: created.status as WeeklyReviewView["status"],
     metrics,
-    answers: null,
     brief: null,
   };
-}
-
-export async function submitWeeklyReviewAnswers(
-  userId: string,
-  input: unknown
-): Promise<ActionResult> {
-  const parsed = weeklyReviewAnswersSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  }
-
-  const weekStart = reviewWeekStart();
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("weekly_reviews")
-    .update({ answers: parsed.data, status: "answered" })
-    .eq("user_id", userId)
-    .eq("week_start", weekStart);
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-  return { ok: true, data: undefined };
 }
 
 export async function generateWeeklyBrief(userId: string): Promise<ActionResult> {
@@ -197,11 +172,19 @@ export async function generateWeeklyBrief(userId: string): Promise<ActionResult>
     .eq("week_start", weekStart)
     .maybeSingle();
 
-  if (!review || !review.answers) {
-    return { ok: false, error: "Answer the review questions before generating a brief." };
+  if (!review) {
+    return { ok: false, error: "Open the review page before generating a brief." };
   }
 
-  const [{ data: phases }, { data: goals }, { data: previousReview }, expectedWeeklyRateLb, calorieTarget, proteinTarget] =
+  const [
+    { data: phases },
+    { data: goals },
+    { data: previousReview },
+    recentMemories,
+    expectedWeeklyRateLb,
+    calorieTarget,
+    proteinTarget,
+  ] =
     await Promise.all([
       supabase.from("phases").select("name, mission").eq("user_id", userId).eq("is_current", true).limit(1),
       supabase
@@ -217,6 +200,7 @@ export async function generateWeeklyBrief(userId: string): Promise<ActionResult>
         .order("week_start", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      getRecentMemories(userId),
       getApprovedParameterValue(userId, "nutrition", "expected_weekly_rate_lb"),
       getApprovedParameterValue(userId, "nutrition", "calorie_target"),
       getApprovedParameterValue(userId, "nutrition", "protein_target_g"),
@@ -238,7 +222,11 @@ export async function generateWeeklyBrief(userId: string): Promise<ActionResult>
     metrics: review.metrics as WeeklyMetrics,
     nutritionTargets:
       calorieTarget || proteinTarget ? { calorieTarget, proteinTarget, expectedWeeklyRateLb } : null,
-    userAnswers: review.answers as WeeklyReviewAnswers,
+    recentMemories: recentMemories.map((m) => ({
+      type: m.type,
+      content: m.content,
+      evidence: m.evidence,
+    })),
     previousWeekPriorities: previousBrief?.priorities.map((p) => p.title) ?? [],
   });
 

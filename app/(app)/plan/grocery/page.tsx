@@ -11,7 +11,7 @@ export default async function GroceryPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
-      <Link href="/plan" className="text-sm text-neutral-500 hover:underline">
+      <Link href="/plan/setup" className="text-sm text-neutral-500 hover:underline">
         ← Back to plan
       </Link>
       <h1 className="text-2xl font-semibold">Grocery list</h1>

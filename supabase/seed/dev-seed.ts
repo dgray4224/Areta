@@ -4,7 +4,12 @@
  * `scripts/seed.ts` — never imported by anything under `app/`, `platform/`,
  * or `domains/`, so none of these specifics leak into platform logic.
  */
-import { identitySchema, type IdentityInput } from "@/domains/identity/schema";
+import {
+  identitySchema,
+  type IdentityInput,
+  workScheduleSchema,
+  type WorkScheduleInput,
+} from "@/domains/identity/schema";
 import type { Goal } from "@/domains/goals/schema";
 import { nutritionSchema, type NutritionInput } from "@/domains/nutrition/schema";
 import { recoverySchema, type RecoveryInput } from "@/domains/recovery/schema";
@@ -21,14 +26,17 @@ export const founderIdentity: IdentityInput = identitySchema.parse({
   units: "imperial",
   wakeTime: "06:30",
   bedTime: "22:30",
-  workStatus: "Remote, full-time during recovery",
-  workHoursNote: "Standard business hours, flexible around PT appointments",
-  schoolCommitments: "Fall semester off; OMSA begins early January",
   weeklyReviewDay: 0,
   groceryDay: 6,
   mealPrepDay: 0,
-  learningTimeMinutesPerWeek: 300,
 } satisfies IdentityInput);
+
+export const founderWorkSchedule: WorkScheduleInput = workScheduleSchema.parse({
+  workStatus: "Remote, full-time during recovery",
+  workHoursNote: "Standard business hours, flexible around PT appointments",
+  schoolCommitments: "Fall semester off; OMSA begins early January",
+  learningTimeMinutesPerWeek: 300,
+} satisfies WorkScheduleInput);
 
 export const founderGoals: Goal[] = [
   {
@@ -116,5 +124,4 @@ export const founderCompletedSteps: OnboardingStepKey[] = [
   "nutrition",
   "recovery",
   "learning",
-  "coaching",
 ];

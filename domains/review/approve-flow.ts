@@ -4,21 +4,12 @@ import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
 import { reviewWeekStart, todayIso } from "@/domains/review/dates";
 import type { WeeklyBrief } from "@/domains/review/brief-schema";
-import type { WeeklyReviewAnswers } from "@/domains/review/schema";
 import {
   generateNutritionParameters,
   approveAllGeneratedParameters,
 } from "@/domains/parameters/service";
 import { generateAndSaveMealPlan } from "@/domains/mealplan/service";
 import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
-
-function splitKeywords(text: string | undefined | null): string[] {
-  if (!text) return [];
-  return text
-    .split(/[,;]/)
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-}
 
 /**
  * Approving a generated weekly brief is the moment the whole regeneration
@@ -44,7 +35,7 @@ export async function approveWeeklyReview(
 
   const { data: review } = await supabase
     .from("weekly_reviews")
-    .select("id, brief, answers, status")
+    .select("id, brief, status")
     .eq("user_id", userId)
     .eq("week_start", weekStart)
     .maybeSingle();
@@ -75,9 +66,16 @@ export async function approveWeeklyReview(
     await approveAllGeneratedParameters(userId, "nutrition");
   }
 
-  const answers = review.answers as WeeklyReviewAnswers | null;
+  const { data: personalization } = await supabase
+    .from("personalization_profiles")
+    .select("never_recommend")
+    .eq("user_id", userId)
+    .maybeSingle();
+
   const mealPlanResult = await generateAndSaveMealPlan(userId, {
-    extraExcludeKeywords: splitKeywords(answers?.mealsToDrop),
+    extraExcludeKeywords: ((personalization?.never_recommend as string[] | null) ?? []).map((s) =>
+      s.toLowerCase()
+    ),
   });
   if (mealPlanResult.ok) {
     await approveMealPlanAndGenerateDownstream(userId);

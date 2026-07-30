@@ -179,3 +179,18 @@ export async function getWorkoutPlanForWeek(
     })),
   };
 }
+
+export async function getActiveWorkoutPlan(userId: string): Promise<WorkoutPlanView | null> {
+  const supabase = await createClient();
+  const { data: plan } = await supabase
+    .from("workout_plans")
+    .select("id, week_start, status, sessions_per_week, phase_focus")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("week_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!plan) return null;
+  return getWorkoutPlanForWeek(userId, plan.week_start);
+}

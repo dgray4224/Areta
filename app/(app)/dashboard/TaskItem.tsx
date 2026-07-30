@@ -49,6 +49,9 @@ export function TaskItem({ userId, task }: { userId: string; task: TodayTask }) 
         <div>
           <p className="text-sm font-medium">{task.title}</p>
           {task.description ? <p className="text-xs text-neutral-500">{task.description}</p> : null}
+          {task.goalOutcome ? (
+            <p className="mt-0.5 text-xs text-neutral-400">For: {task.goalOutcome}</p>
+          ) : null}
         </div>
         <select
           value={task.status}

@@ -1,4 +1,5 @@
 import { requireUser } from "@/platform/auth/session";
+import { signOut } from "@/platform/auth/actions";
 import { ExportDataButton } from "./ExportDataButton";
 import { RestartOnboardingButton } from "./RestartOnboardingButton";
 
@@ -36,6 +37,17 @@ export default async function AccountSettingsPage() {
           logged history.
         </p>
         <RestartOnboardingButton userId={user.id} />
+      </section>
+
+      <section className="border-t border-black/5 pt-6 dark:border-white/5">
+        <form action={signOut}>
+          <button
+            type="submit"
+            className="text-sm font-medium text-neutral-600 hover:text-brand dark:text-neutral-400"
+          >
+            Sign out
+          </button>
+        </form>
       </section>
     </div>
   );

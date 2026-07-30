@@ -12,9 +12,48 @@
   --foreground: #171717;
 }
 
+/* Brand identity (Warm Terracotta) — additive to the neutral scale, which
+ * stays in place for body text/secondary text/borders. Dark mode doesn't
+ * naively invert --hero: light mode's hero is near-black against a light
+ * canvas (max contrast); dark mode's canvas is already near-black, so its
+ * hero becomes the rich warm-brown standout instead — same "grounded,
+ * premium surface" read in both themes, not a color-flip. */
+:root {
+  --canvas: #f7f0e7;
+  --card: #ffffff;
+  --brand: #c85a3a;
+  --brand-fill: #b54f32;
+  --brand-ink: #ffffff;
+  --hero: #1c130f;
+  --hero-ink: #ffffff;
+  --accent: #2e6b5c;
+  --accent-ink: #ffffff;
+}
+
+.dark {
+  --canvas: #17120e;
+  --card: #211a15;
+  --brand: #e07a54;
+  --brand-fill: #e07a54;
+  --brand-ink: #17120e;
+  --hero: #3a2318;
+  --hero-ink: #ffffff;
+  --accent: #4a9484;
+  --accent-ink: #0b1210;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-brand: var(--brand);
+  --color-brand-fill: var(--brand-fill);
+  --color-brand-ink: var(--brand-ink);
+  --color-hero: var(--hero);
+  --color-hero-ink: var(--hero-ink);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -71,7 +110,7 @@
 }
 
 body {
-  background: var(--background);
+  background: var(--canvas);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }

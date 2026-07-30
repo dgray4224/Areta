@@ -96,10 +96,15 @@ export function generatePrepPlan(input: PrepPlanGenerationInput): PrepPlanGenera
     .filter((s) => s.applies)
     .map((s, i) => ({ stepNumber: i + 1, instruction: s.instruction }));
 
-  const estimatedMinutes = uniqueRecipes.reduce(
-    (sum, r) => sum + r.prepMinutes + r.cookMinutes,
-    0
-  );
+  // Prep (chopping, measuring) is hands-on and serial — one person can only
+  // do one at a time. Cook time is mostly hands-off and overlaps: it's the
+  // whole reason the steps above say "start the longest-cooking items
+  // first" and prep everything else while they run. Summing every recipe's
+  // cook time as if nothing ever happened in parallel wildly overstates a
+  // real Sunday session, so only the single longest cook time counts.
+  const totalPrepMinutes = uniqueRecipes.reduce((sum, r) => sum + r.prepMinutes, 0);
+  const longestCookMinutes = uniqueRecipes.reduce((max, r) => Math.max(max, r.cookMinutes), 0);
+  const estimatedMinutes = totalPrepMinutes + longestCookMinutes;
 
   const expectedLeftoverRecipes = uniqueRecipes.filter((r) => r.servings > 1).map((r) => r.name);
 

@@ -42,13 +42,9 @@ export async function writeOnboardingOutput(
       units: identity.units,
       wake_time: identity.wakeTime,
       bed_time: identity.bedTime,
-      work_status: identity.workStatus,
-      work_hours_note: identity.workHoursNote ?? null,
-      school_commitments: identity.schoolCommitments ?? null,
       weekly_review_day: identity.weeklyReviewDay,
       grocery_day: identity.groceryDay,
       meal_prep_day: identity.mealPrepDay,
-      learning_time_minutes_per_week: identity.learningTimeMinutesPerWeek,
       onboarding_completed_at: new Date().toISOString(),
     })
     .eq("id", userId);

@@ -7,11 +7,9 @@ const validInput = {
   units: "imperial" as const,
   wakeTime: "06:30",
   bedTime: "22:30",
-  workStatus: "Remote",
   weeklyReviewDay: 0,
   groceryDay: 6,
   mealPrepDay: 0,
-  learningTimeMinutesPerWeek: 180,
 };
 
 describe("identitySchema", () => {

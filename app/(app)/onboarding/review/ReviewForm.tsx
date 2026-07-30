@@ -17,12 +17,14 @@ export function ReviewForm({
   initialOutput,
   stepIndex,
   totalSteps,
+  backHref,
 }: {
   userId: string;
   responses: OnboardingResponses;
   initialOutput: OnboardingOutput;
   stepIndex: number;
   totalSteps: number;
+  backHref?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -72,7 +74,7 @@ export function ReviewForm({
       description="Edit anything before it becomes active."
       currentStep={stepIndex}
       totalSteps={totalSteps}
-      backHref="/onboarding/coaching"
+      backHref={backHref}
     >
       <div className="space-y-6">
         <FormField label="Mission" htmlFor="mission">
@@ -179,7 +181,7 @@ export function ReviewForm({
         <div>
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium">Coaching preferences</p>
-            <Link href="/onboarding/coaching" className="text-xs text-neutral-500 hover:underline">
+            <Link href="/settings/personalization" className="text-xs text-neutral-500 hover:underline">
               Edit
             </Link>
           </div>

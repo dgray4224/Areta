@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/platform/auth/session";
 import { getOrCreateWeeklyReview } from "@/domains/review/service";
-import { QuestionsForm } from "./QuestionsForm";
+import { GenerateBriefButton } from "./GenerateBriefButton";
 
 export default async function ReviewPage() {
   const user = await requireUser();
@@ -81,12 +81,11 @@ export default async function ReviewPage() {
       ) : null}
 
       <section>
-        <h2 className="text-sm font-medium text-neutral-500">A few questions</h2>
-        <p className="mt-1 mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-          All optional — answer what&apos;s useful. This is what turns the numbers above into an
-          actual plan for next week.
+        <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
+          LifeOS uses what it has learned about you over time, along with the metrics above, to
+          write next week&apos;s plan.
         </p>
-        <QuestionsForm userId={user.id} />
+        <GenerateBriefButton userId={user.id} />
       </section>
     </div>
   );

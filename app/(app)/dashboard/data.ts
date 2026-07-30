@@ -2,6 +2,10 @@ import "server-only";
 import { createClient } from "@/platform/supabase/server";
 import { recommendNextAction } from "@/domains/tasks/recommend";
 import type { TaskStatus } from "@/domains/tasks/schema";
+import { getWorkoutPlanForWeek } from "@/domains/workoutplan/service";
+import { getExercisesByIds } from "@/domains/exerciselibrary/service";
+import { getGroceryListForWeek } from "@/domains/grocery/service";
+import { getPrepPlanForWeek } from "@/domains/prep/service";
 
 export type TodayTask = {
   id: string;
@@ -11,6 +15,7 @@ export type TodayTask = {
   priority: number | null;
   status: TaskStatus;
   skipReason: string | null;
+  goalOutcome: string | null;
 };
 
 export type DashboardData = {
@@ -34,6 +39,16 @@ export type DashboardData = {
     learningMinutes: number;
   };
   plannedMealsToday: { mealType: string; recipeName: string }[];
+  todaysWorkout: {
+    hasActivePlan: boolean;
+    exercises: { name: string; sets: number | null; reps: number | null; durationMinutes: number | null }[];
+  };
+  thisWeek: {
+    groceryItemsRemaining: number | null;
+    hasApprovedMealPlan: boolean;
+    hasApprovedWorkoutPlan: boolean;
+    hasPrepPlan: boolean;
+  };
 };
 
 /** Server's current date as YYYY-MM-DD. A more correct implementation
@@ -80,7 +95,7 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
       .eq("status", "proposed"),
     supabase
       .from("daily_actions")
-      .select("id, title, description, is_required, priority, status, skip_reason")
+      .select("id, title, description, is_required, priority, status, skip_reason, goals(outcome)")
       .eq("user_id", userId)
       .eq("date", today)
       .order("priority", { ascending: true, nullsFirst: false })
@@ -105,6 +120,7 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
     priority: t.priority,
     status: t.status as TaskStatus,
     skipReason: t.skip_reason,
+    goalOutcome: (t.goals as unknown as { outcome: string } | null)?.outcome ?? null,
   }));
 
   const completed = todayTasks.filter(
@@ -131,6 +147,25 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
     plannedMealsToday = (items ?? []).map((i) => ({
       mealType: i.meal_type,
       recipeName: (i.recipes as { name: string } | null)?.name ?? "Unknown recipe",
+    }));
+  }
+
+  const [workoutPlan, groceryItems, prepPlan] = await Promise.all([
+    getWorkoutPlanForWeek(userId),
+    getGroceryListForWeek(userId),
+    getPrepPlanForWeek(userId),
+  ]);
+
+  const hasActiveWorkoutPlan = workoutPlan?.status === "active";
+  let todaysExercises: DashboardData["todaysWorkout"]["exercises"] = [];
+  if (hasActiveWorkoutPlan) {
+    const todaysItems = workoutPlan!.items.filter((i) => i.dayOfWeek === todayDow);
+    const exerciseMap = await getExercisesByIds([...new Set(todaysItems.map((i) => i.exerciseId))]);
+    todaysExercises = todaysItems.map((i) => ({
+      name: exerciseMap.get(i.exerciseId)?.name ?? "Unknown exercise",
+      sets: i.sets,
+      reps: i.reps,
+      durationMinutes: i.durationMinutes,
     }));
   }
 
@@ -164,5 +199,16 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
       ),
     },
     plannedMealsToday,
+    todaysWorkout: {
+      hasActivePlan: hasActiveWorkoutPlan,
+      exercises: todaysExercises,
+    },
+    thisWeek: {
+      groceryItemsRemaining:
+        groceryItems.length > 0 ? groceryItems.filter((i) => !i.isChecked).length : null,
+      hasApprovedMealPlan: !!activeMealPlan,
+      hasApprovedWorkoutPlan: hasActiveWorkoutPlan,
+      hasPrepPlan: (prepPlan?.steps.length ?? 0) > 0,
+    },
   };
 }

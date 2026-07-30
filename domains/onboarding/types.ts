@@ -5,19 +5,18 @@ export type { DomainKey };
 import type { NutritionInput } from "@/domains/nutrition/schema";
 import type { RecoveryInput } from "@/domains/recovery/schema";
 import type { ExerciseInput } from "@/domains/exercise/schema";
-import type { SleepGoalsInput } from "@/domains/sleep/schema";
 import type { LearningInput } from "@/domains/learning/schema";
 import type { CoachingInput } from "@/domains/coaching/schema";
 
+/** Sleep and Coaching are deliberately not onboarding steps — see
+ * effectiveSteps in transform.ts for why. */
 export type OnboardingStepKey =
   | "identity"
   | "goals"
   | "nutrition"
   | "exercise"
-  | "sleep"
   | "recovery"
-  | "learning"
-  | "coaching";
+  | "learning";
 
 export type OnboardingResponses = {
   userId: string;
@@ -25,10 +24,8 @@ export type OnboardingResponses = {
   goals: Goal[];
   nutrition: NutritionInput | null;
   exercise: ExerciseInput | null;
-  sleepGoals: SleepGoalsInput | null;
   recovery: RecoveryInput | null;
   learning: LearningInput | null;
-  coaching: CoachingInput | null;
   completedSteps: OnboardingStepKey[];
 };
 

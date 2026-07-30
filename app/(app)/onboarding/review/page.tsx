@@ -12,7 +12,9 @@ export default async function ReviewStepPage() {
     redirect("/onboarding");
   }
 
-  const totalSteps = effectiveSteps(responses.goals).length + 1;
+  const steps = effectiveSteps(responses.goals);
+  const totalSteps = steps.length + 1;
+  const backHref = steps.length > 0 ? `/onboarding/${steps[steps.length - 1]}` : undefined;
 
   return (
     <ReviewForm
@@ -21,6 +23,7 @@ export default async function ReviewStepPage() {
       initialOutput={output}
       stepIndex={totalSteps}
       totalSteps={totalSteps}
+      backHref={backHref}
     />
   );
 }

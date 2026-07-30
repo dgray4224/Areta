@@ -1,132 +1,285 @@
 import Link from "next/link";
 import { requireUser } from "@/platform/auth/session";
-import { getGeneratedParameters } from "@/domains/parameters/service";
+import { createClient } from "@/platform/supabase/server";
+import { EmptyState } from "@/platform/ui/EmptyState";
+import { Card } from "@/platform/ui/Card";
+import { LinkButton } from "@/platform/ui/Button";
+import { getWeekDates, formatShortDate, DAY_NAMES } from "@/platform/ui/week-dates";
 import { getMealPlanForWeek } from "@/domains/mealplan/service";
+import { getWorkoutPlanForWeek } from "@/domains/workoutplan/service";
 import { getGroceryListForWeek } from "@/domains/grocery/service";
 import { getPrepPlanForWeek } from "@/domains/prep/service";
-import { getWorkoutPlanForWeek } from "@/domains/workoutplan/service";
+import { getRecipesByIds } from "@/domains/recipes/service";
+import { getExercisesByIds } from "@/domains/exerciselibrary/service";
+import { getMotivationQuote } from "@/domains/motivation/quotes";
+import type { WeeklyBrief } from "@/domains/review/brief-schema";
+import { WeekPicker } from "./WeekPicker";
 
-function StatusBadge({ status }: { status: "not_started" | "pending" | "done" }) {
-  const styles = {
-    not_started: "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
-    pending: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-    done: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
-  };
-  const labels = { not_started: "Not started", pending: "In progress", done: "Ready" };
-  return (
-    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${styles[status]}`}>
-      {labels[status]}
-    </span>
-  );
+const TABS = [
+  { view: "week", label: "Week" },
+  { view: "month", label: "Month" },
+  { view: "year", label: "Year" },
+] as const;
+
+function todayDateString(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
-export default async function PlanPage() {
+export default async function PlanPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string; week?: string }>;
+}) {
   const user = await requireUser();
-  const [parameters, mealPlan, groceryItems, prepPlan, exerciseParameters, workoutPlan] = await Promise.all([
-    getGeneratedParameters(user.id, "nutrition"),
-    getMealPlanForWeek(user.id),
-    getGroceryListForWeek(user.id),
-    getPrepPlanForWeek(user.id),
-    getGeneratedParameters(user.id, "exercise"),
-    getWorkoutPlanForWeek(user.id),
-  ]);
-
-  const parametersStatus =
-    parameters.length === 0
-      ? "not_started"
-      : parameters.every((p) => p.approved)
-        ? "done"
-        : "pending";
-  const mealPlanStatus =
-    !mealPlan || mealPlan.items.length === 0
-      ? "not_started"
-      : mealPlan.status === "active"
-        ? "done"
-        : "pending";
-  const groceryStatus = groceryItems.length === 0 ? "not_started" : "done";
-  const prepStatus = !prepPlan || prepPlan.steps.length === 0 ? "not_started" : "done";
-  const exerciseParametersStatus =
-    exerciseParameters.length === 0
-      ? "not_started"
-      : exerciseParameters.every((p) => p.approved)
-        ? "done"
-        : "pending";
-  const workoutPlanStatus =
-    !workoutPlan || workoutPlan.items.length === 0
-      ? "not_started"
-      : workoutPlan.status === "active"
-        ? "done"
-        : "pending";
-
-  const steps = [
-    {
-      href: "/plan/parameters",
-      title: "1. Nutrition targets",
-      description: "Calorie, protein, and macro targets calculated from your onboarding answers.",
-      status: parametersStatus,
-    },
-    {
-      href: "/plan/meals",
-      title: "2. Meal plan",
-      description: "A 7-day plan built from your targets, preferences, and the recipe library.",
-      status: mealPlanStatus,
-    },
-    {
-      href: "/plan/grocery",
-      title: "3. Grocery list",
-      description: "Combined ingredients for the week, grouped by store section.",
-      status: groceryStatus,
-    },
-    {
-      href: "/plan/prep",
-      title: "4. Sunday prep plan",
-      description: "An ordered cooking and portioning workflow for the week's meals.",
-      status: prepStatus,
-    },
-    {
-      href: "/plan/exercise-parameters",
-      title: "5. Training parameters",
-      description: "Sessions/week, phase structure, and progression calculated from your Exercise onboarding answers.",
-      status: exerciseParametersStatus,
-    },
-    {
-      href: "/plan/workouts",
-      title: "6. Workout plan",
-      description: "A weekly schedule built from your training parameters, equipment, and the exercise library.",
-      status: workoutPlanStatus,
-    },
-  ] as const;
+  const { view: rawView, week: requestedWeek } = await searchParams;
+  const view = rawView === "month" || rawView === "year" ? rawView : "week";
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
+    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
       <div>
         <Link href="/dashboard" className="text-sm text-neutral-500 hover:underline">
           ← Back to dashboard
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold">This week&apos;s plan</h1>
+        <h1 className="mt-2 text-2xl font-semibold">Plan</h1>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          LifeOS derives your nutrition targets, then builds a meal plan, grocery list, and Sunday
-          prep plan from them — in order, each one reviewable before it goes live.
+          What your week (and eventually month, year) looks like — meals, workouts,
+          groceries, and prep, all in one place.
         </p>
       </div>
 
-      <div className="space-y-3">
-        {steps.map((step) => (
+      <nav className="flex gap-1 border-b border-black/5 dark:border-white/5">
+        {TABS.map((tab) => (
           <Link
-            key={step.href}
-            href={step.href}
-            className="flex items-start justify-between gap-4 rounded-lg border border-neutral-200 p-4 hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-900"
+            key={tab.view}
+            href={`/plan?view=${tab.view}`}
+            className={`border-b-2 px-3 py-2 text-sm ${
+              view === tab.view
+                ? "border-brand font-medium text-brand"
+                : "border-transparent text-neutral-500 hover:text-foreground"
+            }`}
           >
-            <div>
-              <p className="font-medium">{step.title}</p>
-              <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-                {step.description}
-              </p>
-            </div>
-            <StatusBadge status={step.status} />
+            {tab.label}
           </Link>
         ))}
+      </nav>
+
+      {view === "week" ? (
+        <WeekView userId={user.id} requestedWeek={requestedWeek} />
+      ) : (
+        <EmptyState
+          title={`${view === "month" ? "Month" : "Year"} view — not built yet`}
+          description="Weekly planning is fully built. Month and Year rollups (goal progress and adherence trends across a longer horizon) are the next thing on the roadmap."
+        />
+      )}
+    </div>
+  );
+}
+
+async function WeekView({ userId, requestedWeek }: { userId: string; requestedWeek?: string }) {
+  const supabase = await createClient();
+
+  const { data: recentMealPlans } = await supabase
+    .from("meal_plans")
+    .select("week_start")
+    .eq("user_id", userId)
+    .order("week_start", { ascending: false })
+    .limit(30);
+
+  const weekOptions = [...new Set((recentMealPlans ?? []).map((r) => r.week_start))];
+  const weekStart = requestedWeek ?? weekOptions[0] ?? todayDateString();
+
+  const [mealPlan, workoutPlan, groceryItems, prepPlan, { data: latestReview }, { data: phases }, { data: goals }, { data: weeklyOutcomes }] =
+    await Promise.all([
+      getMealPlanForWeek(userId, weekStart),
+      getWorkoutPlanForWeek(userId, weekStart),
+      getGroceryListForWeek(userId, weekStart),
+      getPrepPlanForWeek(userId, weekStart),
+      supabase
+        .from("weekly_reviews")
+        .select("brief")
+        .eq("user_id", userId)
+        .not("brief", "is", null)
+        .order("week_start", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from("phases").select("name, mission").eq("user_id", userId).eq("is_current", true).limit(1),
+      supabase
+        .from("goals")
+        .select("id, outcome, target_date, priority")
+        .eq("user_id", userId)
+        .order("priority", { ascending: true })
+        .limit(3),
+      supabase
+        .from("weekly_outcomes")
+        .select("outcome_text")
+        .eq("user_id", userId)
+        .eq("status", "proposed"),
+    ]);
+
+  const brief = latestReview?.brief as WeeklyBrief | null | undefined;
+  const motto = brief ? getMotivationQuote(brief.weeklyMottoId) : null;
+  const phaseMission = phases && phases.length > 0 ? phases[0].mission : null;
+
+  const [recipes, exercises] = await Promise.all([
+    getRecipesByIds([...new Set((mealPlan?.items ?? []).map((i) => i.recipeId))]),
+    getExercisesByIds([...new Set((workoutPlan?.items ?? []).map((i) => i.exerciseId))]),
+  ]);
+
+  const weekDates = getWeekDates(weekStart);
+  const today = todayDateString();
+
+  return (
+    <div className="space-y-6">
+      {weekOptions.length > 0 ? (
+        <WeekPicker weekStart={weekStart} options={weekOptions} />
+      ) : null}
+
+      <div className="max-w-2xl space-y-6">
+        <Card tone="hero">
+          {motto ? (
+            <>
+              <p className="text-lg italic leading-snug">&ldquo;{motto.quote}&rdquo;</p>
+              <p className="mt-2 text-xs text-white/60">— {motto.author}</p>
+            </>
+          ) : phaseMission ? (
+            <p className="text-sm">This week: {phaseMission}</p>
+          ) : (
+            <p className="text-sm text-white/70">
+              Generate a weekly brief from{" "}
+              <Link href="/review" className="underline">
+                Review
+              </Link>{" "}
+              to get a motto for the week.
+            </p>
+          )}
+        </Card>
+
+        <section>
+          <h2 className="text-sm font-medium text-neutral-500">This week&apos;s priorities</h2>
+          {goals && goals.length > 0 ? (
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">
+              {goals.map((g) => (
+                <li key={g.id}>
+                  {g.outcome}
+                  {g.target_date ? ` — by ${g.target_date}` : ""}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <EmptyState title="No goals yet" />
+          )}
+          {weeklyOutcomes && weeklyOutcomes.length > 0 ? (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-neutral-600 dark:text-neutral-400">
+              {weeklyOutcomes.map((w, i) => (
+                <li key={i}>{w.outcome_text}</li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
       </div>
+
+      <section>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-neutral-500">This week</h2>
+          <div className="flex gap-3 text-xs text-neutral-500">
+            <Link href="/plan/meals" className="hover:text-brand">
+              Full meal plan
+            </Link>
+            <Link href="/plan/workouts" className="hover:text-brand">
+              Full workout plan
+            </Link>
+          </div>
+        </div>
+        {mealPlan || workoutPlan ? (
+          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            {DAY_NAMES.map((dayName, day) => {
+              const date = weekDates[day];
+              const isToday = date === today;
+              const meals = (mealPlan?.items ?? []).filter((i) => i.dayOfWeek === day);
+              const workouts = (workoutPlan?.items ?? []).filter((i) => i.dayOfWeek === day);
+              return (
+                <Card
+                  key={day}
+                  tone="surface"
+                  className={`space-y-3 ${isToday ? "border-2 border-brand" : ""}`}
+                >
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                      {dayName}
+                      {isToday ? " · today" : ""}
+                    </p>
+                    <p className="text-sm font-semibold">{formatShortDate(date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">Workout</p>
+                    {workouts.length > 0 ? (
+                      <ul className="mt-1 space-y-0.5 text-xs">
+                        {workouts.map((w) => (
+                          <li key={w.id}>{exercises.get(w.exerciseId)?.name ?? "Unknown"}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-xs text-neutral-400">
+                        {workoutPlan ? "Rest" : "—"}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">Meals</p>
+                    {meals.length > 0 ? (
+                      <ul className="mt-1 space-y-0.5 text-xs">
+                        {meals.map((m) => (
+                          <li key={m.id} className="capitalize">
+                            {m.mealType}: {recipes.get(m.recipeId)?.name ?? "Unknown"}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-xs text-neutral-400">—</p>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState
+            title="No plan for this week yet"
+            action={
+              <Link href="/plan/setup" className="text-sm text-brand underline">
+                Set up
+              </Link>
+            }
+          />
+        )}
+      </section>
+
+      <div className="grid max-w-2xl grid-cols-2 gap-4">
+        <Link href="/plan/grocery">
+          <Card tone="surface" className="hover:bg-black/[0.02] dark:hover:bg-white/5">
+            <p className="text-sm font-medium">Grocery list</p>
+            <p className="mt-1 text-xs text-neutral-500">
+              {groceryItems.length > 0
+                ? `${groceryItems.filter((i) => !i.isChecked).length} of ${groceryItems.length} left`
+                : "Not generated yet"}
+            </p>
+          </Card>
+        </Link>
+        <Link href="/plan/prep">
+          <Card tone="surface" className="hover:bg-black/[0.02] dark:hover:bg-white/5">
+            <p className="text-sm font-medium">Sunday prep</p>
+            <p className="mt-1 text-xs text-neutral-500">
+              {prepPlan && prepPlan.steps.length > 0
+                ? `~${prepPlan.estimatedMinutes ?? "?"} min, ${prepPlan.containerCount ?? "?"} containers`
+                : "Not built yet"}
+            </p>
+          </Card>
+        </Link>
+      </div>
+
+      <LinkButton href="/plan/setup" variant="secondary">
+        Manage / regenerate this week&apos;s plan
+      </LinkButton>
     </div>
   );
 }

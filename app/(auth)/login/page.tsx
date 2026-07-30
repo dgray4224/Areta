@@ -51,6 +51,12 @@ export default function LoginPage() {
         />
       </FormField>
 
+      <p className="text-right text-sm">
+        <Link href="/forgot-password" className="text-neutral-500 underline">
+          Forgot password?
+        </Link>
+      </p>
+
       {serverError ? <p className="text-sm text-red-600">{serverError}</p> : null}
 
       <button
