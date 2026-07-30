@@ -41,7 +41,7 @@ export const DOMAIN_LABELS: Record<DomainKey, string> = {
   general: "General / Other",
 };
 
-/** LifeOS V1 scope is health-only (CLAUDE.md is being narrowed for this
+/** Areta V1 scope is health-only (CLAUDE.md is being narrowed for this
  * phase) — the Goals step only offers this list, not the full DOMAIN_KEYS.
  * Picking "Health" unconditionally unlocks the Nutrition/Exercise/Sleep
  * onboarding steps (see effectiveSteps in domains/onboarding/transform.ts).

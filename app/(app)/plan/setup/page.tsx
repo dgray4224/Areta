@@ -105,7 +105,7 @@ export default async function PlanSetupPage() {
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">Build this week&apos;s plan</h1>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          LifeOS derives your nutrition targets, then builds a meal plan, grocery list, and Sunday
+          Areta derives your nutrition targets, then builds a meal plan, grocery list, and Sunday
           prep plan from them — in order, each one reviewable before it goes live.
         </p>
       </div>

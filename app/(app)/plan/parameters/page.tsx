@@ -17,7 +17,7 @@ export default async function ParametersPage() {
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">Nutrition targets</h1>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          LifeOS calculated these from your onboarding answers. Review the reasoning, edit
+          Areta calculated these from your onboarding answers. Review the reasoning, edit
           anything that doesn&apos;t look right, and approve before they drive your meal plan.
         </p>
       </div>
@@ -25,7 +25,7 @@ export default async function ParametersPage() {
       {parameters.length === 0 ? (
         <EmptyState
           title="No targets calculated yet"
-          description="LifeOS derives calorie and protein targets from your height, weight, age, and activity level."
+          description="Areta derives calorie and protein targets from your height, weight, age, and activity level."
           action={
             <GenerateParametersButton userId={user.id} generateAction={generateNutritionParameters} />
           }

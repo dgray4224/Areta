@@ -43,7 +43,7 @@ export default async function PersonalizationSettingsPage() {
   return (
     <div>
       <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-        Everything here is optional. LifeOS defaults to a gentle, flexible style until you say
+        Everything here is optional. Areta defaults to a gentle, flexible style until you say
         otherwise.
       </p>
       <PersonalizationForm

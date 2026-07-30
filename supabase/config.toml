@@ -2,7 +2,7 @@
 # https://supabase.com/docs/guides/local-development/cli/config
 # A string used to distinguish different Supabase projects on the same host. Defaults to the
 # working directory name when running `supabase init`.
-project_id = "LifeOS"
+project_id = "Areta"
 
 [api]
 enabled = true
@@ -248,7 +248,7 @@ otp_expiry = 3600
 # @supabase/ssr's PKCE-flavored server client needs to call verifyOtp()
 # itself to set the session cookie.
 [auth.email.template.confirmation]
-subject = "Confirm your LifeOS account"
+subject = "Confirm your Areta account"
 content_path = "./supabase/templates/confirmation.html"
 
 # Uncomment to customize email template

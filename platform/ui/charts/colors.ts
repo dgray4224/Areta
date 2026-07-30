@@ -6,19 +6,24 @@ import { useSyncExternalStore } from "react";
  * JS-side copy exists because recharts renders SVG presentation attributes
  * (stroke/fill), not inline style, so `var(--x)` isn't reliable there —
  * actual hex values driven by a media-query hook are. */
+/* series1/sequential are tied to the brand terracotta (app/globals.css
+ * --brand). series2 stays a cool blue rather than the brand's own orange
+ * family — a same-hue second series would fail CVD separation against
+ * series1 (validated with the dataviz skill's validate_palette.js).
+ * series3-5 are untouched, unused by any chart today. */
 const LIGHT = {
   textPrimary: "#171717",
   textSecondary: "#737373",
   textMuted: "#a3a3a3",
   gridline: "#e5e5e5",
   baseline: "#d4d4d4",
-  series1: "#2a78d6",
-  series2: "#eb6834",
+  series1: "#c85a3a",
+  series2: "#3a6ea8",
   series3: "#1baf7a",
   series4: "#eda100",
   series5: "#e87ba4",
-  sequential: "#2a78d6",
-  sequentialLight: "#b7d3f6",
+  sequential: "#c85a3a",
+  sequentialLight: "#f3d9cb",
   good: "#0ca30c",
   warning: "#fab219",
   serious: "#ec835a",
@@ -31,13 +36,13 @@ const DARK = {
   textMuted: "#737373",
   gridline: "#262626",
   baseline: "#404040",
-  series1: "#3987e5",
-  series2: "#d95926",
+  series1: "#cf6c46",
+  series2: "#5b93d1",
   series3: "#199e70",
   series4: "#c98500",
   series5: "#d55181",
-  sequential: "#3987e5",
-  sequentialLight: "#184f95",
+  sequential: "#cf6c46",
+  sequentialLight: "#4a2a1c",
   good: "#0ca30c",
   warning: "#fab219",
   serious: "#ec835a",

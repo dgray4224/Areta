@@ -147,7 +147,7 @@ export async function generateNutritionParameters(userId: string): Promise<Actio
   if (parameters.length === 0) {
     return {
       ok: false,
-      error: `Add ${missingInputs.join(" and ")} in onboarding before LifeOS can calculate nutrition targets.`,
+      error: `Add ${missingInputs.join(" and ")} in onboarding before Areta can calculate nutrition targets.`,
     };
   }
 
@@ -178,7 +178,7 @@ export async function generateExerciseParameters(userId: string): Promise<Action
   if (parameters.length === 0) {
     return {
       ok: false,
-      error: `Add ${missingInputs.join(" and ")} in onboarding before LifeOS can build your training parameters.`,
+      error: `Add ${missingInputs.join(" and ")} in onboarding before Areta can build your training parameters.`,
     };
   }
 

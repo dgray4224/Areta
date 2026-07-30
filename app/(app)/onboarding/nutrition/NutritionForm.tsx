@@ -68,7 +68,7 @@ export function NutritionForm({
   return (
     <StepShell
       title="Food and nutrition"
-      description="Preferences only — LifeOS derives calorie and protein targets later, not you."
+      description="Preferences only — Areta derives calorie and protein targets later, not you."
       currentStep={stepIndex}
       totalSteps={totalSteps}
       backHref={backHref}

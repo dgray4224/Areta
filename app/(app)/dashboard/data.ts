@@ -1,6 +1,5 @@
 import "server-only";
 import { createClient } from "@/platform/supabase/server";
-import { recommendNextAction } from "@/domains/tasks/recommend";
 import type { TaskStatus } from "@/domains/tasks/schema";
 import { getWorkoutPlanForWeek } from "@/domains/workoutplan/service";
 import { getExercisesByIds } from "@/domains/exerciselibrary/service";
@@ -28,9 +27,9 @@ export type DashboardData = {
   currentPhase: { name: string; mission: string | null } | null;
   weeklyOutcomes: { outcomeText: string }[];
   today: string;
+  selectedDate: string;
   todayTasks: TodayTask[];
   taskProgress: { completed: number; total: number };
-  recommendedNextAction: string | null;
   logsToday: {
     weightLogged: boolean;
     sleepLogged: boolean;
@@ -58,9 +57,10 @@ function todayDateString(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export async function getDashboardData(userId: string): Promise<DashboardData> {
+export async function getDashboardData(userId: string, viewDate?: string): Promise<DashboardData> {
   const supabase = await createClient();
   const today = todayDateString();
+  const selectedDate = viewDate ?? today;
 
   const [
     { data: profile },
@@ -97,19 +97,19 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
       .from("daily_actions")
       .select("id, title, description, is_required, priority, status, skip_reason, goals(outcome)")
       .eq("user_id", userId)
-      .eq("date", today)
+      .eq("date", selectedDate)
       .order("priority", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true }),
     supabase
       .from("weight_logs")
       .select("id")
       .eq("user_id", userId)
-      .gte("logged_at", `${today}T00:00:00.000Z`)
-      .lte("logged_at", `${today}T23:59:59.999Z`),
-    supabase.from("sleep_logs").select("id").eq("user_id", userId).eq("date", today),
-    supabase.from("nutrition_logs").select("id").eq("user_id", userId).eq("date", today),
-    supabase.from("recovery_logs").select("id").eq("user_id", userId).eq("date", today),
-    supabase.from("study_sessions").select("duration_minutes").eq("user_id", userId).eq("date", today),
+      .gte("logged_at", `${selectedDate}T00:00:00.000Z`)
+      .lte("logged_at", `${selectedDate}T23:59:59.999Z`),
+    supabase.from("sleep_logs").select("id").eq("user_id", userId).eq("date", selectedDate),
+    supabase.from("nutrition_logs").select("id").eq("user_id", userId).eq("date", selectedDate),
+    supabase.from("recovery_logs").select("id").eq("user_id", userId).eq("date", selectedDate),
+    supabase.from("study_sessions").select("duration_minutes").eq("user_id", userId).eq("date", selectedDate),
   ]);
 
   const todayTasks: TodayTask[] = (tasks ?? []).map((t) => ({
@@ -127,7 +127,7 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
     (t) => t.status === "completed" || t.status === "partially_completed"
   ).length;
 
-  const todayDow = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const selectedDow = new Date(`${selectedDate}T00:00:00Z`).getUTCDay();
   const { data: activeMealPlan } = await supabase
     .from("meal_plans")
     .select("id")
@@ -143,7 +143,7 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
       .from("meal_plan_items")
       .select("meal_type, recipes(name)")
       .eq("meal_plan_id", activeMealPlan.id)
-      .eq("day_of_week", todayDow);
+      .eq("day_of_week", selectedDow);
     plannedMealsToday = (items ?? []).map((i) => ({
       mealType: i.meal_type,
       recipeName: (i.recipes as { name: string } | null)?.name ?? "Unknown recipe",
@@ -159,7 +159,7 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
   const hasActiveWorkoutPlan = workoutPlan?.status === "active";
   let todaysExercises: DashboardData["todaysWorkout"]["exercises"] = [];
   if (hasActiveWorkoutPlan) {
-    const todaysItems = workoutPlan!.items.filter((i) => i.dayOfWeek === todayDow);
+    const todaysItems = workoutPlan!.items.filter((i) => i.dayOfWeek === selectedDow);
     const exerciseMap = await getExercisesByIds([...new Set(todaysItems.map((i) => i.exerciseId))]);
     todaysExercises = todaysItems.map((i) => ({
       name: exerciseMap.get(i.exerciseId)?.name ?? "Unknown exercise",
@@ -185,9 +185,9 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
       phases && phases.length > 0 ? { name: phases[0].name, mission: phases[0].mission } : null,
     weeklyOutcomes: (weeklyOutcomes ?? []).map((w) => ({ outcomeText: w.outcome_text })),
     today,
+    selectedDate,
     todayTasks,
     taskProgress: { completed, total: todayTasks.length },
-    recommendedNextAction: recommendNextAction(todayTasks),
     logsToday: {
       weightLogged: (weightLogsToday ?? []).length > 0,
       sleepLogged: (sleepLogsToday ?? []).length > 0,

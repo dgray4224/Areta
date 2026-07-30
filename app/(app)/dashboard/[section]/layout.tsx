@@ -8,7 +8,8 @@ import {
   getActiveSections,
   getActiveDomainsForSection,
 } from "@/platform/ui/sections";
-import { DOMAIN_LABELS } from "@/domains/goals/schema";
+import { navTabClass } from "../../nav-links";
+import { DomainNav } from "./DomainNav";
 
 export default async function DashboardSectionLayout({
   children,
@@ -41,11 +42,7 @@ export default async function DashboardSectionLayout({
           <Link
             key={key}
             href={`/dashboard/${key}`}
-            className={`-mb-px border-b-2 px-1 pb-2 ${
-              key === section
-                ? "border-neutral-900 font-medium dark:border-neutral-100"
-                : "border-transparent text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
-            }`}
+            className={`-mb-px border-b-2 px-1 pb-2 ${navTabClass(key === section)}`}
           >
             {SECTIONS[key].label}
           </Link>
@@ -53,23 +50,7 @@ export default async function DashboardSectionLayout({
       </nav>
 
       {activeDomains.length > 0 ? (
-        <nav className="flex gap-3 pt-3 text-xs">
-          <Link
-            href={`/dashboard/${section}`}
-            className="rounded-full border border-neutral-200 px-3 py-1 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-900"
-          >
-            Overview
-          </Link>
-          {activeDomains.map((domain) => (
-            <Link
-              key={domain}
-              href={`/dashboard/${section}/${domain}`}
-              className="rounded-full border border-neutral-200 px-3 py-1 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-900"
-            >
-              {DOMAIN_LABELS[domain]}
-            </Link>
-          ))}
-        </nav>
+        <DomainNav section={section} activeDomains={activeDomains} />
       ) : null}
 
       <div className="py-6">{children}</div>

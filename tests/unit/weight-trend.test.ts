@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeSevenDayMovingAverage } from "@/domains/weight/trend";
+import { computeSevenDayMovingAverage, computeRecentWeightDelta } from "@/domains/weight/trend";
 
 describe("computeSevenDayMovingAverage", () => {
   it("returns the single value itself for one data point", () => {
@@ -29,5 +29,29 @@ describe("computeSevenDayMovingAverage", () => {
     const result = computeSevenDayMovingAverage(points);
     expect(result[0].loggedAt).toBe("2026-01-01T08:00:00Z");
     expect(result[1].sevenDayAverage).toBe(201);
+  });
+});
+
+describe("computeRecentWeightDelta", () => {
+  it("returns null when there is no history at all", () => {
+    expect(computeRecentWeightDelta([])).toBeNull();
+  });
+
+  it("returns null when every point is within the last 6 days", () => {
+    const trend = computeSevenDayMovingAverage([
+      { loggedAt: "2026-01-01T08:00:00Z", weight: 210 },
+      { loggedAt: "2026-01-04T08:00:00Z", weight: 209 },
+    ]);
+    expect(computeRecentWeightDelta(trend)).toBeNull();
+  });
+
+  it("diffs the latest 7-day average against one from ~a week earlier", () => {
+    const trend = computeSevenDayMovingAverage([
+      { loggedAt: "2026-01-01T08:00:00Z", weight: 210 },
+      { loggedAt: "2026-01-08T08:00:00Z", weight: 208 },
+    ]);
+    // Each point is a lone reading (no other point within its own 7-day
+    // window), so each sevenDayAverage equals its own weight: 210 -> 208.
+    expect(computeRecentWeightDelta(trend)).toBe(-2);
   });
 });

@@ -5,7 +5,7 @@ import { getRecentSleepLogs } from "@/domains/sleep/service";
 import { getRecentRecoveryLogs } from "@/domains/recovery/log-service";
 import { getNutritionDailyTotals } from "@/domains/nutrition/log-service";
 import { getTaskCompletionByDay } from "@/domains/tasks/service";
-import { computeSevenDayMovingAverage } from "@/domains/weight/trend";
+import { computeSevenDayMovingAverage, computeRecentWeightDelta } from "@/domains/weight/trend";
 import { getApprovedParameterValue } from "@/domains/parameters/service";
 import type { WeightTrendDatum } from "@/platform/ui/charts/WeightTrendChart";
 import type { SleepTrendDatum } from "@/platform/ui/charts/SleepTrendChart";
@@ -17,7 +17,7 @@ const LB_PER_KG = 2.2046226218;
 const TREND_DAYS = 30;
 
 export type DashboardTrends = {
-  weight: { data: WeightTrendDatum[]; unit: string };
+  weight: { data: WeightTrendDatum[]; unit: string; recentDelta: number | null };
   sleep: SleepTrendDatum[];
   nutrition: { data: NutritionAdherenceDatum[]; target: number | null };
   tasks: TaskCompletionDatum[];
@@ -43,11 +43,13 @@ export async function getDashboardTrends(userId: string): Promise<DashboardTrend
     loggedAt: w.logged_at,
     weight: w.unit === preferredUnit ? w.weight : w.unit === "lb" ? w.weight / LB_PER_KG : w.weight * LB_PER_KG,
   }));
-  const weightTrend = computeSevenDayMovingAverage(normalizedWeights).map((p) => ({
+  const weightMovingAverage = computeSevenDayMovingAverage(normalizedWeights);
+  const weightTrend = weightMovingAverage.map((p) => ({
     date: p.loggedAt.slice(0, 10),
     weight: p.weight,
     sevenDayAverage: p.sevenDayAverage,
   }));
+  const weightRecentDelta = computeRecentWeightDelta(weightMovingAverage);
 
   const sleep: SleepTrendDatum[] = [...sleepLogs]
     .reverse()
@@ -66,7 +68,7 @@ export async function getDashboardTrends(userId: string): Promise<DashboardTrend
   }));
 
   return {
-    weight: { data: weightTrend, unit: preferredUnit },
+    weight: { data: weightTrend, unit: preferredUnit, recentDelta: weightRecentDelta },
     sleep,
     nutrition: { data: nutrition, target: calorieTarget },
     tasks: taskCompletion,

@@ -14,6 +14,7 @@ import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { getMotivationQuote } from "@/domains/motivation/quotes";
 import type { WeeklyBrief } from "@/domains/review/brief-schema";
 import { WeekPicker } from "./WeekPicker";
+import { navTabClass } from "../nav-links";
 
 const TABS = [
   { view: "week", label: "Week" },
@@ -52,11 +53,7 @@ export default async function PlanPage({
           <Link
             key={tab.view}
             href={`/plan?view=${tab.view}`}
-            className={`border-b-2 px-3 py-2 text-sm ${
-              view === tab.view
-                ? "border-brand font-medium text-brand"
-                : "border-transparent text-neutral-500 hover:text-foreground"
-            }`}
+            className={`border-b-2 px-3 py-2 text-sm ${navTabClass(view === tab.view)}`}
           >
             {tab.label}
           </Link>

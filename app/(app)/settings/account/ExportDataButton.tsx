@@ -16,7 +16,7 @@ export function ExportDataButton({ userId }: { userId: string }) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `lifeos-export-${new Date().toISOString().slice(0, 10)}.json`;
+        a.download = `areta-export-${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
       } catch (e) {

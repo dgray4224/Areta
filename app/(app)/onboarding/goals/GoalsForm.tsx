@@ -75,7 +75,7 @@ export function GoalsForm({
   return (
     <StepShell
       title="Your goals"
-      description="What outcomes do you want? LifeOS will work out the technical targets."
+      description="What outcomes do you want? Areta will work out the technical targets."
       currentStep={stepIndex}
       totalSteps={totalSteps}
       backHref="/onboarding/identity"
@@ -84,7 +84,7 @@ export function GoalsForm({
         <div>
           <p className="text-sm font-medium">What areas do you want to work on?</p>
           <p className="mt-1 text-xs text-neutral-500">
-            Pick any that apply — LifeOS only asks follow-up questions for the areas you choose.
+            Pick any that apply — Areta only asks follow-up questions for the areas you choose.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {V1_DOMAIN_KEYS.map((key) => {

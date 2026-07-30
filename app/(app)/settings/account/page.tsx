@@ -25,7 +25,7 @@ export default async function AccountSettingsPage() {
       <section>
         <h2 className="text-sm font-medium text-neutral-500">Your data</h2>
         <p className="mt-1 mb-3 text-sm text-neutral-600 dark:text-neutral-400">
-          Download everything LifeOS has stored for you as JSON.
+          Download everything Areta has stored for you as JSON.
         </p>
         <ExportDataButton userId={user.id} />
       </section>

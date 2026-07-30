@@ -32,7 +32,7 @@ export default async function ProfileSettingsPage() {
   return (
     <div>
       <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-        The basics LifeOS plans around — same fields you answered during onboarding.
+        The basics Areta plans around — same fields you answered during onboarding.
       </p>
       <ProfileForm userId={user.id} defaultValues={defaultValues} />
     </div>

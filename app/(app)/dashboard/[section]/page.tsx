@@ -20,9 +20,18 @@ const QUICK_LOG_LINKS = [
   { href: "/log/learning", label: "Learning" },
 ] as const;
 
-export default async function DashboardSectionSummaryPage() {
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export default async function DashboardSectionSummaryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
+  const { date } = await searchParams;
+  const viewDate = date && ISO_DATE.test(date) ? date : undefined;
+
   const user = await requireUser();
-  const data = await getDashboardData(user.id);
+  const data = await getDashboardData(user.id, viewDate);
   const trends = await getDashboardTrends(user.id);
   const activePrompt = await getActivePrompt(user.id);
 
@@ -30,6 +39,35 @@ export default async function DashboardSectionSummaryPage() {
   const optionalTasks = data.todayTasks.filter((t) => !t.isRequired);
   const topPriorities = data.goals.slice(0, 3);
   const weekDates = getWeekDates(data.today);
+  const isViewingToday = data.selectedDate === data.today;
+
+  const nextTask = [...requiredTasks, ...optionalTasks].find((t) => t.status === "planned") ?? null;
+  const requiredDoneCount = requiredTasks.filter(
+    (t) => t.status === "completed" || t.status === "partially_completed"
+  ).length;
+  const weightInsight =
+    trends.weight.recentDelta !== null ? formatWeightInsight(trends.weight.recentDelta, trends.weight.unit) : null;
+
+  let heroEyebrow: string;
+  let heroHeadline: string;
+  let heroSubtext: string | null;
+  let heroCta: string;
+  if (nextTask) {
+    heroEyebrow = "Next action";
+    heroHeadline = nextTask.title;
+    heroSubtext = nextTask.goalOutcome ? `Moves you toward: ${nextTask.goalOutcome}` : weightInsight;
+    heroCta = "Begin";
+  } else if (requiredTasks.length > 0 && requiredDoneCount === requiredTasks.length) {
+    heroEyebrow = "Today";
+    heroHeadline = `All ${requiredTasks.length} required task${requiredTasks.length === 1 ? "" : "s"} done — nice work.`;
+    heroSubtext = weightInsight ?? "Optional tasks and quick logs are still open below.";
+    heroCta = "View tasks";
+  } else {
+    heroEyebrow = "Today";
+    heroHeadline = weightInsight ?? "Nothing logged yet today.";
+    heroSubtext = weightInsight ? "Add a task below to plan the rest of the day." : "Add a task below, or log your weight, sleep, or food to get started.";
+    heroCta = "Add a task";
+  }
 
   const weekLinks = [
     {
@@ -63,51 +101,60 @@ export default async function DashboardSectionSummaryPage() {
         <div>
           <p className="text-sm text-neutral-500">good {timeOfDayGreeting()}.</p>
           <h1 className="text-2xl font-semibold">{data.profile.fullName ?? "there"}</h1>
+          {data.currentPhase ? (
+            <p className="mt-0.5 text-xs text-neutral-400">
+              {data.currentPhase.name}
+              {data.currentPhase.mission ? ` · ${data.currentPhase.mission}` : ""}
+            </p>
+          ) : null}
         </div>
       </div>
 
       <div className="flex justify-between">
         {DAY_NAMES.map((dayName, i) => {
-          const date = weekDates[i];
-          const isToday = date === data.today;
+          const cellDate = weekDates[i];
+          const isToday = cellDate === data.today;
+          const isSelected = cellDate === data.selectedDate;
           return (
-            <div
+            <Link
               key={dayName}
-              className={`flex flex-col items-center gap-1 rounded-xl px-2.5 py-2 ${
-                isToday ? "border-2 border-brand" : ""
+              href={isToday ? "?" : `?date=${cellDate}`}
+              className={`flex flex-col items-center gap-1 rounded-xl px-2.5 py-2 transition-colors ${
+                isSelected
+                  ? "bg-brand-fill text-brand-ink"
+                  : isToday
+                    ? "border-2 border-brand"
+                    : "hover:bg-black/[0.03] dark:hover:bg-white/5"
               }`}
             >
-              <span className="text-[10px] font-semibold text-neutral-400">{dayName[0]}{dayName[1]}</span>
-              <span className="text-sm font-bold tabular-nums">{formatShortDate(date).split(" ")[1]}</span>
-            </div>
+              <span
+                className={`text-[10px] font-semibold ${isSelected ? "text-brand-ink/70" : "text-neutral-400"}`}
+              >
+                {dayName[0]}{dayName[1]}
+              </span>
+              <span className="text-sm font-bold tabular-nums">{formatShortDate(cellDate).split(" ")[1]}</span>
+            </Link>
           );
         })}
       </div>
 
-      {data.currentPhase ? (
-        <Card tone="surface">
-          <p className="text-sm font-medium text-neutral-500">Current phase</p>
-          <p className="text-lg font-medium">{data.currentPhase.name}</p>
-          {data.currentPhase.mission ? (
-            <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-              {data.currentPhase.mission}
-            </p>
-          ) : null}
-        </Card>
-      ) : (
-        <EmptyState
-          title="No active phase yet"
-          description="Complete onboarding to generate your first phase."
-        />
-      )}
+      {!isViewingToday ? (
+        <div className="flex items-center justify-between rounded-xl bg-black/[0.03] px-3 py-2 text-sm dark:bg-white/5">
+          <span className="text-neutral-500">
+            Viewing {formatShortDate(data.selectedDate)}
+          </span>
+          <Link href="?" className="font-medium text-brand hover:underline">
+            Jump to today
+          </Link>
+        </div>
+      ) : null}
 
       <Card tone="hero">
-        <p className="text-xs font-medium uppercase tracking-wide text-white/60">Next action</p>
-        <p className="mt-2 mb-5 text-xl font-bold leading-snug">
-          {data.recommendedNextAction ?? "Nothing planned yet — add a task below or log today's data."}
-        </p>
-        <LinkButton href="#tasks" variant="onHero">
-          Begin
+        <p className="text-xs font-medium uppercase tracking-wide text-white/60">{heroEyebrow}</p>
+        <p className="mt-2 text-xl font-bold leading-snug">{heroHeadline}</p>
+        {heroSubtext ? <p className="mt-1.5 text-sm text-white/60">{heroSubtext}</p> : null}
+        <LinkButton href="#tasks" variant="onHero" className="mt-4">
+          {heroCta}
         </LinkButton>
       </Card>
 
@@ -118,6 +165,66 @@ export default async function DashboardSectionSummaryPage() {
           question={activePrompt.question}
         />
       ) : null}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Card tone="surface">
+          <h2 className="text-sm font-medium text-neutral-500">
+            {isViewingToday ? "Today's workout" : "Workout"}
+          </h2>
+          {data.todaysWorkout.hasActivePlan ? (
+            data.todaysWorkout.exercises.length > 0 ? (
+              <ul className="mt-2 space-y-1 text-sm">
+                {data.todaysWorkout.exercises.map((ex, i) => (
+                  <li key={i} className="flex justify-between gap-4">
+                    <span>{ex.name}</span>
+                    <span className="shrink-0 text-neutral-400">
+                      {ex.durationMinutes ? `${ex.durationMinutes} min` : `${ex.sets} × ${ex.reps}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-neutral-500">Rest day.</p>
+            )
+          ) : (
+            <EmptyState
+              title="No active workout plan"
+              description="Generate and approve a weekly workout plan to see today's session here."
+              action={
+                <Link href="/plan" className="text-sm text-brand underline">
+                  Go to plan
+                </Link>
+              }
+            />
+          )}
+        </Card>
+
+        <Card tone="surface">
+          <h2 className="text-sm font-medium text-neutral-500">Planned meals</h2>
+          {data.plannedMealsToday.length > 0 ? (
+            <ul className="mt-2 space-y-2.5">
+              {data.plannedMealsToday.map((meal, i) => (
+                <li key={i}>
+                  <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                    {meal.mealType}
+                  </p>
+                  <p className="text-sm">{meal.recipeName}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState
+              title="No active meal plan"
+              description="Generate and approve a weekly meal plan to see today's meals here."
+              action={
+                <Link href="/plan" className="text-sm text-brand underline">
+                  Go to plan
+                </Link>
+              }
+            />
+          )}
+        </Card>
+      </div>
 
       <section>
         <h2 className="text-sm font-medium text-neutral-500">This week</h2>
@@ -132,60 +239,6 @@ export default async function DashboardSectionSummaryPage() {
           ))}
         </div>
       </section>
-
-      <Card tone="surface">
-        <h2 className="text-sm font-medium text-neutral-500">Today&apos;s workout</h2>
-        {data.todaysWorkout.hasActivePlan ? (
-          data.todaysWorkout.exercises.length > 0 ? (
-            <ul className="mt-2 space-y-1 text-sm">
-              {data.todaysWorkout.exercises.map((ex, i) => (
-                <li key={i} className="flex justify-between gap-4">
-                  <span>{ex.name}</span>
-                  <span className="shrink-0 text-neutral-400">
-                    {ex.durationMinutes ? `${ex.durationMinutes} min` : `${ex.sets} × ${ex.reps}`}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-sm text-neutral-500">Rest day.</p>
-          )
-        ) : (
-          <EmptyState
-            title="No active workout plan"
-            description="Generate and approve a weekly workout plan to see today's session here."
-            action={
-              <Link href="/plan" className="text-sm text-brand underline">
-                Go to plan
-              </Link>
-            }
-          />
-        )}
-      </Card>
-
-      <Card tone="surface">
-        <h2 className="text-sm font-medium text-neutral-500">Planned meals</h2>
-        {data.plannedMealsToday.length > 0 ? (
-          <ul className="mt-2 space-y-1 text-sm">
-            {data.plannedMealsToday.map((meal, i) => (
-              <li key={i} className="flex justify-between">
-                <span className="capitalize text-neutral-500">{meal.mealType}</span>
-                <span>{meal.recipeName}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyState
-            title="No active meal plan"
-            description="Generate and approve a weekly meal plan to see today's meals here."
-            action={
-              <Link href="/plan" className="text-sm text-brand underline">
-                Go to plan
-              </Link>
-            }
-          />
-        )}
-      </Card>
 
       <section id="tasks" className="space-y-3 scroll-mt-4">
         <h2 className="text-sm font-medium text-neutral-500">Required tasks</h2>
@@ -211,7 +264,7 @@ export default async function DashboardSectionSummaryPage() {
         ) : (
           <EmptyState title="No optional tasks for today" />
         )}
-        <AddTaskForm userId={user.id} date={data.today} />
+        <AddTaskForm userId={user.id} date={data.selectedDate} />
       </section>
 
       <section>
@@ -313,4 +366,10 @@ function timeOfDayGreeting(): string {
   if (hour < 12) return "morning";
   if (hour < 18) return "afternoon";
   return "evening";
+}
+
+function formatWeightInsight(delta: number, unit: string): string {
+  if (delta === 0) return `Weight steady over the last 7 days.`;
+  const direction = delta < 0 ? "Down" : "Up";
+  return `${direction} ${Math.abs(delta)} ${unit} over the last 7 days.`;
 }

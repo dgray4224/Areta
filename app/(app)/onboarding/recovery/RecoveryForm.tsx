@@ -62,7 +62,7 @@ export function RecoveryForm({
   return (
     <StepShell
       title="Recovery (optional)"
-      description="If you're managing an injury or surgery recovery, LifeOS can organize your clinician's instructions — it will never invent medical guidance."
+      description="If you're managing an injury or surgery recovery, Areta can organize your clinician's instructions — it will never invent medical guidance."
       currentStep={stepIndex}
       totalSteps={totalSteps}
       backHref={backHref}
@@ -95,7 +95,7 @@ export function RecoveryForm({
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" className="mt-0.5" {...register("warningSignsAcknowledged")} />
           <span>
-            I understand LifeOS will prompt me to contact my care team or emergency services for
+            I understand Areta will prompt me to contact my care team or emergency services for
             warning signs, and will never advance my recovery protocol on its own.
           </span>
         </label>

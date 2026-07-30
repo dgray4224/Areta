@@ -70,7 +70,7 @@ export function IdentityForm({
   return (
     <StepShell
       title="You and your schedule"
-      description="The basics LifeOS needs to plan around your life."
+      description="The basics Areta needs to plan around your life."
       currentStep={stepIndex}
       totalSteps={totalSteps}
     >

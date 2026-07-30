@@ -48,7 +48,7 @@ export function PromptCard({
 
   return (
     <Card tone="surface">
-      <p className="text-xs uppercase tracking-wide text-neutral-500">LifeOS is curious</p>
+      <p className="text-xs uppercase tracking-wide text-neutral-500">Areta is curious</p>
       <p className="mt-1 text-sm font-medium">{question}</p>
       <div className="mt-2">
         <TextArea

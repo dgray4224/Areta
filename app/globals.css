@@ -69,14 +69,14 @@
   --chart-gridline: #e5e5e5; /* neutral-200 */
   --chart-baseline: #d4d4d4; /* neutral-300 */
 
-  --chart-series-1: #2a78d6; /* blue */
-  --chart-series-2: #eb6834; /* orange */
+  --chart-series-1: #c85a3a; /* brand terracotta */
+  --chart-series-2: #3a6ea8; /* blue */
   --chart-series-3: #1baf7a; /* aqua */
   --chart-series-4: #eda100; /* yellow */
   --chart-series-5: #e87ba4; /* magenta */
 
-  --chart-sequential: #2a78d6;
-  --chart-sequential-light: #b7d3f6;
+  --chart-sequential: #c85a3a;
+  --chart-sequential-light: #f3d9cb;
 
   --chart-good: #0ca30c;
   --chart-warning: #fab219;
@@ -94,14 +94,14 @@
   --chart-gridline: #262626; /* neutral-800 */
   --chart-baseline: #404040; /* neutral-700 */
 
-  --chart-series-1: #3987e5;
-  --chart-series-2: #d95926;
+  --chart-series-1: #cf6c46;
+  --chart-series-2: #5b93d1;
   --chart-series-3: #199e70;
   --chart-series-4: #c98500;
   --chart-series-5: #d55181;
 
-  --chart-sequential: #3987e5;
-  --chart-sequential-light: #184f95;
+  --chart-sequential: #cf6c46;
+  --chart-sequential-light: #4a2a1c;
 
   --chart-good: #0ca30c;
   --chart-warning: #fab219;

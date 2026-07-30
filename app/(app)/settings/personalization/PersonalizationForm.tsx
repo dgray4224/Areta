@@ -72,7 +72,7 @@ function CoachingSection({
     <section>
       <h2 className="text-sm font-semibold">Coaching</h2>
       <p className="mt-1 text-sm text-neutral-500">
-        How LifeOS should talk to you and handle your plan.
+        How Areta should talk to you and handle your plan.
       </p>
       <form onSubmit={handleSubmit(onSubmit)} className="mt-4 space-y-4" noValidate>
         <div className="grid grid-cols-2 gap-4">
@@ -190,7 +190,7 @@ function WorkScheduleSection({
     <section>
       <h2 className="text-sm font-semibold">Work &amp; school</h2>
       <p className="mt-1 text-sm text-neutral-500">
-        Optional context — LifeOS can plan around this once you tell it.
+        Optional context — Areta can plan around this once you tell it.
       </p>
       <form onSubmit={handleSubmit(onSubmit)} className="mt-4 space-y-4" noValidate>
         <FormField label="Work status" htmlFor="workStatus" error={errors.workStatus?.message}>

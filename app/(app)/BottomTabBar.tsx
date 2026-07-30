@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_LINKS } from "./nav-links";
+import { NAV_LINKS, isNavLinkActive } from "./nav-links";
 import { HomeIcon, CalendarIcon, ChartIcon, GearIcon, PlusIcon } from "@/platform/ui/icons";
 import { QuickActionSheet } from "./QuickActionSheet";
 
@@ -18,7 +18,7 @@ export function BottomTabBar() {
   const pathname = usePathname();
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const isActive = (href: string) => isNavLinkActive(pathname, href);
 
   const firstHalf = NAV_LINKS.slice(0, 2);
   const secondHalf = NAV_LINKS.slice(2);

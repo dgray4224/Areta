@@ -82,7 +82,7 @@ export default async function ReviewPage() {
 
       <section>
         <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-          LifeOS uses what it has learned about you over time, along with the metrics above, to
+          Areta uses what it has learned about you over time, along with the metrics above, to
           write next week&apos;s plan.
         </p>
         <GenerateBriefButton userId={user.id} />

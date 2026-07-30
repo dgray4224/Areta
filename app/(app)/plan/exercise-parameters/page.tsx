@@ -17,7 +17,7 @@ export default async function ExerciseParametersPage() {
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">Training parameters</h1>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          LifeOS calculated these from your Exercise onboarding answers. Review the reasoning, edit
+          Areta calculated these from your Exercise onboarding answers. Review the reasoning, edit
           anything that doesn&apos;t look right, and approve before they drive your workout plan.
         </p>
       </div>
@@ -25,7 +25,7 @@ export default async function ExerciseParametersPage() {
       {parameters.length === 0 ? (
         <EmptyState
           title="No training parameters calculated yet"
-          description="LifeOS derives sessions/week, phase structure, and progression from your archetype and availability."
+          description="Areta derives sessions/week, phase structure, and progression from your archetype and availability."
           action={
             <GenerateParametersButton
               userId={user.id}

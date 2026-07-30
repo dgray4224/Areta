@@ -17,8 +17,8 @@ import { learningSchema, type LearningInput } from "@/domains/learning/schema";
 import { coachingSchema, type CoachingInput } from "@/domains/coaching/schema";
 import type { OnboardingStepKey } from "@/domains/onboarding/types";
 
-export const FOUNDER_EMAIL = "founder+dev@lifeos.local";
-export const FOUNDER_PASSWORD = "lifeos-dev-seed-only-not-for-real-use";
+export const FOUNDER_EMAIL = "founder+dev@areta.local";
+export const FOUNDER_PASSWORD = "areta-dev-seed-only-not-for-real-use";
 
 export const founderIdentity: IdentityInput = identitySchema.parse({
   fullName: "Founder",

@@ -61,7 +61,7 @@ test("signup, confirm, onboard, and reach a personalized dashboard", async ({ pa
   // Nutrition and Exercise steps (see V1_DOMAIN_KEYS in domains/goals/schema.ts).
   await expect(page).toHaveURL(/\/onboarding\/goals/);
   await page.getByRole("button", { name: "Health" }).click();
-  await page.getByLabel("Goal").fill("Ship the LifeOS MVP");
+  await page.getByLabel("Goal").fill("Ship the Areta MVP");
   await page.getByRole("button", { name: /continue/i }).click();
 
   await expect(page).toHaveURL(/\/onboarding\/nutrition/);
@@ -75,5 +75,5 @@ test("signup, confirm, onboard, and reach a personalized dashboard", async ({ pa
 
   await expect(page).toHaveURL(/\/dashboard/);
   await expect(page.getByText("E2E Tester")).toBeVisible();
-  await expect(page.getByText("Ship the LifeOS MVP")).toBeVisible();
+  await expect(page.getByText("Ship the Areta MVP")).toBeVisible();
 });

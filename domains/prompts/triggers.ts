@@ -53,7 +53,7 @@ export const PROMPT_TRIGGERS: PromptTrigger[] = [
       const passed = input.activeGoals.some(
         (g) => g.targetDate !== null && g.targetDate < input.today
       );
-      return passed ? "Did you hit this, or should LifeOS help set up what's next?" : null;
+      return passed ? "Did you hit this, or should Areta help set up what's next?" : null;
     },
   },
   {

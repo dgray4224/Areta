@@ -113,7 +113,7 @@ export function RecoveryLogForm({ userId }: { userId: string }) {
         </label>
         {warningSigns ? (
           <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
-            Contact your care team or emergency services if needed. LifeOS can&apos;t assess this
+            Contact your care team or emergency services if needed. Areta can&apos;t assess this
             for you — use the notes field only to record what you told them.
             <FormField label="Notes for your care team" htmlFor="warningSignsNotes">
               <TextArea id="warningSignsNotes" {...register("warningSignsNotes")} />

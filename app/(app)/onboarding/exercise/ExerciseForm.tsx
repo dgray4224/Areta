@@ -66,7 +66,7 @@ export function ExerciseForm({
   return (
     <StepShell
       title="Exercise"
-      description="What kind of exerciser do you want to be? LifeOS builds your training plan around this."
+      description="What kind of exerciser do you want to be? Areta builds your training plan around this."
       currentStep={stepIndex}
       totalSteps={totalSteps}
       backHref={backHref}

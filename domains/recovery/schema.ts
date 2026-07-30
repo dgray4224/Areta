@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Optional module (CLAUDE.md Phase 1). LifeOS only organizes
+/** Optional module (CLAUDE.md Phase 1). Areta only organizes
  * clinician-provided instructions — it must never invent medical
  * progression (§11) — so acknowledging the warning-sign guidance is
  * required whenever the user doesn't skip this step outright. */
