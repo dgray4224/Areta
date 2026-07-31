@@ -5,6 +5,8 @@ import { getWorkoutPlanForWeek } from "@/domains/workoutplan/service";
 import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { getGroceryListForWeek } from "@/domains/grocery/service";
 import { getPrepPlanForWeek } from "@/domains/prep/service";
+import { getUpcomingEvents } from "@/domains/calendar/events-service";
+import type { UpcomingEvent } from "@/domains/calendar/schema";
 
 export type TodayTask = {
   id: string;
@@ -48,7 +50,30 @@ export type DashboardData = {
     hasApprovedWorkoutPlan: boolean;
     hasPrepPlan: boolean;
   };
+  upcomingEvents: UpcomingEvent[];
+  hasCalendarConnection: boolean;
 };
+
+const UPCOMING_EVENTS_TIMEOUT_MS = 3000;
+const UPCOMING_EVENTS_DAYS_AHEAD = 7;
+
+/** Calendar providers are the only network call in this function that
+ * leaves Supabase entirely — a slow or broken connection must never hold up
+ * the whole dashboard load, so this always resolves within the timeout,
+ * falling back to an empty list. getUpcomingEvents already never throws
+ * (each provider fails independently), but the try/catch is defense in
+ * depth against a future change to that contract. */
+async function getUpcomingEventsWithTimeout(userId: string): Promise<UpcomingEvent[]> {
+  const timeMin = new Date().toISOString();
+  const timeMax = new Date(Date.now() + UPCOMING_EVENTS_DAYS_AHEAD * 24 * 60 * 60 * 1000).toISOString();
+
+  const fetchEvents = getUpcomingEvents(userId, { timeMin, timeMax }).catch(() => []);
+  const timeout = new Promise<UpcomingEvent[]>((resolve) =>
+    setTimeout(() => resolve([]), UPCOMING_EVENTS_TIMEOUT_MS)
+  );
+
+  return Promise.race([fetchEvents, timeout]);
+}
 
 /** Server's current date as YYYY-MM-DD. A more correct implementation
  * would convert to the user's profile.time_zone; this UTC-based
@@ -74,6 +99,8 @@ export async function getDashboardData(userId: string, viewDate?: string): Promi
     { data: nutritionLogsToday },
     { data: recoveryLogsToday },
     { data: studySessionsToday },
+    { count: calendarConnectionCount },
+    upcomingEvents,
   ] = await Promise.all([
     supabase.from("profiles").select("full_name, onboarding_completed_at").eq("id", userId).maybeSingle(),
     supabase.from("domains").select("key, label").eq("user_id", userId).eq("is_active", true),
@@ -110,6 +137,8 @@ export async function getDashboardData(userId: string, viewDate?: string): Promi
     supabase.from("nutrition_logs").select("id").eq("user_id", userId).eq("date", selectedDate),
     supabase.from("recovery_logs").select("id").eq("user_id", userId).eq("date", selectedDate),
     supabase.from("study_sessions").select("duration_minutes").eq("user_id", userId).eq("date", selectedDate),
+    supabase.from("calendar_connections").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    getUpcomingEventsWithTimeout(userId),
   ]);
 
   const todayTasks: TodayTask[] = (tasks ?? []).map((t) => ({
@@ -210,5 +239,7 @@ export async function getDashboardData(userId: string, viewDate?: string): Promi
       hasApprovedWorkoutPlan: hasActiveWorkoutPlan,
       hasPrepPlan: (prepPlan?.steps.length ?? 0) > 0,
     },
+    upcomingEvents,
+    hasCalendarConnection: (calendarConnectionCount ?? 0) > 0,
   };
 }

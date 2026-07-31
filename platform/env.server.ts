@@ -7,6 +7,13 @@ const serverEnvSchema = z.object({
   // Reserved for Phase 4 — no Phase 0/1 code reads this yet.
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   ALLOW_SEED: z.enum(["true", "false"]).optional(),
+  // Calendar integration — optional so the app still boots without it configured.
+  // Apple/CalDAV needs no client id/secret, only the encryption key below.
+  GOOGLE_CALENDAR_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CALENDAR_CLIENT_SECRET: z.string().min(1).optional(),
+  MICROSOFT_CALENDAR_CLIENT_ID: z.string().min(1).optional(),
+  MICROSOFT_CALENDAR_CLIENT_SECRET: z.string().min(1).optional(),
+  CALENDAR_TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
 });
 
 let cached: z.infer<typeof serverEnvSchema> | null = null;
@@ -22,6 +29,11 @@ export function getServerEnv() {
         SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
         ALLOW_SEED: process.env.ALLOW_SEED,
+        GOOGLE_CALENDAR_CLIENT_ID: process.env.GOOGLE_CALENDAR_CLIENT_ID,
+        GOOGLE_CALENDAR_CLIENT_SECRET: process.env.GOOGLE_CALENDAR_CLIENT_SECRET,
+        MICROSOFT_CALENDAR_CLIENT_ID: process.env.MICROSOFT_CALENDAR_CLIENT_ID,
+        MICROSOFT_CALENDAR_CLIENT_SECRET: process.env.MICROSOFT_CALENDAR_CLIENT_SECRET,
+        CALENDAR_TOKEN_ENCRYPTION_KEY: process.env.CALENDAR_TOKEN_ENCRYPTION_KEY,
       },
       "server"
     );

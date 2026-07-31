@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       action_events: {
@@ -103,6 +78,45 @@ export type Database = {
           model?: string
           purpose?: string
           success?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
+      calendar_connections: {
+        Row: {
+          access_token_encrypted: string | null
+          connected_at: string
+          external_account_email: string | null
+          id: string
+          provider: string
+          refresh_token_encrypted: string
+          scope: string
+          token_expires_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token_encrypted?: string | null
+          connected_at?: string
+          external_account_email?: string | null
+          id?: string
+          provider: string
+          refresh_token_encrypted: string
+          scope: string
+          token_expires_at: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token_encrypted?: string | null
+          connected_at?: string
+          external_account_email?: string | null
+          id?: string
+          provider?: string
+          refresh_token_encrypted?: string
+          scope?: string
+          token_expires_at?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
@@ -1181,39 +1195,51 @@ export type Database = {
           bedtime: string | null
           created_at: string
           date: string
+          dedup_key: string | null
+          device: string | null
           id: string
+          imported_at: string | null
           interruptions: number | null
           notes: string | null
           quality: number | null
           source: string
           total_duration_minutes: number | null
           user_id: string
+          user_override: boolean
           wake_time: string | null
         }
         Insert: {
           bedtime?: string | null
           created_at?: string
           date: string
+          dedup_key?: string | null
+          device?: string | null
           id?: string
+          imported_at?: string | null
           interruptions?: number | null
           notes?: string | null
           quality?: number | null
           source?: string
           total_duration_minutes?: number | null
           user_id: string
+          user_override?: boolean
           wake_time?: string | null
         }
         Update: {
           bedtime?: string | null
           created_at?: string
           date?: string
+          dedup_key?: string | null
+          device?: string | null
           id?: string
+          imported_at?: string | null
           interruptions?: number | null
           notes?: string | null
           quality?: number | null
           source?: string
           total_duration_minutes?: number | null
           user_id?: string
+          user_override?: boolean
           wake_time?: string | null
         }
         Relationships: []
@@ -1343,32 +1369,44 @@ export type Database = {
       weight_logs: {
         Row: {
           created_at: string
+          dedup_key: string | null
+          device: string | null
           id: string
+          imported_at: string | null
           logged_at: string
           notes: string | null
           source: string
           unit: string
           user_id: string
+          user_override: boolean
           weight: number
         }
         Insert: {
           created_at?: string
+          dedup_key?: string | null
+          device?: string | null
           id?: string
+          imported_at?: string | null
           logged_at?: string
           notes?: string | null
           source?: string
           unit: string
           user_id: string
+          user_override?: boolean
           weight: number
         }
         Update: {
           created_at?: string
+          dedup_key?: string | null
+          device?: string | null
           id?: string
+          imported_at?: string | null
           logged_at?: string
           notes?: string | null
           source?: string
           unit?: string
           user_id?: string
+          user_override?: boolean
           weight?: number
         }
         Relationships: []
@@ -1594,9 +1632,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

@@ -7,6 +7,7 @@ import { navTabClass } from "../nav-links";
 const TABS = [
   { href: "/settings/profile", label: "Profile" },
   { href: "/settings/personalization", label: "Personalization" },
+  { href: "/settings/calendar", label: "Calendar" },
   { href: "/settings/appearance", label: "Appearance" },
   { href: "/settings/account", label: "Account" },
 ] as const;

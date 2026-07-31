@@ -319,10 +319,36 @@ export default async function DashboardSectionSummaryPage({
 
       <section>
         <h2 className="text-sm font-medium text-neutral-500">Upcoming events</h2>
-        <EmptyState
-          title="Calendar integration arrives later"
-          description="Appointments and scheduling aren't built yet."
-        />
+        {data.upcomingEvents.length > 0 ? (
+          <ul className="mt-2 space-y-2">
+            {data.upcomingEvents.slice(0, 5).map((event) => (
+              <li key={`${event.source}-${event.id}`} className="flex items-center justify-between gap-4 text-sm">
+                <span>{event.title}</span>
+                <span className="shrink-0 text-neutral-400">
+                  {event.allDay
+                    ? "All day"
+                    : new Date(event.startsAt).toLocaleString(undefined, {
+                        weekday: "short",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : data.hasCalendarConnection ? (
+          <EmptyState title="Nothing on your calendar this week" />
+        ) : (
+          <EmptyState
+            title="No calendar connected"
+            description="Connect Google, Outlook, or Apple Calendar to see what's coming up."
+            action={
+              <Link href="/settings/calendar" className="text-sm text-brand underline">
+                Go to settings
+              </Link>
+            }
+          />
+        )}
       </section>
 
       <section className="space-y-4 border-t border-black/5 pt-6 dark:border-white/5">

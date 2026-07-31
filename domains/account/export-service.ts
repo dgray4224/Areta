@@ -11,6 +11,9 @@ import { createClient } from "@/platform/supabase/server";
 export async function exportUserData(userId: string): Promise<Record<string, unknown>> {
   const supabase = await createClient();
 
+  // calendar_connections is deliberately excluded — it holds encrypted
+  // OAuth tokens/app-specific passwords, and exporting them (even encrypted)
+  // serves no user need while needlessly widening this feature's blast radius.
   const tables = [
     "profiles",
     "domains",
