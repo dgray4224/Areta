@@ -15,8 +15,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://areta-ai.com"),
   title: "Areta",
   description: "Personal execution and weekly regeneration platform.",
+  openGraph: {
+    title: "Areta",
+    description: "Personal execution and weekly regeneration platform.",
+    siteName: "Areta",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
