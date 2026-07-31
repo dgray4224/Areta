@@ -18,6 +18,16 @@ const serverEnvSchema = z.object({
 
 let cached: z.infer<typeof serverEnvSchema> | null = null;
 
+/** A `KEY=` line with nothing after the `=` sets `process.env.KEY` to `""`,
+ * not `undefined` — and Zod's `.optional()` only tolerates `undefined`, so
+ * a blank placeholder line (the normal shape of an unconfigured optional
+ * var in .env.local/.env.local.example) fails `.min(1)` validation instead
+ * of being treated as unset. Same class of gotcha as the optionalStringValue
+ * helper in platform/ui/FormField.tsx, just hitting raw env vars here. */
+function emptyToUndefined(value: string | undefined): string | undefined {
+  return value === "" ? undefined : value;
+}
+
 /** Lazily parsed so importing this module doesn't require secrets to be
  * present unless something actually calls getServerEnv() — keeps build/test
  * environments that never touch the service role key from failing. */
@@ -27,13 +37,13 @@ export function getServerEnv() {
       serverEnvSchema,
       {
         SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-        ALLOW_SEED: process.env.ALLOW_SEED,
-        GOOGLE_CALENDAR_CLIENT_ID: process.env.GOOGLE_CALENDAR_CLIENT_ID,
-        GOOGLE_CALENDAR_CLIENT_SECRET: process.env.GOOGLE_CALENDAR_CLIENT_SECRET,
-        MICROSOFT_CALENDAR_CLIENT_ID: process.env.MICROSOFT_CALENDAR_CLIENT_ID,
-        MICROSOFT_CALENDAR_CLIENT_SECRET: process.env.MICROSOFT_CALENDAR_CLIENT_SECRET,
-        CALENDAR_TOKEN_ENCRYPTION_KEY: process.env.CALENDAR_TOKEN_ENCRYPTION_KEY,
+        ANTHROPIC_API_KEY: emptyToUndefined(process.env.ANTHROPIC_API_KEY),
+        ALLOW_SEED: emptyToUndefined(process.env.ALLOW_SEED),
+        GOOGLE_CALENDAR_CLIENT_ID: emptyToUndefined(process.env.GOOGLE_CALENDAR_CLIENT_ID),
+        GOOGLE_CALENDAR_CLIENT_SECRET: emptyToUndefined(process.env.GOOGLE_CALENDAR_CLIENT_SECRET),
+        MICROSOFT_CALENDAR_CLIENT_ID: emptyToUndefined(process.env.MICROSOFT_CALENDAR_CLIENT_ID),
+        MICROSOFT_CALENDAR_CLIENT_SECRET: emptyToUndefined(process.env.MICROSOFT_CALENDAR_CLIENT_SECRET),
+        CALENDAR_TOKEN_ENCRYPTION_KEY: emptyToUndefined(process.env.CALENDAR_TOKEN_ENCRYPTION_KEY),
       },
       "server"
     );
