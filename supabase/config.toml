@@ -251,6 +251,17 @@ otp_expiry = 3600
 subject = "Confirm your Areta account"
 content_path = "./supabase/templates/confirmation.html"
 
+# Same token_hash reasoning as confirmation, and more critical here: the
+# default PKCE-code recovery link only works if the same browser/cookie
+# context that requested the reset also opens the email link. On iPhone,
+# tapping the link from the Mail app frequently opens it in an in-app
+# browser that doesn't have that cookie, silently failing the code exchange
+# and burning the single-use token in the process. token_hash + verifyOtp()
+# has no such same-context requirement.
+[auth.email.template.recovery]
+subject = "Reset your Areta password"
+content_path = "./supabase/templates/recovery.html"
+
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"
