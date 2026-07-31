@@ -42,6 +42,13 @@ export class MicrosoftCalendarProvider implements CalendarProvider {
       response_mode: "query",
       scope: SCOPE,
       state,
+      // Without this, Microsoft silently SSOs into whatever account is
+      // already active in the browser and skips the account chooser
+      // entirely — a real problem if the user wants to connect a work
+      // account while a personal one is already signed in (or vice versa).
+      // This forces the chooser every time, without forcing a full
+      // re-consent screen the way prompt=consent would.
+      prompt: "select_account",
     });
     return `${AUTH_URL}?${params.toString()}`;
   }
