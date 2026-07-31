@@ -12,7 +12,12 @@ export function AppHeader() {
   return (
     <header className="border-b border-black/5 dark:border-white/5">
       <div className="flex items-center justify-between px-4 py-3">
-        <Logo />
+        <div className="flex items-center gap-3">
+          <Logo />
+          <span className="hidden text-sm text-neutral-400 sm:inline">
+            | Become more of who you are
+          </span>
+        </div>
 
         {/* Phone/tablet keeps just the logo — BottomTabBar owns primary nav
          * there, matching native app tab-bar conventions on those sizes
