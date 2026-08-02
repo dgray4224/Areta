@@ -2,6 +2,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { importedStepLogSchema } from "@/domains/steps/schema";
+import { isOlderThanHealthImportRetentionWindow } from "@/platform/health/retention";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
@@ -17,6 +18,10 @@ export async function insertImportedStepLog(
   const parsed = importedStepLogSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  if (isOlderThanHealthImportRetentionWindow(parsed.data.loggedAt)) {
+    return { ok: true, data: { skipped: true } };
   }
 
   const { data: existing } = await supabase

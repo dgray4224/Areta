@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sleepLogSchema, importedSleepLogSchema } from "@/domains/sleep/schema";
 import { computeSleepDurationMinutes } from "@/domains/sleep/duration";
 import { createClient } from "@/platform/supabase/server";
+import { isOlderThanHealthImportRetentionWindow } from "@/platform/health/retention";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
@@ -52,6 +53,10 @@ export async function insertImportedSleepLog(
   }
   const { date, bedtime, wakeTime, totalDurationMinutes, quality, interruptions, source, device, dedupKey } =
     parsed.data;
+
+  if (isOlderThanHealthImportRetentionWindow(date)) {
+    return { ok: true, data: { skipped: true } };
+  }
 
   const duration =
     totalDurationMinutes ??

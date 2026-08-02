@@ -3,6 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { importedWorkoutLogSchema } from "@/domains/workout/schema";
 import { createClient } from "@/platform/supabase/server";
+import { isOlderThanHealthImportRetentionWindow } from "@/platform/health/retention";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
@@ -18,6 +19,10 @@ export async function insertImportedWorkoutLog(
   const parsed = importedWorkoutLogSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  if (isOlderThanHealthImportRetentionWindow(parsed.data.startDate)) {
+    return { ok: true, data: { skipped: true } };
   }
 
   const { data: existing } = await supabase
