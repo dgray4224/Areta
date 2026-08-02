@@ -1093,6 +1093,33 @@ last 30 days, for now).
 
 A browser-only application should not be expected to provide the best direct HealthKit integration.
 
+## Retention policy
+
+Automated HealthKit imports only consider samples from the trailing 3 years
+(`platform/health/retention.ts`, mirrored client-side in `areta-mobile`'s
+`lib/healthkit.ts`) — a data-volume/relevance decision, not a technical
+limit. Manual log entry is exempt; a user can always log an old date by
+hand. Enforced in both places (client won't fetch it, server won't accept
+it if somehow sent anyway) since this is a multi-user product and the
+mobile app isn't guaranteed to be the only future writer.
+
+## Silver-layer daily analytics
+
+`activity_daily_summaries` — one row per user per day, derived from all
+five `*_logs` tables, populated incrementally (no cron/scheduler exists in
+this repo; recompute runs inline from every log-insert path, same
+on-demand-computation convention as `weekly_reviews`/`weekly_outcomes`).
+Tracks, per day: workout count/total minutes/first-and-last start
+time/distinct activity types (deduped, chronological order), weight
+first/last value, steps total + most-active local hour, sleep duration +
+quality, heart-rate average, plus `day_of_week`/`is_weekend`. Correctly
+timezone-aware (`profiles.time_zone`, falling back to UTC) — this is the
+foundation for the eventual behavioral-insight and reminder features this
+section originally scoped ("when do users typically log/work out",
+nudging them if they haven't by a given time), plus a monthly rollup. None
+of that is built yet — no pattern-detection queries, no push/notification
+delivery, no scheduler. See `domains/activity-summary/`.
+
 ---
 
 # 15. UX Requirements

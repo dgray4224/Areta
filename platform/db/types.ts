@@ -52,6 +52,93 @@ export type Database = {
           },
         ]
       }
+      activity_daily_summaries: {
+        Row: {
+          created_at: string
+          day: string
+          day_of_week: number | null
+          heart_rate_avg_bpm: number | null
+          heart_rate_sample_count: number
+          id: string
+          is_weekend: boolean | null
+          sleep_logged: boolean
+          sleep_quality: number | null
+          sleep_total_duration_minutes: number | null
+          steps_most_active_local_hour: number | null
+          steps_total: number
+          timezone: string
+          updated_at: string
+          user_id: string
+          weight_first_value: number | null
+          weight_last_logged_at: string | null
+          weight_last_value: number | null
+          weight_logged: boolean
+          weight_unit: string | null
+          workout_activity_types: string[]
+          workout_count: number
+          workout_first_start_at: string | null
+          workout_first_start_local_hour: number | null
+          workout_last_start_at: string | null
+          workout_total_minutes: number
+        }
+        Insert: {
+          created_at?: string
+          day: string
+          day_of_week?: number | null
+          heart_rate_avg_bpm?: number | null
+          heart_rate_sample_count?: number
+          id?: string
+          is_weekend?: boolean | null
+          sleep_logged?: boolean
+          sleep_quality?: number | null
+          sleep_total_duration_minutes?: number | null
+          steps_most_active_local_hour?: number | null
+          steps_total?: number
+          timezone?: string
+          updated_at?: string
+          user_id: string
+          weight_first_value?: number | null
+          weight_last_logged_at?: string | null
+          weight_last_value?: number | null
+          weight_logged?: boolean
+          weight_unit?: string | null
+          workout_activity_types?: string[]
+          workout_count?: number
+          workout_first_start_at?: string | null
+          workout_first_start_local_hour?: number | null
+          workout_last_start_at?: string | null
+          workout_total_minutes?: number
+        }
+        Update: {
+          created_at?: string
+          day?: string
+          day_of_week?: number | null
+          heart_rate_avg_bpm?: number | null
+          heart_rate_sample_count?: number
+          id?: string
+          is_weekend?: boolean | null
+          sleep_logged?: boolean
+          sleep_quality?: number | null
+          sleep_total_duration_minutes?: number | null
+          steps_most_active_local_hour?: number | null
+          steps_total?: number
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+          weight_first_value?: number | null
+          weight_last_logged_at?: string | null
+          weight_last_value?: number | null
+          weight_logged?: boolean
+          weight_unit?: string | null
+          workout_activity_types?: string[]
+          workout_count?: number
+          workout_first_start_at?: string | null
+          workout_first_start_local_hour?: number | null
+          workout_last_start_at?: string | null
+          workout_total_minutes?: number
+        }
+        Relationships: []
+      }
       ai_runs: {
         Row: {
           created_at: string

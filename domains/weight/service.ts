@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { weightLogSchema, importedWeightLogSchema } from "@/domains/weight/schema";
 import { createClient } from "@/platform/supabase/server";
 import { isOlderThanHealthImportRetentionWindow } from "@/platform/health/retention";
+import { recomputeActivityDailySummaryForInstant } from "@/domains/activity-summary/service";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
@@ -25,6 +26,7 @@ export async function logWeight(userId: string, input: unknown): Promise<ActionR
   if (error) {
     return { ok: false, error: error.message };
   }
+  await recomputeActivityDailySummaryForInstant(supabase, userId, new Date(parsed.data.loggedAt));
   return { ok: true, data: undefined };
 }
 
@@ -83,6 +85,7 @@ export async function insertImportedWeightLog(
   if (error) {
     return { ok: false, error: error.message };
   }
+  await recomputeActivityDailySummaryForInstant(supabase, userId, new Date(parsed.data.loggedAt));
   return { ok: true, data: { skipped: false } };
 }
 

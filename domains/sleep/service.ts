@@ -5,6 +5,7 @@ import { sleepLogSchema, importedSleepLogSchema } from "@/domains/sleep/schema";
 import { computeSleepDurationMinutes } from "@/domains/sleep/duration";
 import { createClient } from "@/platform/supabase/server";
 import { isOlderThanHealthImportRetentionWindow } from "@/platform/health/retention";
+import { recomputeActivityDailySummaryForDay } from "@/domains/activity-summary/service";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
@@ -35,6 +36,7 @@ export async function logSleep(userId: string, input: unknown): Promise<ActionRe
   if (error) {
     return { ok: false, error: error.message };
   }
+  await recomputeActivityDailySummaryForDay(supabase, userId, date);
   return { ok: true, data: undefined };
 }
 
@@ -93,6 +95,7 @@ export async function insertImportedSleepLog(
   if (error) {
     return { ok: false, error: error.message };
   }
+  await recomputeActivityDailySummaryForDay(supabase, userId, date);
   return { ok: true, data: { skipped: false } };
 }
 

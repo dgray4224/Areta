@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
+    "backfill:activity-summary": "tsx scripts/backfill-activity-daily-summaries.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
