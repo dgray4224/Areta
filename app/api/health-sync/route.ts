@@ -4,11 +4,17 @@ import { publicEnv } from "@/platform/env";
 import type { Database } from "@/platform/db/types";
 import { insertImportedWeightLog } from "@/domains/weight/service";
 import { insertImportedSleepLog } from "@/domains/sleep/service";
+import { insertImportedStepLog } from "@/domains/steps/service";
+import { insertImportedHeartRateLog } from "@/domains/heartrate/service";
+import { insertImportedWorkoutLog } from "@/domains/workout/service";
 import type { ActionResult } from "@/platform/auth/actions";
 
 type HealthSyncPayload = {
   weight?: unknown[];
   sleep?: unknown[];
+  steps?: unknown[];
+  heartRate?: unknown[];
+  workouts?: unknown[];
 };
 
 /**
@@ -19,8 +25,6 @@ type HealthSyncPayload = {
  * uses — a native app has no cookies to send. Reuses the same Supabase
  * project's auth with the caller's own access token (no service-role
  * bypass), so RLS applies to every write exactly as it does for the web app.
- * Weight/sleep only in v1 — steps/heart-rate/workouts have no home yet (no
- * tables exist for them).
  */
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -56,10 +60,22 @@ export async function POST(request: NextRequest) {
   const sleepResults = await Promise.all(
     (body.sleep ?? []).map((entry) => insertImportedSleepLog(supabase, user.id, entry))
   );
+  const stepsResults = await Promise.all(
+    (body.steps ?? []).map((entry) => insertImportedStepLog(supabase, user.id, entry))
+  );
+  const heartRateResults = await Promise.all(
+    (body.heartRate ?? []).map((entry) => insertImportedHeartRateLog(supabase, user.id, entry))
+  );
+  const workoutResults = await Promise.all(
+    (body.workouts ?? []).map((entry) => insertImportedWorkoutLog(supabase, user.id, entry))
+  );
 
   return NextResponse.json({
     weight: summarize(weightResults),
     sleep: summarize(sleepResults),
+    steps: summarize(stepsResults),
+    heartRate: summarize(heartRateResults),
+    workouts: summarize(workoutResults),
   });
 }
 

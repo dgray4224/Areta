@@ -1058,29 +1058,38 @@ Use fast manual entry for:
 - Weight
 - Steps or activity if desired
 
-## Later
+## Later — in progress
 
-Use a native iOS or React Native companion to read HealthKit data with permission.
+The `areta-mobile` repo (Expo/React Native, standalone — see its own
+`AGENTS.md`) is the native companion reading HealthKit data with permission.
 
-Potential data:
+Implemented and syncing into this app via `/api/health-sync`:
 
-- Sleep stages
-- Sleep duration
-- Heart rate
-- Resting heart rate
-- HRV
-- Steps
-- Workouts
-- Active energy
 - Weight
+- Sleep
+- Steps
+- Heart rate
+- Workouts (raw imported sessions — `workout_logs`, distinct from
+  `exercise_logs`/`workoutplan`'s manual and planned entries)
 
-Store:
+Not yet implemented: sleep stages, resting heart rate, HRV, active energy.
+
+Store (implemented for all five types above, same shape on every
+`*_logs` table):
 
 - Source
 - Import timestamp
 - Device
 - User override
 - Deduplication key
+
+See `domains/weight`, `domains/sleep`, `domains/steps`, `domains/heartrate`,
+and `domains/workout` for the per-type schema/service pattern (all import
+paths follow the same upsert-on-`dedup_key` + skip-if-`user_override`
+logic — see the comment on `insertImportedWeightLog` in
+`domains/weight/service.ts` for the canonical explanation). A basic "see
+your synced data" table lives at Settings → Health Data (workouts only,
+last 30 days, for now).
 
 A browser-only application should not be expected to provide the best direct HealthKit integration.
 

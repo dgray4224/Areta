@@ -523,6 +523,45 @@ export type Database = {
           },
         ]
       }
+      heart_rate_logs: {
+        Row: {
+          bpm: number
+          created_at: string
+          dedup_key: string | null
+          device: string | null
+          id: string
+          imported_at: string | null
+          logged_at: string
+          source: string
+          user_id: string
+          user_override: boolean
+        }
+        Insert: {
+          bpm: number
+          created_at?: string
+          dedup_key?: string | null
+          device?: string | null
+          id?: string
+          imported_at?: string | null
+          logged_at: string
+          source: string
+          user_id: string
+          user_override?: boolean
+        }
+        Update: {
+          bpm?: number
+          created_at?: string
+          dedup_key?: string | null
+          device?: string | null
+          id?: string
+          imported_at?: string | null
+          logged_at?: string
+          source?: string
+          user_id?: string
+          user_override?: boolean
+        }
+        Relationships: []
+      }
       inventory_items: {
         Row: {
           id: string
@@ -1244,6 +1283,45 @@ export type Database = {
         }
         Relationships: []
       }
+      step_logs: {
+        Row: {
+          count: number
+          created_at: string
+          dedup_key: string | null
+          device: string | null
+          id: string
+          imported_at: string | null
+          logged_at: string
+          source: string
+          user_id: string
+          user_override: boolean
+        }
+        Insert: {
+          count: number
+          created_at?: string
+          dedup_key?: string | null
+          device?: string | null
+          id?: string
+          imported_at?: string | null
+          logged_at: string
+          source: string
+          user_id: string
+          user_override?: boolean
+        }
+        Update: {
+          count?: number
+          created_at?: string
+          dedup_key?: string | null
+          device?: string | null
+          id?: string
+          imported_at?: string | null
+          logged_at?: string
+          source?: string
+          user_id?: string
+          user_override?: boolean
+        }
+        Relationships: []
+      }
       study_sessions: {
         Row: {
           created_at: string
@@ -1408,6 +1486,57 @@ export type Database = {
           user_id?: string
           user_override?: boolean
           weight?: number
+        }
+        Relationships: []
+      }
+      workout_logs: {
+        Row: {
+          activity_type: string
+          created_at: string
+          dedup_key: string | null
+          device: string | null
+          duration_minutes: number
+          end_date: string
+          id: string
+          imported_at: string | null
+          source: string
+          start_date: string
+          total_distance_meters: number | null
+          total_energy_burned_kcal: number | null
+          user_id: string
+          user_override: boolean
+        }
+        Insert: {
+          activity_type: string
+          created_at?: string
+          dedup_key?: string | null
+          device?: string | null
+          duration_minutes: number
+          end_date: string
+          id?: string
+          imported_at?: string | null
+          source: string
+          start_date: string
+          total_distance_meters?: number | null
+          total_energy_burned_kcal?: number | null
+          user_id: string
+          user_override?: boolean
+        }
+        Update: {
+          activity_type?: string
+          created_at?: string
+          dedup_key?: string | null
+          device?: string | null
+          duration_minutes?: number
+          end_date?: string
+          id?: string
+          imported_at?: string | null
+          source?: string
+          start_date?: string
+          total_distance_meters?: number | null
+          total_energy_burned_kcal?: number | null
+          user_id?: string
+          user_override?: boolean
         }
         Relationships: []
       }
