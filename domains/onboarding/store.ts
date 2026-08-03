@@ -1,5 +1,7 @@
 import "server-only";
 import { createClient } from "@/platform/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/platform/db/types";
 import type { OnboardingResponses, OnboardingStepKey } from "@/domains/onboarding/types";
 
 type OnboardingResponsesDbRow = {
@@ -38,8 +40,11 @@ function fromRow(row: OnboardingResponsesDbRow | null, userId: string): Onboardi
   };
 }
 
-export async function getOnboardingResponses(userId: string): Promise<OnboardingResponses> {
-  const supabase = await createClient();
+export async function getOnboardingResponses(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<OnboardingResponses> {
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("onboarding_responses")
     .select("*")
@@ -59,10 +64,11 @@ export async function getOnboardingResponses(userId: string): Promise<Onboarding
 export async function saveOnboardingStep(
   userId: string,
   step: OnboardingStepKey,
-  data: unknown
+  data: unknown,
+  client?: SupabaseClient<Database>
 ): Promise<void> {
-  const supabase = await createClient();
-  const existing = await getOnboardingResponses(userId);
+  const supabase = client ?? (await createClient());
+  const existing = await getOnboardingResponses(userId, supabase);
   const completedSteps = existing.completedSteps.includes(step)
     ? existing.completedSteps
     : [...existing.completedSteps, step];

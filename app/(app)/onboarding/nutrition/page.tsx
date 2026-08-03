@@ -8,11 +8,11 @@ export default async function NutritionStepPage() {
   const user = await requireUser();
   const responses = await getOnboardingResponses(user.id);
 
-  if (!effectiveSteps(responses.goals).includes("nutrition")) {
+  if (!effectiveSteps(responses.goals, responses.exercise).includes("nutrition")) {
     redirect("/onboarding");
   }
 
-  const { stepIndex, totalSteps, backHref } = stepPosition("nutrition", responses.goals);
+  const { stepIndex, totalSteps, backHref } = stepPosition("nutrition", responses.goals, responses.exercise);
 
   return (
     <NutritionForm

@@ -12,7 +12,7 @@ export default async function ReviewStepPage() {
     redirect("/onboarding");
   }
 
-  const steps = effectiveSteps(responses.goals);
+  const steps = effectiveSteps(responses.goals, responses.exercise);
   const totalSteps = steps.length + 1;
   const backHref = steps.length > 0 ? `/onboarding/${steps[steps.length - 1]}` : undefined;
 

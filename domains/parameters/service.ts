@@ -5,7 +5,7 @@ import type { ActionResult } from "@/platform/auth/actions";
 import { calculateNutritionParameters } from "@/domains/parameters/nutrition-calc";
 import { calculateExerciseParameters } from "@/domains/parameters/exercise-calc";
 import type { NutritionInput } from "@/domains/nutrition/schema";
-import type { ExerciseInput } from "@/domains/exercise/schema";
+import { isLegacyExerciseShape } from "@/domains/exercise/legacy";
 import type { GeneratedParameter } from "@/domains/parameters/types";
 
 /** Display order per domain, since Supabase doesn't preserve insertion
@@ -165,14 +165,19 @@ export async function generateExerciseParameters(userId: string): Promise<Action
     .eq("user_id", userId)
     .single();
 
-  const exercise = (responses?.exercise ?? {}) as ExerciseInput;
+  const exercise = responses?.exercise ?? {};
+  // TODO(goal-first-training-system Phase 4): calculateExerciseParameters
+  // is part of the old archetype-first pipeline being replaced by
+  // domains/recommendation/*. Only meaningful for users still on the old
+  // onboarding shape; new-shape users get "missing inputs" until Phase 4.
+  const legacy = isLegacyExerciseShape(exercise) ? exercise : {};
 
   const { parameters, missingInputs } = calculateExerciseParameters({
-    archetype: exercise.archetype,
-    experienceLevel: exercise.experienceLevel,
-    trainingPhaseLengthWeeks: exercise.trainingPhaseLengthWeeks,
-    daysPerWeekAvailable: exercise.daysPerWeekAvailable,
-    sessionLengthMinutesAvailable: exercise.sessionLengthMinutesAvailable,
+    archetype: legacy.archetype,
+    experienceLevel: legacy.experienceLevel,
+    trainingPhaseLengthWeeks: legacy.trainingPhaseLengthWeeks,
+    daysPerWeekAvailable: legacy.daysPerWeekAvailable,
+    sessionLengthMinutesAvailable: legacy.sessionLengthMinutesAvailable,
   });
 
   if (parameters.length === 0) {

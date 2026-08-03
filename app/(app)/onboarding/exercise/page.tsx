@@ -8,11 +8,11 @@ export default async function ExerciseStepPage() {
   const user = await requireUser();
   const responses = await getOnboardingResponses(user.id);
 
-  if (!effectiveSteps(responses.goals).includes("exercise")) {
+  if (!effectiveSteps(responses.goals, responses.exercise).includes("exercise")) {
     redirect("/onboarding");
   }
 
-  const { stepIndex, totalSteps, backHref } = stepPosition("exercise", responses.goals);
+  const { stepIndex, totalSteps, backHref } = stepPosition("exercise", responses.goals, responses.exercise);
 
   return (
     <ExerciseForm

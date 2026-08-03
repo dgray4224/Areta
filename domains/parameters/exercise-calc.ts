@@ -9,6 +9,10 @@ const ARCHETYPE_SESSION_RANGE: Record<ExerciseArchetype, { min: number; max: num
   hybrid_athlete: { min: 4, max: 6 },
   general_fitness: { min: 2, max: 4 },
   hypertrophy: { min: 3, max: 6 },
+  triathlete: { min: 5, max: 7 },
+  cyclist: { min: 3, max: 6 },
+  olympic_weightlifter: { min: 3, max: 5 },
+  functional_fitness: { min: 3, max: 6 },
 };
 
 const ARCHETYPE_PRIMARY_FOCUS: Record<ExerciseArchetype, string> = {
@@ -17,12 +21,21 @@ const ARCHETYPE_PRIMARY_FOCUS: Record<ExerciseArchetype, string> = {
   hybrid_athlete: "Concurrent strength and endurance work, sequenced to minimize interference between them.",
   general_fitness: "Balanced full-body strength and cardio for general health.",
   hypertrophy: "Progressive volume overload across major muscle groups.",
+  triathlete: "Balanced swim/bike/run volume building toward race-specific endurance, with brick sessions tying disciplines together.",
+  cyclist: "Aerobic base and threshold-building on the bike, supported by cycling-specific strength work.",
+  olympic_weightlifter: "Technical proficiency in the snatch and clean & jerk, built on top of foundational strength.",
+  functional_fitness: "Varied high-intensity strength, gymnastics, and conditioning work across broad time domains.",
 };
 
 /** Archetypes aggressive enough that a true beginner should ease in
  * conservatively rather than jump straight to the archetype's typical
  * volume (mirrors nutrition's calorie-floor safety-bound pattern). */
-const AGGRESSIVE_ARCHETYPES: ExerciseArchetype[] = ["powerlifter", "hybrid_athlete"];
+const AGGRESSIVE_ARCHETYPES: ExerciseArchetype[] = [
+  "powerlifter",
+  "hybrid_athlete",
+  "olympic_weightlifter",
+  "functional_fitness",
+];
 
 const DEFAULT_PHASE_LENGTH_WEEKS = 8;
 const MIN_PHASE_LENGTH_WEEKS = 4;

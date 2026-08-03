@@ -6,7 +6,7 @@ import { GoalsForm } from "./GoalsForm";
 export default async function GoalsStepPage() {
   const user = await requireUser();
   const responses = await getOnboardingResponses(user.id);
-  const { stepIndex, totalSteps } = stepPosition("goals", responses.goals);
+  const { stepIndex, totalSteps } = stepPosition("goals", responses.goals, responses.exercise);
 
   return (
     <GoalsForm

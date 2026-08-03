@@ -3,14 +3,20 @@
 import { identitySchema, workScheduleSchema } from "@/domains/identity/schema";
 import { saveOnboardingStep } from "@/domains/onboarding/store";
 import { createClient } from "@/platform/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
-export async function saveIdentityStep(userId: string, input: unknown): Promise<ActionResult> {
+export async function saveIdentityStep(
+  userId: string,
+  input: unknown,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
   const parsed = identitySchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  await saveOnboardingStep(userId, "identity", parsed.data);
+  await saveOnboardingStep(userId, "identity", parsed.data, client);
   return { ok: true, data: undefined };
 }
 
@@ -76,8 +82,8 @@ export async function updateWorkSchedule(userId: string, input: unknown): Promis
  * seen (signup only produces a session after email confirmation, so this
  * can't happen at signUp time — RLS would reject an unauthenticated
  * insert). Idempotent, safe to call on every authenticated request. */
-export async function ensureProfile(userId: string): Promise<void> {
-  const supabase = await createClient();
+export async function ensureProfile(userId: string, client?: SupabaseClient<Database>): Promise<void> {
+  const supabase = client ?? (await createClient());
   const { data, error: selectError } = await supabase
     .from("profiles")
     .select("id")

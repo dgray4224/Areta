@@ -6,8 +6,17 @@ import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { getApprovedParameterValue, getGeneratedParameters } from "@/domains/parameters/service";
 import { getAllExercises } from "@/domains/exerciselibrary/service";
-import { generateWorkoutPlan } from "@/domains/workoutplan/generate";
-import type { ExerciseInput } from "@/domains/exercise/schema";
+import { generateWorkoutPlan, materializeWorkoutPlan } from "@/domains/workoutplan/generate";
+import { selectProgram, resolveProgression, type LastWorkoutPlanInfo } from "@/domains/workoutplan/rotation";
+import {
+  getEligibleProgramCandidates,
+  getFirstPhaseId,
+  getPhaseById,
+  getNextPhase,
+  getProgramPhaseHydrated,
+  getSessionExerciseById,
+} from "@/domains/trainingprogram/service";
+import { isLegacyExerciseShape } from "@/domains/exercise/legacy";
 import { logScheduleEvent, hasActualScheduleEventToday } from "@/platform/scheduling/log-schedule-event";
 
 function currentWeekStart(): string {
@@ -20,41 +29,156 @@ function currentWeekStart(): string {
  * exercise library. Mirrors domains/mealplan/service.ts's
  * generateAndSaveMealPlan. Still needs an explicit approve step (see
  * approveWorkoutPlan) before it's "active" (CLAUDE.md rule 10).
+ *
+ * Prefers a real, periodized training_programs phase (rotation.ts decides
+ * whether to continue the user's current phase, advance to the next one,
+ * or select a new program) over the legacy archetype-only greedy
+ * generator, which now only serves as the fallback when no program is
+ * eligible for the user's archetype/equipment/experience combination.
  */
 export async function generateAndSaveWorkoutPlan(userId: string): Promise<ActionResult<{ warnings: string[] }>> {
+  const supabase = await createClient();
+  const weekStart = currentWeekStart();
+
   const [sessionsPerWeek, parameters, { data: responses }] = await Promise.all([
     getApprovedParameterValue(userId, "exercise", "sessions_per_week"),
     getGeneratedParameters(userId, "exercise"),
-    (await createClient())
-      .from("onboarding_responses")
-      .select("exercise")
-      .eq("user_id", userId)
-      .single(),
+    supabase.from("onboarding_responses").select("exercise").eq("user_id", userId).single(),
   ]);
 
   if (sessionsPerWeek === null) {
     return { ok: false, error: "Approve your training parameters before generating a workout plan." };
   }
 
-  const exercise = (responses?.exercise ?? {}) as ExerciseInput;
-  if (!exercise.archetype) {
-    return { ok: false, error: "Complete the Exercise onboarding step before generating a workout plan." };
+  const exercise = responses?.exercise ?? {};
+  // TODO(goal-first-training-system Phase 4): this whole archetype/rotation
+  // pipeline is being replaced by domains/recommendation/*. Until that
+  // ships, only users still on the old onboarding shape can generate a
+  // plan here -- everyone re-onboarded in the new goal-first shape gets
+  // this graceful "not ready yet" error instead of a broken plan.
+  if (!isLegacyExerciseShape(exercise) || !exercise.archetype) {
+    return {
+      ok: false,
+      error: "Workout plan generation for the new onboarding is coming soon -- check back shortly.",
+    };
   }
 
+  const archetype = exercise.archetype;
+  const equipmentAccess = exercise.equipmentAccess ?? [];
+  const experienceLevel = exercise.experienceLevel ?? "beginner";
+
   const primaryFocusParam = parameters.find((p) => p.id === "primary_focus" && p.approved);
-  const phaseFocus = typeof primaryFocusParam?.value === "string" ? primaryFocusParam.value : null;
+  const legacyPhaseFocus = typeof primaryFocusParam?.value === "string" ? primaryFocusParam.value : null;
 
   const exercises = await getAllExercises();
 
-  const { days, warnings } = generateWorkoutPlan({
-    sessionsPerWeek,
-    archetype: exercise.archetype,
-    equipmentAccess: exercise.equipmentAccess ?? [],
-    exercises,
-  });
+  const [candidates, { data: lastPlanRow }, { data: historyRows }] = await Promise.all([
+    getEligibleProgramCandidates(archetype, supabase),
+    supabase
+      .from("workout_plans")
+      .select("program_id, program_phase_id, phase_week_number, week_start")
+      .eq("user_id", userId)
+      .not("program_id", "is", null)
+      .lt("week_start", weekStart)
+      .order("week_start", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("workout_plans")
+      .select("program_id, week_start")
+      .eq("user_id", userId)
+      .not("program_id", "is", null)
+      .order("week_start", { ascending: true }),
+  ]);
 
-  const supabase = await createClient();
-  const weekStart = currentWeekStart();
+  const lastUsedByProgramId = new Map<string, string>();
+  for (const row of historyRows ?? []) {
+    if (row.program_id) lastUsedByProgramId.set(row.program_id, row.week_start);
+  }
+  const usedProgramIds = Array.from(lastUsedByProgramId.keys());
+
+  let lastPlan: LastWorkoutPlanInfo | null = null;
+  let currentPhase = null;
+  let nextPhase = null;
+  if (lastPlanRow?.program_id && lastPlanRow.program_phase_id && lastPlanRow.phase_week_number !== null) {
+    const [lastProgramRow, phase] = await Promise.all([
+      supabase.from("training_programs").select("archetype").eq("id", lastPlanRow.program_id).maybeSingle(),
+      getPhaseById(lastPlanRow.program_phase_id, supabase),
+    ]);
+    currentPhase = phase;
+    if (currentPhase) {
+      nextPhase = await getNextPhase(currentPhase, supabase);
+    }
+    if (lastProgramRow.data && currentPhase) {
+      lastPlan = {
+        programId: lastPlanRow.program_id,
+        programArchetype: lastProgramRow.data.archetype,
+        phaseId: lastPlanRow.program_phase_id,
+        phaseWeekNumber: lastPlanRow.phase_week_number,
+        weekStart: lastPlanRow.week_start,
+      };
+    }
+  }
+
+  const decision = resolveProgression({ lastPlan, currentArchetype: archetype, newWeekStart: weekStart, currentPhase, nextPhase });
+
+  let programId: string | null = null;
+  let phaseId: string | null = null;
+  let phaseWeekNumber: number | null = null;
+  const warnings: string[] = [];
+
+  if (decision.kind === "continue_phase") {
+    programId = decision.programId;
+    phaseId = decision.phaseId;
+    phaseWeekNumber = decision.weekNumber;
+  } else if (decision.kind === "advance_phase") {
+    programId = decision.programId;
+    phaseId = decision.phaseId;
+    phaseWeekNumber = 1;
+  } else {
+    const { program, warnings: selectionWarnings } = selectProgram({
+      userId,
+      archetype,
+      candidates,
+      equipmentAccess,
+      experienceLevel,
+      sessionsPerWeek,
+      usedProgramIds,
+      lastUsedByProgramId,
+    });
+    warnings.push(...selectionWarnings);
+    if (program) {
+      programId = program.id;
+      phaseId = await getFirstPhaseId(program.id, supabase);
+      phaseWeekNumber = 1;
+    }
+  }
+
+  let days: ReturnType<typeof generateWorkoutPlan>["days"] = [];
+  let phaseFocus = legacyPhaseFocus;
+
+  if (phaseId) {
+    const hydratedPhase = await getProgramPhaseHydrated(phaseId, supabase);
+    if (hydratedPhase) {
+      const result = materializeWorkoutPlan({ phase: hydratedPhase, archetype, equipmentAccess, exercises });
+      days = result.days;
+      warnings.push(...result.warnings);
+      phaseFocus = hydratedPhase.focus ?? legacyPhaseFocus;
+    } else {
+      programId = null;
+      phaseId = null;
+      phaseWeekNumber = null;
+    }
+  }
+
+  if (!phaseId) {
+    if (!programId) {
+      warnings.push("No matching training program was available -- generated a general plan for your archetype instead.");
+    }
+    const result = generateWorkoutPlan({ sessionsPerWeek, archetype, equipmentAccess, exercises });
+    days = result.days;
+    warnings.push(...result.warnings);
+  }
 
   const { data: plan, error: planError } = await supabase
     .from("workout_plans")
@@ -65,6 +189,9 @@ export async function generateAndSaveWorkoutPlan(userId: string): Promise<Action
         status: "draft",
         sessions_per_week: sessionsPerWeek,
         phase_focus: phaseFocus,
+        program_id: programId,
+        program_phase_id: phaseId,
+        phase_week_number: phaseWeekNumber,
       },
       { onConflict: "user_id,week_start" }
     )
@@ -93,6 +220,14 @@ export async function generateAndSaveWorkoutPlan(userId: string): Promise<Action
       sets: ex.sets,
       reps: ex.reps,
       duration_minutes: ex.durationMinutes,
+      program_session_exercise_id: ex.programSessionExerciseId,
+      reps_min: ex.repsMin,
+      reps_max: ex.repsMax,
+      intensity_type: ex.intensityType,
+      intensity_value: ex.intensityValue,
+      cardio_intensity: ex.cardioIntensity,
+      coaching_notes: ex.coachingNotes,
+      substituted: ex.substituted,
     }))
   );
 
@@ -132,6 +267,27 @@ export type WorkoutPlanItemView = {
   completedAt: string | null;
   scheduledTime: string | null;
   notes: string | null;
+  repsMin: number | null;
+  repsMax: number | null;
+  intensityType: "percent_1rm" | "rpe" | "none" | null;
+  intensityValue: string | null;
+  cardioIntensity: string | null;
+  coachingNotes: string | null;
+  /** Links back to the prescription this item was materialized from --
+   * null for items from the legacy archetype-only generator. Used to
+   * look up alternates (app/api/exercise/route.ts). */
+  programSessionExerciseId: string | null;
+  substituted: boolean;
+};
+
+/** Program/phase context for the active plan, if one was generated from a
+ * training_programs phase rather than the legacy archetype-only
+ * generator -- surfaced so the Exercise tab can show e.g. "Conjugate
+ * Strength · Accumulation, Week 2". */
+export type WorkoutPlanProgramContext = {
+  programName: string;
+  phaseName: string;
+  phaseWeekNumber: number;
 };
 
 export type WorkoutPlanView = {
@@ -140,6 +296,7 @@ export type WorkoutPlanView = {
   status: "draft" | "active" | "archived";
   sessionsPerWeek: number | null;
   phaseFocus: string | null;
+  programContext: WorkoutPlanProgramContext | null;
   items: WorkoutPlanItemView[];
 };
 
@@ -151,21 +308,24 @@ export async function getWorkoutPlanForWeek(
   const supabase = client ?? (await createClient());
   const { data: plan } = await supabase
     .from("workout_plans")
-    .select("id, week_start, status, sessions_per_week, phase_focus")
+    .select("id, week_start, status, sessions_per_week, phase_focus, program_id, program_phase_id, phase_week_number")
     .eq("user_id", userId)
     .eq("week_start", weekStart)
     .maybeSingle();
 
   if (!plan) return null;
 
-  const { data: items, error } = await supabase
-    .from("workout_plan_items")
-    .select(
-      "id, day_of_week, session_order, exercise_id, sets, reps, duration_minutes, completed_at, scheduled_time, notes"
-    )
-    .eq("workout_plan_id", plan.id)
-    .order("day_of_week", { ascending: true })
-    .order("session_order", { ascending: true });
+  const [{ data: items, error }, programContext] = await Promise.all([
+    supabase
+      .from("workout_plan_items")
+      .select(
+        "id, day_of_week, session_order, exercise_id, sets, reps, duration_minutes, completed_at, scheduled_time, notes, reps_min, reps_max, intensity_type, intensity_value, cardio_intensity, coaching_notes, substituted, program_session_exercise_id"
+      )
+      .eq("workout_plan_id", plan.id)
+      .order("day_of_week", { ascending: true })
+      .order("session_order", { ascending: true }),
+    loadProgramContext(plan.program_id, plan.program_phase_id, plan.phase_week_number, supabase),
+  ]);
 
   if (error) {
     throw new Error(`Failed to load workout plan items: ${error.message}`);
@@ -177,6 +337,7 @@ export async function getWorkoutPlanForWeek(
     status: plan.status as WorkoutPlanView["status"],
     sessionsPerWeek: plan.sessions_per_week,
     phaseFocus: plan.phase_focus,
+    programContext,
     items: (items ?? []).map((i) => ({
       id: i.id,
       dayOfWeek: i.day_of_week,
@@ -188,8 +349,33 @@ export async function getWorkoutPlanForWeek(
       completedAt: i.completed_at,
       scheduledTime: i.scheduled_time,
       notes: i.notes,
+      repsMin: i.reps_min,
+      repsMax: i.reps_max,
+      intensityType: i.intensity_type as WorkoutPlanItemView["intensityType"],
+      intensityValue: i.intensity_value,
+      cardioIntensity: i.cardio_intensity,
+      coachingNotes: i.coaching_notes,
+      substituted: i.substituted,
+      programSessionExerciseId: i.program_session_exercise_id,
     })),
   };
+}
+
+async function loadProgramContext(
+  programId: string | null,
+  programPhaseId: string | null,
+  phaseWeekNumber: number | null,
+  supabase: SupabaseClient<Database>
+): Promise<WorkoutPlanProgramContext | null> {
+  if (!programId || !programPhaseId || phaseWeekNumber === null) return null;
+
+  const [{ data: program }, { data: phase }] = await Promise.all([
+    supabase.from("training_programs").select("name").eq("id", programId).maybeSingle(),
+    supabase.from("training_program_phases").select("name").eq("id", programPhaseId).maybeSingle(),
+  ]);
+
+  if (!program || !phase) return null;
+  return { programName: program.name, phaseName: phase.name, phaseWeekNumber };
 }
 
 export async function getActiveWorkoutPlan(
@@ -294,4 +480,98 @@ export async function setWorkoutPlanItemNotes(
     return { ok: false, error: error.message };
   }
   return { ok: true, data: undefined };
+}
+
+/**
+ * Swaps a planned exercise for one of its curated alternates (or back to
+ * the recommended default) -- mobile Exercise tab "swap" affordance. A
+ * per-instance, today-only choice: the next weekly regeneration
+ * (generateAndSaveWorkoutPlan) deletes and re-inserts all of a week's
+ * workout_plan_items regardless, silently discarding completedAt/
+ * scheduledTime/notes today already, so a swap being wiped on the next
+ * regeneration is the same class of behavior, not a new gap.
+ *
+ * Server-side validates that `targetProgramSessionExerciseId` is
+ * actually a sibling of the item's current prescription (shares the same
+ * "primary" slot) before applying anything -- without this, a
+ * manipulated request could point a plan item at an unrelated program's
+ * row and corrupt the day's display with mismatched fields.
+ */
+export async function swapWorkoutPlanItemExercise(
+  userId: string,
+  itemId: string,
+  targetProgramSessionExerciseId: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<WorkoutPlanItemView>> {
+  const supabase = client ?? (await createClient());
+
+  const { data: item, error: itemError } = await supabase
+    .from("workout_plan_items")
+    .select("id, program_session_exercise_id, day_of_week, session_order, completed_at, scheduled_time, notes")
+    .eq("id", itemId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (itemError) return { ok: false, error: itemError.message };
+  if (!item) return { ok: false, error: "Planned exercise not found." };
+  if (!item.program_session_exercise_id) {
+    return { ok: false, error: "This exercise wasn't generated from a training program and has no alternates." };
+  }
+
+  const currentRx = await getSessionExerciseById(item.program_session_exercise_id, supabase);
+  if (!currentRx) return { ok: false, error: "Current prescription not found." };
+
+  const targetRx = await getSessionExerciseById(targetProgramSessionExerciseId, supabase);
+  if (!targetRx) return { ok: false, error: "Target exercise not found." };
+
+  const primaryId = currentRx.primaryExerciseId ?? currentRx.id;
+  const targetIsValidSibling = targetRx.id === primaryId || targetRx.primaryExerciseId === primaryId;
+  if (!targetIsValidSibling) {
+    return { ok: false, error: "The requested exercise isn't a valid alternate for this slot." };
+  }
+
+  const { error: updateError } = await supabase
+    .from("workout_plan_items")
+    .update({
+      exercise_id: targetRx.exerciseId,
+      sets: targetRx.sets,
+      reps: targetRx.repsMax ?? targetRx.repsMin,
+      duration_minutes: targetRx.durationMinutes,
+      program_session_exercise_id: targetRx.id,
+      reps_min: targetRx.repsMin,
+      reps_max: targetRx.repsMax,
+      intensity_type: targetRx.intensityType,
+      intensity_value: targetRx.intensityValue,
+      cardio_intensity: targetRx.cardioIntensity,
+      coaching_notes: targetRx.coachingNotes,
+      substituted: false,
+    })
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
+  if (updateError) return { ok: false, error: updateError.message };
+
+  return {
+    ok: true,
+    data: {
+      id: item.id,
+      dayOfWeek: item.day_of_week,
+      sessionOrder: item.session_order,
+      exerciseId: targetRx.exerciseId,
+      sets: targetRx.sets,
+      reps: targetRx.repsMax ?? targetRx.repsMin,
+      durationMinutes: targetRx.durationMinutes,
+      completedAt: item.completed_at,
+      scheduledTime: item.scheduled_time,
+      notes: item.notes,
+      repsMin: targetRx.repsMin,
+      repsMax: targetRx.repsMax,
+      intensityType: targetRx.intensityType,
+      intensityValue: targetRx.intensityValue,
+      cardioIntensity: targetRx.cardioIntensity,
+      coachingNotes: targetRx.coachingNotes,
+      substituted: false,
+      programSessionExerciseId: targetRx.id,
+    },
+  };
 }

@@ -6,7 +6,7 @@ import { IdentityForm } from "./IdentityForm";
 export default async function IdentityStepPage() {
   const user = await requireUser();
   const responses = await getOnboardingResponses(user.id);
-  const { stepIndex, totalSteps } = stepPosition("identity", responses.goals);
+  const { stepIndex, totalSteps } = stepPosition("identity", responses.goals, responses.exercise);
 
   return (
     <IdentityForm

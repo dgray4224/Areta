@@ -8,11 +8,11 @@ export default async function RecoveryStepPage() {
   const user = await requireUser();
   const responses = await getOnboardingResponses(user.id);
 
-  if (!effectiveSteps(responses.goals).includes("recovery")) {
+  if (!effectiveSteps(responses.goals, responses.exercise).includes("recovery")) {
     redirect("/onboarding");
   }
 
-  const { stepIndex, totalSteps, backHref } = stepPosition("recovery", responses.goals);
+  const { stepIndex, totalSteps, backHref } = stepPosition("recovery", responses.goals, responses.exercise);
 
   return (
     <RecoveryForm

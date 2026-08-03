@@ -7,6 +7,7 @@ import type {
   PersonalizationProfileDraft,
 } from "@/domains/onboarding/types";
 import type { DomainKey, Goal } from "@/domains/goals/schema";
+import type { ExerciseInput } from "@/domains/exercise/schema";
 
 /** The onboarding sequence is per-user: Nutrition/Recovery/Learning only
  * appear when the user actually picked that area as a goal category, so a
@@ -22,13 +23,17 @@ import type { DomainKey, Goal } from "@/domains/goals/schema";
  * fields (everything else sleep-related is asked contextually later, see
  * domains/prompts), and Coaching lives in Settings -> Personalization,
  * defaulted rather than asked. */
-export function effectiveSteps(goals: Goal[]): OnboardingStepKey[] {
+export function effectiveSteps(goals: Goal[], exercise?: ExerciseInput | null): OnboardingStepKey[] {
   const domains = new Set(goals.map((g) => g.domainKey));
   const wantsHealth = domains.has("health");
   const steps: OnboardingStepKey[] = ["identity", "goals"];
   if (wantsHealth || domains.has("nutrition")) steps.push("nutrition");
   if (wantsHealth || domains.has("exercise")) steps.push("exercise");
-  if (domains.has("recovery")) steps.push("recovery");
+  // Q7's injury/limitation triage also gates Recovery on -- not just
+  // picking a Recovery goal directly -- so real clinical detail has
+  // somewhere to go once a user flags something in the Exercise step.
+  const needsRecoveryFromExerciseTriage = Boolean(exercise?.injuryStatus && exercise.injuryStatus !== "no");
+  if (domains.has("recovery") || needsRecoveryFromExerciseTriage) steps.push("recovery");
   if (domains.has("learning")) steps.push("learning");
   return steps;
 }
@@ -37,9 +42,10 @@ export function effectiveSteps(goals: Goal[]): OnboardingStepKey[] {
  * the user's current effective sequence rather than a fixed order. */
 export function stepPosition(
   step: OnboardingStepKey,
-  goals: Goal[]
+  goals: Goal[],
+  exercise?: ExerciseInput | null
 ): { stepIndex: number; totalSteps: number; backHref: string | undefined } {
-  const steps = effectiveSteps(goals);
+  const steps = effectiveSteps(goals, exercise);
   const idx = steps.indexOf(step);
   return {
     stepIndex: idx + 1,
@@ -49,7 +55,7 @@ export function stepPosition(
 }
 
 export function firstIncompleteStep(responses: OnboardingResponses): OnboardingStepKey | null {
-  const steps = effectiveSteps(responses.goals);
+  const steps = effectiveSteps(responses.goals, responses.exercise);
   return steps.find((step) => !responses.completedSteps.includes(step)) ?? null;
 }
 

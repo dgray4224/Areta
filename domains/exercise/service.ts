@@ -7,12 +7,16 @@ import { createClient } from "@/platform/supabase/server";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
-export async function saveExerciseStep(userId: string, input: unknown): Promise<ActionResult> {
+export async function saveExerciseStep(
+  userId: string,
+  input: unknown,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
   const parsed = exerciseSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  await saveOnboardingStep(userId, "exercise", parsed.data);
+  await saveOnboardingStep(userId, "exercise", parsed.data, client);
   return { ok: true, data: undefined };
 }
 

@@ -140,6 +140,25 @@ describe("effectiveSteps", () => {
     const healthGoal = [{ ...founderGoals[0], domainKey: "health" as const }];
     expect(effectiveSteps(healthGoal)).toEqual(["identity", "goals", "nutrition", "exercise"]);
   });
+
+  it("gates recovery on the Exercise step's injury triage even with no recovery goal", () => {
+    const healthGoal = [{ ...founderGoals[0], domainKey: "health" as const }];
+    expect(effectiveSteps(healthGoal, { injuryStatus: "yes" })).toEqual([
+      "identity",
+      "goals",
+      "nutrition",
+      "exercise",
+      "recovery",
+    ]);
+    expect(effectiveSteps(healthGoal, { injuryStatus: "unsure" })).toContain("recovery");
+  });
+
+  it("does not gate recovery on when injuryStatus is 'no' or unanswered", () => {
+    const healthGoal = [{ ...founderGoals[0], domainKey: "health" as const }];
+    expect(effectiveSteps(healthGoal, { injuryStatus: "no" })).not.toContain("recovery");
+    expect(effectiveSteps(healthGoal, null)).not.toContain("recovery");
+    expect(effectiveSteps(healthGoal)).not.toContain("recovery");
+  });
 });
 
 describe("stepPosition", () => {
