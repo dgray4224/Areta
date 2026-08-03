@@ -1,8 +1,10 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { exerciseSchema, exerciseLogSchema } from "@/domains/exercise/schema";
 import { saveOnboardingStep } from "@/domains/onboarding/store";
 import { createClient } from "@/platform/supabase/server";
+import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
 export async function saveExerciseStep(userId: string, input: unknown): Promise<ActionResult> {
@@ -14,13 +16,17 @@ export async function saveExerciseStep(userId: string, input: unknown): Promise<
   return { ok: true, data: undefined };
 }
 
-export async function logExercise(userId: string, input: unknown): Promise<ActionResult> {
+export async function logExercise(
+  userId: string,
+  input: unknown,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
   const parsed = exerciseLogSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const d = parsed.data;
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { error } = await supabase.from("exercise_logs").insert({
     user_id: userId,
     date: d.date,
@@ -36,8 +42,8 @@ export async function logExercise(userId: string, input: unknown): Promise<Actio
   return { ok: true, data: undefined };
 }
 
-export async function getRecentExerciseLogs(userId: string, limit = 14) {
-  const supabase = await createClient();
+export async function getRecentExerciseLogs(userId: string, limit = 14, client?: SupabaseClient<Database>) {
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("exercise_logs")
     .select("id, date, archetype, duration_minutes, perceived_exertion, notes")

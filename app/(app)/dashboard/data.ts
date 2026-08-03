@@ -5,7 +5,7 @@ import { getWorkoutPlanForWeek } from "@/domains/workoutplan/service";
 import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { getGroceryListForWeek } from "@/domains/grocery/service";
 import { getPrepPlanForWeek } from "@/domains/prep/service";
-import { getUpcomingEvents } from "@/domains/calendar/events-service";
+import { getUpcomingEventsWithTimeout as fetchUpcomingEventsWithTimeout } from "@/domains/calendar/events-service";
 import type { UpcomingEvent } from "@/domains/calendar/schema";
 
 export type TodayTask = {
@@ -54,25 +54,16 @@ export type DashboardData = {
   hasCalendarConnection: boolean;
 };
 
-const UPCOMING_EVENTS_TIMEOUT_MS = 3000;
 const UPCOMING_EVENTS_DAYS_AHEAD = 7;
 
-/** Calendar providers are the only network call in this function that
- * leaves Supabase entirely — a slow or broken connection must never hold up
- * the whole dashboard load, so this always resolves within the timeout,
- * falling back to an empty list. getUpcomingEvents already never throws
- * (each provider fails independently), but the try/catch is defense in
- * depth against a future change to that contract. */
+/** Thin wrapper fixing the dashboard's "upcoming" window to 7 days ahead —
+ * the actual timeout/never-throws behavior lives in
+ * domains/calendar/events-service.ts's getUpcomingEventsWithTimeout, shared
+ * with the mobile Calendar tab's API route. */
 async function getUpcomingEventsWithTimeout(userId: string): Promise<UpcomingEvent[]> {
   const timeMin = new Date().toISOString();
   const timeMax = new Date(Date.now() + UPCOMING_EVENTS_DAYS_AHEAD * 24 * 60 * 60 * 1000).toISOString();
-
-  const fetchEvents = getUpcomingEvents(userId, { timeMin, timeMax }).catch(() => []);
-  const timeout = new Promise<UpcomingEvent[]>((resolve) =>
-    setTimeout(() => resolve([]), UPCOMING_EVENTS_TIMEOUT_MS)
-  );
-
-  return Promise.race([fetchEvents, timeout]);
+  return fetchUpcomingEventsWithTimeout(userId, { timeMin, timeMax });
 }
 
 /** Server's current date as YYYY-MM-DD. A more correct implementation

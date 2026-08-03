@@ -1,6 +1,8 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
+import type { Database } from "@/platform/db/types";
 import type { Recipe, Ingredient } from "@/domains/recipes/types";
 
 export async function getAllRecipes(): Promise<Recipe[]> {
@@ -32,9 +34,12 @@ export async function getAllRecipes(): Promise<Recipe[]> {
   );
 }
 
-export async function getRecipesByIds(ids: string[]): Promise<Map<string, Recipe>> {
+export async function getRecipesByIds(
+  ids: string[],
+  client?: SupabaseClient<Database>
+): Promise<Map<string, Recipe>> {
   if (ids.length === 0) return new Map();
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase.from("recipes").select("*").in("id", ids);
 
   if (error) {

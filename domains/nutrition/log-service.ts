@@ -1,15 +1,21 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { nutritionLogSchema } from "@/domains/nutrition/log-schema";
 import { createClient } from "@/platform/supabase/server";
+import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
-export async function logNutrition(userId: string, input: unknown): Promise<ActionResult> {
+export async function logNutrition(
+  userId: string,
+  input: unknown,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
   const parsed = nutritionLogSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { error } = await supabase.from("nutrition_logs").insert({
     user_id: userId,
     date: parsed.data.date,
@@ -31,8 +37,8 @@ export async function logNutrition(userId: string, input: unknown): Promise<Acti
   return { ok: true, data: undefined };
 }
 
-export async function getNutritionLogsForDate(userId: string, date: string) {
-  const supabase = await createClient();
+export async function getNutritionLogsForDate(userId: string, date: string, client?: SupabaseClient<Database>) {
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("nutrition_logs")
     .select("id, meal, food, quantity, unit, calories, protein, carbohydrates, fat, fiber, notes")
@@ -52,13 +58,14 @@ export type DailyNutritionTotal = { date: string; calories: number; protein: num
  * log rows (one per meal), so this is daily totals, not raw rows. */
 export async function getNutritionDailyTotals(
   userId: string,
-  days = 30
+  days = 30,
+  client?: SupabaseClient<Database>
 ): Promise<DailyNutritionTotal[]> {
   const since = new Date();
   since.setUTCDate(since.getUTCDate() - (days - 1));
   const sinceIso = since.toISOString().slice(0, 10);
 
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("nutrition_logs")
     .select("date, calories, protein")

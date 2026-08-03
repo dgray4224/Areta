@@ -10,7 +10,7 @@ import { aggregateActivityDailySummary } from "@/domains/activity-summary/aggreg
 
 const DEFAULT_TIMEZONE = "UTC";
 
-async function resolveTimezone(supabase: SupabaseClient<Database>, userId: string): Promise<string> {
+export async function resolveTimezone(supabase: SupabaseClient<Database>, userId: string): Promise<string> {
   const { data: profile } = await supabase.from("profiles").select("time_zone").eq("id", userId).maybeSingle();
   return profile?.time_zone ?? DEFAULT_TIMEZONE;
 }

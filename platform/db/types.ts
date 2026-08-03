@@ -208,6 +208,42 @@ export type Database = {
         }
         Relationships: []
       }
+      custom_timeline_events: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          date: string
+          end_time: string | null
+          id: string
+          notes: string | null
+          scheduled_time: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          date: string
+          end_time?: string | null
+          id?: string
+          notes?: string | null
+          scheduled_time?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          date?: string
+          end_time?: string | null
+          id?: string
+          notes?: string | null
+          scheduled_time?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       daily_actions: {
         Row: {
           created_at: string
@@ -678,32 +714,47 @@ export type Database = {
       }
       meal_plan_items: {
         Row: {
+          completed_at: string | null
           created_at: string
           day_of_week: number
+          end_time: string | null
           id: string
           meal_plan_id: string
           meal_type: string
+          notes: string | null
+          nutrition_log_id: string | null
           recipe_id: string
+          scheduled_time: string | null
           servings: number
           user_id: string
         }
         Insert: {
+          completed_at?: string | null
           created_at?: string
           day_of_week: number
+          end_time?: string | null
           id?: string
           meal_plan_id: string
           meal_type: string
+          notes?: string | null
+          nutrition_log_id?: string | null
           recipe_id: string
+          scheduled_time?: string | null
           servings?: number
           user_id: string
         }
         Update: {
+          completed_at?: string | null
           created_at?: string
           day_of_week?: number
+          end_time?: string | null
           id?: string
           meal_plan_id?: string
           meal_type?: string
+          notes?: string | null
+          nutrition_log_id?: string | null
           recipe_id?: string
+          scheduled_time?: string | null
           servings?: number
           user_id?: string
         }
@@ -713,6 +764,13 @@ export type Database = {
             columns: ["meal_plan_id"]
             isOneToOne: false
             referencedRelation: "meal_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meal_plan_items_nutrition_log_id_fkey"
+            columns: ["nutrition_log_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_logs"
             referencedColumns: ["id"]
           },
           {
@@ -1316,6 +1374,45 @@ export type Database = {
         }
         Relationships: []
       }
+      schedule_events: {
+        Row: {
+          created_at: string
+          date: string
+          id: string
+          kind: string
+          label: string
+          reference_id: string | null
+          scheduled_time: string
+          source: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          id?: string
+          kind: string
+          label: string
+          reference_id?: string | null
+          scheduled_time: string
+          source?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          id?: string
+          kind?: string
+          label?: string
+          reference_id?: string | null
+          scheduled_time?: string
+          source?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       sleep_logs: {
         Row: {
           bedtime: string | null
@@ -1629,36 +1726,45 @@ export type Database = {
       }
       workout_plan_items: {
         Row: {
+          completed_at: string | null
           created_at: string
           day_of_week: number
           duration_minutes: number | null
           exercise_id: string
           id: string
+          notes: string | null
           reps: number | null
+          scheduled_time: string | null
           session_order: number
           sets: number | null
           user_id: string
           workout_plan_id: string
         }
         Insert: {
+          completed_at?: string | null
           created_at?: string
           day_of_week: number
           duration_minutes?: number | null
           exercise_id: string
           id?: string
+          notes?: string | null
           reps?: number | null
+          scheduled_time?: string | null
           session_order?: number
           sets?: number | null
           user_id: string
           workout_plan_id: string
         }
         Update: {
+          completed_at?: string | null
           created_at?: string
           day_of_week?: number
           duration_minutes?: number | null
           exercise_id?: string
           id?: string
+          notes?: string | null
           reps?: number | null
+          scheduled_time?: string | null
           session_order?: number
           sets?: number | null
           user_id?: string

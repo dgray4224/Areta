@@ -1,11 +1,14 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
+import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { getApprovedParameterValue } from "@/domains/parameters/service";
-import { getAllRecipes } from "@/domains/recipes/service";
+import { getAllRecipes, getRecipesByIds } from "@/domains/recipes/service";
 import { generateMealPlan, type RecipeForPlanning } from "@/domains/mealplan/generate";
 import type { NutritionInput } from "@/domains/nutrition/schema";
+import { logScheduleEvent } from "@/platform/scheduling/log-schedule-event";
 
 function currentWeekStart(): string {
   return new Date().toISOString().slice(0, 10);
@@ -139,7 +142,22 @@ export type MealPlanItemView = {
   mealType: "breakfast" | "lunch" | "dinner" | "snack";
   recipeId: string;
   servings: number;
+  completedAt: string | null;
+  nutritionLogId: string | null;
+  scheduledTime: string | null;
+  endTime: string | null;
+  notes: string | null;
 };
+
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function minutesToTime(minutes: number): string {
+  const clamped = Math.max(0, Math.min(24 * 60 - 1, minutes));
+  return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}:00`;
+}
 
 export type MealPlanView = {
   id: string;
@@ -152,9 +170,10 @@ export type MealPlanView = {
 
 export async function getMealPlanForWeek(
   userId: string,
-  weekStart = currentWeekStart()
+  weekStart = currentWeekStart(),
+  client?: SupabaseClient<Database>
 ): Promise<MealPlanView | null> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data: plan } = await supabase
     .from("meal_plans")
     .select("id, week_start, status, calorie_target, protein_target")
@@ -166,7 +185,9 @@ export async function getMealPlanForWeek(
 
   const { data: items, error } = await supabase
     .from("meal_plan_items")
-    .select("id, day_of_week, meal_type, recipe_id, servings")
+    .select(
+      "id, day_of_week, meal_type, recipe_id, servings, completed_at, nutrition_log_id, scheduled_time, end_time, notes"
+    )
     .eq("meal_plan_id", plan.id)
     .order("day_of_week", { ascending: true });
 
@@ -186,12 +207,20 @@ export async function getMealPlanForWeek(
       mealType: i.meal_type as MealPlanItemView["mealType"],
       recipeId: i.recipe_id,
       servings: i.servings,
+      completedAt: i.completed_at,
+      nutritionLogId: i.nutrition_log_id,
+      scheduledTime: i.scheduled_time,
+      endTime: i.end_time,
+      notes: i.notes,
     })),
   };
 }
 
-export async function getActiveMealPlan(userId: string): Promise<MealPlanView | null> {
-  const supabase = await createClient();
+export async function getActiveMealPlan(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<MealPlanView | null> {
+  const supabase = client ?? (await createClient());
   const { data: plan } = await supabase
     .from("meal_plans")
     .select("id, week_start, status, calorie_target, protein_target")
@@ -202,5 +231,180 @@ export async function getActiveMealPlan(userId: string): Promise<MealPlanView | 
     .maybeSingle();
 
   if (!plan) return null;
-  return getMealPlanForWeek(userId, plan.week_start);
+  return getMealPlanForWeek(userId, plan.week_start, supabase);
+}
+
+/**
+ * Marks a planned meal eaten/not-eaten (mobile Nutrition tab). Unlike
+ * workout-plan completion, there's no auto-sync data source for food, so
+ * completing also writes a real nutrition_logs row derived from the
+ * recipe's known macros (scaled by servings) -- the checkbox both marks
+ * completion and captures real nutrition data without the user re-typing
+ * it. This is the "stuck to the plan" path; a user who ate something
+ * different instead uses the existing freeform logNutrition. Un-completing
+ * deletes the auto-generated log row, which only ever represented this
+ * checkbox's own state.
+ */
+export async function setMealPlanItemCompleted(
+  userId: string,
+  itemId: string,
+  completed: boolean,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
+
+  if (!completed) {
+    const { data: item } = await supabase
+      .from("meal_plan_items")
+      .select("nutrition_log_id")
+      .eq("id", itemId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (item?.nutrition_log_id) {
+      await supabase.from("nutrition_logs").delete().eq("id", item.nutrition_log_id);
+    }
+
+    const { error } = await supabase
+      .from("meal_plan_items")
+      .update({ completed_at: null, nutrition_log_id: null })
+      .eq("id", itemId)
+      .eq("user_id", userId);
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+    return { ok: true, data: undefined };
+  }
+
+  const { data: item, error: itemError } = await supabase
+    .from("meal_plan_items")
+    .select("id, meal_type, recipe_id, servings")
+    .eq("id", itemId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (itemError || !item) {
+    return { ok: false, error: itemError?.message ?? "Meal plan item not found" };
+  }
+
+  const recipes = await getRecipesByIds([item.recipe_id], supabase);
+  const recipe = recipes.get(item.recipe_id);
+  if (!recipe) {
+    return { ok: false, error: "Recipe not found for this meal plan item" };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: log, error: logError } = await supabase
+    .from("nutrition_logs")
+    .insert({
+      user_id: userId,
+      date: today,
+      meal: item.meal_type,
+      food: recipe.name,
+      quantity: item.servings,
+      unit: "serving",
+      calories: recipe.calories * item.servings,
+      protein: recipe.proteinG * item.servings,
+      carbohydrates: recipe.carbsG * item.servings,
+      fat: recipe.fatG * item.servings,
+      fiber: recipe.fiberG !== null ? recipe.fiberG * item.servings : null,
+    })
+    .select("id")
+    .single();
+
+  if (logError || !log) {
+    return { ok: false, error: logError?.message ?? "Failed to create nutrition log" };
+  }
+
+  const { error: updateError } = await supabase
+    .from("meal_plan_items")
+    .update({ completed_at: new Date().toISOString(), nutrition_log_id: log.id })
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
+  if (updateError) {
+    return { ok: false, error: updateError.message };
+  }
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Sets (or clears, if null) the user's dragged/chosen clock time for a
+ * planned meal (mobile Nutrition/At-a-Glance timeline). A separate
+ * function from setMealPlanItemCompleted -- different trigger
+ * (drag-release vs. a tap) and zero shared logic (this one never touches
+ * nutrition_logs).
+ *
+ * Two modes for end_time, mirroring domains/timeline/service.ts's
+ * setTimelineEventScheduledTime:
+ * - endTime === undefined (drag, or any single-time reschedule): shifts
+ *   end_time by the same delta as the start, preserving whatever
+ *   duration was already established.
+ * - endTime provided explicitly (the edit sheet's start+end pickers):
+ *   both are set exactly as given, no shift logic.
+ * Unscheduling (scheduledTime = null) clears end_time too either way.
+ */
+export async function setMealPlanItemScheduledTime(
+  userId: string,
+  itemId: string,
+  scheduledTime: string | null,
+  client?: SupabaseClient<Database>,
+  endTime?: string | null
+): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
+
+  let resolvedEndTime: string | null = null;
+  if (scheduledTime) {
+    if (endTime !== undefined) {
+      resolvedEndTime = endTime;
+    } else {
+      const { data: existing } = await supabase
+        .from("meal_plan_items")
+        .select("scheduled_time, end_time")
+        .eq("id", itemId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (existing?.scheduled_time && existing?.end_time) {
+        const durationMinutes = timeToMinutes(existing.end_time) - timeToMinutes(existing.scheduled_time);
+        resolvedEndTime = minutesToTime(timeToMinutes(scheduledTime) + durationMinutes);
+      }
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("meal_plan_items")
+    .update({ scheduled_time: scheduledTime, end_time: scheduledTime ? resolvedEndTime : null })
+    .eq("id", itemId)
+    .eq("user_id", userId)
+    .select("meal_type")
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  if (scheduledTime && data) {
+    await logScheduleEvent(userId, "meal", data.meal_type, itemId, scheduledTime, supabase, "planned");
+  }
+  return { ok: true, data: undefined };
+}
+
+/** Free-text note on a single planned meal (mobile timeline detail view). */
+export async function setMealPlanItemNotes(
+  userId: string,
+  itemId: string,
+  notes: string | null,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
+  const { error } = await supabase
+    .from("meal_plan_items")
+    .update({ notes })
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, data: undefined };
 }

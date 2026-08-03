@@ -1,11 +1,14 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
+import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { getApprovedParameterValue, getGeneratedParameters } from "@/domains/parameters/service";
 import { getAllExercises } from "@/domains/exerciselibrary/service";
 import { generateWorkoutPlan } from "@/domains/workoutplan/generate";
 import type { ExerciseInput } from "@/domains/exercise/schema";
+import { logScheduleEvent, hasActualScheduleEventToday } from "@/platform/scheduling/log-schedule-event";
 
 function currentWeekStart(): string {
   return new Date().toISOString().slice(0, 10);
@@ -126,6 +129,9 @@ export type WorkoutPlanItemView = {
   sets: number | null;
   reps: number | null;
   durationMinutes: number | null;
+  completedAt: string | null;
+  scheduledTime: string | null;
+  notes: string | null;
 };
 
 export type WorkoutPlanView = {
@@ -139,9 +145,10 @@ export type WorkoutPlanView = {
 
 export async function getWorkoutPlanForWeek(
   userId: string,
-  weekStart = currentWeekStart()
+  weekStart = currentWeekStart(),
+  client?: SupabaseClient<Database>
 ): Promise<WorkoutPlanView | null> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data: plan } = await supabase
     .from("workout_plans")
     .select("id, week_start, status, sessions_per_week, phase_focus")
@@ -153,7 +160,9 @@ export async function getWorkoutPlanForWeek(
 
   const { data: items, error } = await supabase
     .from("workout_plan_items")
-    .select("id, day_of_week, session_order, exercise_id, sets, reps, duration_minutes")
+    .select(
+      "id, day_of_week, session_order, exercise_id, sets, reps, duration_minutes, completed_at, scheduled_time, notes"
+    )
     .eq("workout_plan_id", plan.id)
     .order("day_of_week", { ascending: true })
     .order("session_order", { ascending: true });
@@ -176,12 +185,18 @@ export async function getWorkoutPlanForWeek(
       sets: i.sets,
       reps: i.reps,
       durationMinutes: i.duration_minutes,
+      completedAt: i.completed_at,
+      scheduledTime: i.scheduled_time,
+      notes: i.notes,
     })),
   };
 }
 
-export async function getActiveWorkoutPlan(userId: string): Promise<WorkoutPlanView | null> {
-  const supabase = await createClient();
+export async function getActiveWorkoutPlan(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<WorkoutPlanView | null> {
+  const supabase = client ?? (await createClient());
   const { data: plan } = await supabase
     .from("workout_plans")
     .select("id, week_start, status, sessions_per_week, phase_focus")
@@ -192,5 +207,91 @@ export async function getActiveWorkoutPlan(userId: string): Promise<WorkoutPlanV
     .maybeSingle();
 
   if (!plan) return null;
-  return getWorkoutPlanForWeek(userId, plan.week_start);
+  return getWorkoutPlanForWeek(userId, plan.week_start, supabase);
+}
+
+/**
+ * Marks a planned exercise done/not-done (mobile Exercise tab). Purely a
+ * completion flag -- unlike meal-plan completion, this does NOT create a
+ * log row, since HealthKit's workout_logs already captures what actually
+ * happened independently of the plan. This is strictly "did I follow
+ * today's plan," not a data-capture mechanism.
+ */
+export async function setWorkoutPlanItemCompleted(
+  userId: string,
+  itemId: string,
+  completed: boolean,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
+  const { error } = await supabase
+    .from("workout_plan_items")
+    .update({ completed_at: completed ? new Date().toISOString() : null })
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Sets (or clears, if null) the user's dragged/chosen clock time for a
+ * planned exercise (mobile Exercise/At-a-Glance timeline). A separate
+ * function from setWorkoutPlanItemCompleted -- different trigger
+ * (drag-release vs. a tap) and zero shared logic.
+ */
+export async function setWorkoutPlanItemScheduledTime(
+  userId: string,
+  itemId: string,
+  scheduledTime: string | null,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
+  const { error } = await supabase
+    .from("workout_plan_items")
+    .update({ scheduled_time: scheduledTime })
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  if (scheduledTime) {
+    // "workout" is a fixed label, not per-exercise -- a whole session is
+    // scheduled as one group (see the mobile timeline's consolidated
+    // "Workout" chip), so every exercise scheduled together collapses
+    // into the same day's row rather than fragmenting per exercise.
+    //
+    // Actual HealthKit-synced workout time (see insertImportedWorkoutLog)
+    // is the stronger signal for learning real routine -- if today's row
+    // already reflects actual behavior, a plan reschedule must not
+    // downgrade it back to a guess.
+    const actualAlreadyRecorded = await hasActualScheduleEventToday(userId, "workout", "workout", supabase);
+    if (!actualAlreadyRecorded) {
+      await logScheduleEvent(userId, "workout", "workout", itemId, scheduledTime, supabase, "planned");
+    }
+  }
+  return { ok: true, data: undefined };
+}
+
+/** Free-text note on a single planned exercise (mobile timeline detail view). */
+export async function setWorkoutPlanItemNotes(
+  userId: string,
+  itemId: string,
+  notes: string | null,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
+  const { error } = await supabase
+    .from("workout_plan_items")
+    .update({ notes })
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, data: undefined };
 }

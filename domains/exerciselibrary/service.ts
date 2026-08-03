@@ -1,6 +1,8 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
+import type { Database } from "@/platform/db/types";
 import type { Exercise } from "@/domains/exerciselibrary/types";
 
 export async function getAllExercises(): Promise<Exercise[]> {
@@ -25,9 +27,12 @@ export async function getAllExercises(): Promise<Exercise[]> {
   );
 }
 
-export async function getExercisesByIds(ids: string[]): Promise<Map<string, Exercise>> {
+export async function getExercisesByIds(
+  ids: string[],
+  client?: SupabaseClient<Database>
+): Promise<Map<string, Exercise>> {
   if (ids.length === 0) return new Map();
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase.from("exercises").select("*").in("id", ids);
 
   if (error) {

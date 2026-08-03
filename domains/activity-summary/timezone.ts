@@ -30,6 +30,19 @@ export function localHour(instant: Date, timezone: string): number {
   );
 }
 
+/** HH:MM:SS (local wall-clock time-of-day) for `instant` in `timezone`. */
+export function localTimeString(instant: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(instant);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  return `${get("hour")}:${get("minute")}:${get("second")}`;
+}
+
 // Offset (in minutes) such that formatting `instant` in `timezone` and
 // reinterpreting those wall-clock digits as UTC yields `instant + offset`.
 // E.g. for a UTC-8 zone, offset is -480 (the local wall clock reads 8 hours

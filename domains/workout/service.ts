@@ -4,7 +4,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { importedWorkoutLogSchema } from "@/domains/workout/schema";
 import { createClient } from "@/platform/supabase/server";
 import { isOlderThanHealthImportRetentionWindow } from "@/platform/health/retention";
-import { recomputeActivityDailySummaryForInstant } from "@/domains/activity-summary/service";
+import { recomputeActivityDailySummaryForInstant, resolveTimezone } from "@/domains/activity-summary/service";
+import { localDateString, localTimeString } from "@/domains/activity-summary/timezone";
+import { logScheduleEvent } from "@/platform/scheduling/log-schedule-event";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
@@ -37,27 +39,48 @@ export async function insertImportedWorkoutLog(
     return { ok: true, data: { skipped: true } };
   }
 
-  const { error } = await supabase.from("workout_logs").upsert(
-    {
-      user_id: userId,
-      start_date: new Date(parsed.data.startDate).toISOString(),
-      end_date: new Date(parsed.data.endDate).toISOString(),
-      activity_type: parsed.data.activityType,
-      duration_minutes: parsed.data.durationMinutes,
-      total_energy_burned_kcal: parsed.data.totalEnergyBurnedKcal ?? null,
-      total_distance_meters: parsed.data.totalDistanceMeters ?? null,
-      source: parsed.data.source,
-      device: parsed.data.device ?? null,
-      imported_at: new Date().toISOString(),
-      dedup_key: parsed.data.dedupKey,
-    },
-    { onConflict: "user_id,dedup_key" }
-  );
+  const { data: workoutLog, error } = await supabase
+    .from("workout_logs")
+    .upsert(
+      {
+        user_id: userId,
+        start_date: new Date(parsed.data.startDate).toISOString(),
+        end_date: new Date(parsed.data.endDate).toISOString(),
+        activity_type: parsed.data.activityType,
+        duration_minutes: parsed.data.durationMinutes,
+        total_energy_burned_kcal: parsed.data.totalEnergyBurnedKcal ?? null,
+        total_distance_meters: parsed.data.totalDistanceMeters ?? null,
+        source: parsed.data.source,
+        device: parsed.data.device ?? null,
+        imported_at: new Date().toISOString(),
+        dedup_key: parsed.data.dedupKey,
+      },
+      { onConflict: "user_id,dedup_key" }
+    )
+    .select("id")
+    .single();
 
   if (error) {
     return { ok: false, error: error.message };
   }
-  await recomputeActivityDailySummaryForInstant(supabase, userId, new Date(parsed.data.startDate));
+  const startInstant = new Date(parsed.data.startDate);
+  await recomputeActivityDailySummaryForInstant(supabase, userId, startInstant);
+
+  // Actual synced behavior always wins over a planned/dragged time for
+  // the same day (see logScheduleEvent) -- dated by when the workout
+  // really happened in the user's own timezone, not by sync time.
+  const timezone = await resolveTimezone(supabase, userId);
+  await logScheduleEvent(
+    userId,
+    "workout",
+    "workout",
+    workoutLog.id,
+    localTimeString(startInstant, timezone),
+    supabase,
+    "actual",
+    localDateString(startInstant, timezone)
+  );
+
   return { ok: true, data: { skipped: false } };
 }
 

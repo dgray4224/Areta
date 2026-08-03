@@ -1,6 +1,8 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
+import type { Database } from "@/platform/db/types";
 import { encryptToken, decryptToken } from "@/platform/calendar/token-crypto";
 import { getCalendarProvider } from "@/platform/calendar/get-provider";
 import type { CalendarProviderId, TokenSet } from "@/platform/calendar/types";
@@ -27,9 +29,10 @@ export async function getConnections(userId: string): Promise<CalendarConnection
 export async function upsertConnection(
   userId: string,
   provider: CalendarProviderId,
-  tokenSet: TokenSet
+  tokenSet: TokenSet,
+  client?: SupabaseClient<Database>
 ): Promise<void> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { error } = await supabase.from("calendar_connections").upsert(
     {
       user_id: userId,
@@ -77,9 +80,10 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
  */
 export async function getValidCredentials(
   userId: string,
-  provider: CalendarProviderId
+  provider: CalendarProviderId,
+  client?: SupabaseClient<Database>
 ): Promise<TokenSet | null> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("calendar_connections")
     .select(
@@ -123,6 +127,6 @@ export async function getValidCredentials(
   if (!refreshed.ok) return null;
 
   const tokenSet: TokenSet = { ...refreshed.data, accountEmail };
-  await upsertConnection(userId, provider, tokenSet);
+  await upsertConnection(userId, provider, tokenSet, supabase);
   return tokenSet;
 }
