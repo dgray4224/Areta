@@ -277,7 +277,7 @@ async function main() {
   if (phaseId) {
     const hydrated = await getProgramPhaseHydrated(phaseId, supabase);
     if (hydrated) {
-      const result = materializeWorkoutPlan({ phase: hydrated, archetype: ARCHETYPE, equipmentAccess: EQUIPMENT_ACCESS, exercises });
+      const result = materializeWorkoutPlan({ phase: hydrated, archetype: ARCHETYPE, equipmentAccess: EQUIPMENT_ACCESS, exercises, sessionsPerWeek });
       days = result.days;
       phaseFocus = hydrated.focus;
       console.log(`Materialized from phase "${hydrated.name}" (program ${programId})`);

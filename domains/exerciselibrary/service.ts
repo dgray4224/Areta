@@ -5,8 +5,8 @@ import { createClient } from "@/platform/supabase/server";
 import type { Database } from "@/platform/db/types";
 import type { Exercise } from "@/domains/exerciselibrary/types";
 
-export async function getAllExercises(): Promise<Exercise[]> {
-  const supabase = await createClient();
+export async function getAllExercises(client?: SupabaseClient<Database>): Promise<Exercise[]> {
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase.from("exercises").select("*");
 
   if (error) {

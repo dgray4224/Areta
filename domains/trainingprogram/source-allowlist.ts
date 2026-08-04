@@ -86,6 +86,12 @@ export const CREDIBLE_SOURCE_ALLOWLIST: AllowlistedSource[] = [
     category: "individual_specialist",
     specialty: "general fitness, celebrity/athlete conditioning",
   },
+  {
+    domain: "completehumanperformance.com",
+    organization: "Alex Viada / Complete Human Performance",
+    category: "individual_specialist",
+    specialty: "hybrid/concurrent strength and endurance athlete training -- widely credited with popularizing the term \"hybrid athlete\"",
+  },
 
   // Discovery source -- Huberman is a neuroscientist who interviews
   // strength/conditioning/endurance specialists, not a coach himself.

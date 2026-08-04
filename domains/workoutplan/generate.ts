@@ -76,6 +76,11 @@ export function generateWorkoutPlan(input: WorkoutPlanGenerationInput): WorkoutP
     warnings.push("No exercises matched your archetype at all — showing the full library.");
     eligible = input.exercises;
   }
+  if (eligible.length > 0 && eligible.length < exercisesPerSession) {
+    warnings.push(
+      `Only ${eligible.length} exercise${eligible.length === 1 ? "" : "s"} matched your archetype and equipment access, so sessions repeat ${eligible.length === 1 ? "it" : "them"} to reach a full ${exercisesPerSession}-exercise workout — add equipment access in your Exercise settings for more variety.`
+    );
+  }
 
   const sessionsPerWeek = Math.min(Math.max(input.sessionsPerWeek, 0), days);
   // Spread session days evenly across the week rather than always Mon-Fri.
@@ -103,8 +108,15 @@ export function generateWorkoutPlan(input: WorkoutPlanGenerationInput): WorkoutP
       const underCap = eligible.filter(
         (e) => !usedToday.has(e.id) && (usageCount.get(e.id) ?? 0) < MAX_USES_PER_WEEK
       );
-      const pool = underCap.length > 0 ? underCap : eligible.filter((e) => !usedToday.has(e.id));
-      if (pool.length === 0) break;
+      const notUsedToday = eligible.filter((e) => !usedToday.has(e.id));
+      // Last resort: the eligible pool is small enough that every exercise
+      // has already appeared in this session. Rather than silently ending
+      // the session short (previously: `if (pool.length === 0) break`,
+      // which could leave a day with just 1-2 exercises when the
+      // archetype/equipment filter is narrow), cycle back through the full
+      // eligible pool so the session always reaches its target length.
+      const pool = underCap.length > 0 ? underCap : notUsedToday.length > 0 ? notUsedToday : eligible;
+      if (pool.length === 0) break; // only possible when eligible itself is empty
 
       const chosen = pool[slot % pool.length];
       const isCardio = CARDIO_PATTERNS.some((p) => chosen.movementPattern.includes(p.split(" ")[0]));
@@ -138,6 +150,18 @@ export type MaterializeWorkoutPlanInput = {
   archetype: string;
   equipmentAccess: string[];
   exercises: Exercise[];
+  /** The user's actual requested weekly training frequency (their
+   * approved `sessions_per_week` parameter). Previously unused --
+   * sessionsPerWeek was derived purely from however many sessions
+   * happened to be authored in the phase, silently ignoring what the
+   * user asked for on both sides (fewer scheduled days than requested
+   * when a phase was authored thin, or more than requested when it
+   * wasn't). When the phase has fewer authored sessions than this,
+   * sessions are cycled/repeated to reach it; when it has more, only
+   * the first `sessionsPerWeek` are scheduled. Defaults to
+   * `phase.sessions.length` (the old behavior) when omitted, so
+   * existing callers that don't pass it are unaffected. */
+  sessionsPerWeek?: number;
   days?: number;
 };
 
@@ -193,7 +217,16 @@ export function materializeWorkoutPlan(input: MaterializeWorkoutPlanInput): Mate
   const exercisesById = new Map(input.exercises.map((e) => [e.id, e]));
 
   const sessions = input.phase.sessions;
-  const sessionsPerWeek = Math.min(Math.max(sessions.length, 0), days);
+  const requestedSessionsPerWeek = input.sessionsPerWeek ?? sessions.length;
+  // No authored sessions means nothing to schedule regardless of what was
+  // requested -- avoids a divide/modulo-by-zero below.
+  const sessionsPerWeek = sessions.length === 0 ? 0 : Math.min(Math.max(requestedSessionsPerWeek, 0), days);
+
+  if (sessions.length > 0 && sessionsPerWeek > sessions.length) {
+    warnings.push(
+      `This phase has ${sessions.length} authored session${sessions.length === 1 ? "" : "s"} but ${sessionsPerWeek} were requested -- repeating sessions to fill the full week rather than leaving extra days as rest.`
+    );
+  }
 
   const sessionDayIndices: number[] = [];
   if (sessionsPerWeek > 0) {
@@ -212,7 +245,10 @@ export function materializeWorkoutPlan(input: MaterializeWorkoutPlanInput): Mate
       continue;
     }
 
-    const session = sessions[sessionCursor];
+    // Cycle back through the authored sessions (rather than indexing
+    // straight through and running off the end) so a phase with fewer
+    // sessions than requested still fills every scheduled day.
+    const session = sessions[sessionCursor % sessions.length];
     sessionCursor++;
 
     const plannedExercises: PlannedExercise[] = [];

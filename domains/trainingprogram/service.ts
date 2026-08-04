@@ -224,6 +224,35 @@ export async function getProgramPhaseHydrated(
   };
 }
 
+/** The human-readable session name (e.g. "Chest + Back", "Workout A -
+ * Taper") a prescription belongs to -- lets the mobile Exercise tab show
+ * *what* today's session is even on a short (1-2 exercise) day, so a
+ * deliberate deload/taper/cardio-only day reads as intentional rather
+ * than broken. Derived at read time via program_session_exercises ->
+ * program_sessions rather than denormalized onto workout_plan_items,
+ * since every item materialized for a given day already shares the same
+ * session_id (domains/workoutplan/generate.ts's materializeWorkoutPlan
+ * assigns one program_sessions row per day). */
+export async function getSessionNameForPrescription(
+  sessionExerciseId: string,
+  client?: SupabaseClient<Database>
+): Promise<string | null> {
+  const supabase = client ?? (await createClient());
+  const { data: exerciseRow } = await supabase
+    .from("program_session_exercises")
+    .select("session_id")
+    .eq("id", sessionExerciseId)
+    .maybeSingle();
+  if (!exerciseRow) return null;
+
+  const { data: sessionRow } = await supabase
+    .from("program_sessions")
+    .select("name")
+    .eq("id", exerciseRow.session_id)
+    .maybeSingle();
+  return sessionRow?.name ?? null;
+}
+
 /** A single prescription row by id -- used when validating/applying a
  * swap (domains/workoutplan/service.ts's swapWorkoutPlanItemExercise). */
 export async function getSessionExerciseById(

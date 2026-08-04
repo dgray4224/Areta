@@ -6,9 +6,11 @@ import {
   setWorkoutPlanItemScheduledTime,
   setWorkoutPlanItemNotes,
   swapWorkoutPlanItemExercise,
+  customizeWorkoutPlanItemExercise,
+  addWorkoutPlanItemExercise,
 } from "@/domains/workoutplan/service";
 import { getExercisesByIds } from "@/domains/exerciselibrary/service";
-import { getSlotOptions } from "@/domains/trainingprogram/service";
+import { getSlotOptions, getSessionNameForPrescription } from "@/domains/trainingprogram/service";
 import type { ProgramSessionExercise } from "@/domains/trainingprogram/types";
 import { hasEquipment } from "@/domains/workoutplan/generate";
 import type { Exercise } from "@/domains/exerciselibrary/types";
@@ -93,9 +95,14 @@ export async function GET(request: NextRequest) {
   const currentPrescriptionIds = todaysItems
     .map((item) => item.programSessionExerciseId)
     .filter((id): id is string => id !== null);
-  const [slotOptionsByCurrentId, equipmentAccess] = await Promise.all([
+  const [slotOptionsByCurrentId, equipmentAccess, todaysSessionName] = await Promise.all([
     getSlotOptions(currentPrescriptionIds, supabase),
     getUserEquipmentAccess(userId, supabase),
+    // Every item materialized for a given day shares one program_sessions
+    // row, so the first item's prescription is enough to name the whole
+    // day (e.g. "Chest + Back") -- lets a legitimately short day (deload/
+    // taper/cardio-only) read as intentional instead of broken.
+    currentPrescriptionIds.length > 0 ? getSessionNameForPrescription(currentPrescriptionIds[0], supabase) : null,
   ]);
 
   const allExerciseIds = new Set(todaysItems.map((item) => item.exerciseId));
@@ -146,6 +153,7 @@ export async function GET(request: NextRequest) {
     plan: plannedExercises,
     todaysWorkoutLogs: workoutLogs ?? [],
     programContext: plan?.programContext ?? null,
+    todaysSessionName,
   });
 }
 
@@ -216,57 +224,112 @@ export async function POST(request: NextRequest) {
   }
   const { supabase, userId } = auth;
 
-  let body: { itemId?: unknown; targetProgramSessionExerciseId?: unknown };
+  let body: {
+    itemId?: unknown;
+    targetProgramSessionExerciseId?: unknown;
+    exerciseId?: unknown;
+    sets?: unknown;
+    reps?: unknown;
+    durationMinutes?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (typeof body.itemId !== "string" || typeof body.targetProgramSessionExerciseId !== "string") {
-    return NextResponse.json(
-      { error: "itemId (string) and targetProgramSessionExerciseId (string) are required" },
-      { status: 400 }
-    );
+  // Three distinct actions share this endpoint: swap to one of the
+  // slot's up-to-2 curated alternates (itemId + targetProgramSessionExerciseId),
+  // a free-form customize of an existing item to any library exercise
+  // (itemId + exerciseId), or adding a brand-new item to today's session
+  // (exerciseId alone, no itemId).
+  if (typeof body.targetProgramSessionExerciseId === "string") {
+    if (typeof body.itemId !== "string") {
+      return NextResponse.json({ error: "itemId (string) is required" }, { status: 400 });
+    }
+    const result = await swapWorkoutPlanItemExercise(userId, body.itemId, body.targetProgramSessionExerciseId, supabase);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+
+    // programSessionExerciseId is guaranteed non-null here -- swapWorkoutPlanItemExercise
+    // only succeeds when the item was already program-linked (that's part of what it validates).
+    const newPrescriptionId = result.data.programSessionExerciseId as string;
+    const [equipmentAccess, slotOptionsByCurrentId] = await Promise.all([
+      getUserEquipmentAccess(userId, supabase),
+      getSlotOptions([newPrescriptionId], supabase),
+    ]);
+    const options = slotOptionsByCurrentId.get(newPrescriptionId) ?? [];
+
+    const allExerciseIds = new Set([result.data.exerciseId, ...options.map((o) => o.exerciseId)]);
+    const exerciseMap = await getExercisesByIds(Array.from(allExerciseIds), supabase);
+
+    return NextResponse.json({
+      ok: true,
+      item: {
+        id: result.data.id,
+        exerciseName: exerciseMap.get(result.data.exerciseId)?.name ?? "Unknown exercise",
+        instructions: exerciseMap.get(result.data.exerciseId)?.instructions ?? null,
+        sets: result.data.sets,
+        reps: result.data.reps,
+        durationMinutes: result.data.durationMinutes,
+        completedAt: result.data.completedAt,
+        scheduledTime: result.data.scheduledTime,
+        notes: result.data.notes,
+        repsMin: result.data.repsMin,
+        repsMax: result.data.repsMax,
+        intensityType: result.data.intensityType,
+        intensityValue: result.data.intensityValue,
+        cardioIntensity: result.data.cardioIntensity,
+        coachingNotes: result.data.coachingNotes,
+        substituted: result.data.substituted,
+        alternatives: buildAlternativeViews(options, exerciseMap, equipmentAccess),
+      },
+    });
   }
 
-  const result = await swapWorkoutPlanItemExercise(userId, body.itemId, body.targetProgramSessionExerciseId, supabase);
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 400 });
+  if (typeof body.exerciseId === "string") {
+    const sets = typeof body.sets === "number" ? body.sets : null;
+    const reps = typeof body.reps === "number" ? body.reps : null;
+    const durationMinutes = typeof body.durationMinutes === "number" ? body.durationMinutes : null;
+
+    const result = typeof body.itemId === "string"
+      ? await customizeWorkoutPlanItemExercise(userId, body.itemId, { exerciseId: body.exerciseId, sets, reps, durationMinutes }, supabase)
+      : await addWorkoutPlanItemExercise(userId, todayDayOfWeek(), { exerciseId: body.exerciseId, sets, reps, durationMinutes }, supabase);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+
+    const exerciseMap = await getExercisesByIds([result.data.exerciseId], supabase);
+
+    return NextResponse.json({
+      ok: true,
+      item: {
+        id: result.data.id,
+        exerciseName: exerciseMap.get(result.data.exerciseId)?.name ?? "Unknown exercise",
+        instructions: exerciseMap.get(result.data.exerciseId)?.instructions ?? null,
+        sets: result.data.sets,
+        reps: result.data.reps,
+        durationMinutes: result.data.durationMinutes,
+        completedAt: result.data.completedAt,
+        scheduledTime: result.data.scheduledTime,
+        notes: result.data.notes,
+        repsMin: result.data.repsMin,
+        repsMax: result.data.repsMax,
+        intensityType: result.data.intensityType,
+        intensityValue: result.data.intensityValue,
+        cardioIntensity: result.data.cardioIntensity,
+        coachingNotes: result.data.coachingNotes,
+        substituted: result.data.substituted,
+        // Neither a custom swap nor a freshly added item is tied to an
+        // authored slot -- no curated-alternates set exists to offer back.
+        alternatives: [],
+      },
+    });
   }
 
-  // programSessionExerciseId is guaranteed non-null here -- swapWorkoutPlanItemExercise
-  // only succeeds when the item was already program-linked (that's part of what it validates).
-  const newPrescriptionId = result.data.programSessionExerciseId as string;
-  const [equipmentAccess, slotOptionsByCurrentId] = await Promise.all([
-    getUserEquipmentAccess(userId, supabase),
-    getSlotOptions([newPrescriptionId], supabase),
-  ]);
-  const options = slotOptionsByCurrentId.get(newPrescriptionId) ?? [];
-
-  const allExerciseIds = new Set([result.data.exerciseId, ...options.map((o) => o.exerciseId)]);
-  const exerciseMap = await getExercisesByIds(Array.from(allExerciseIds), supabase);
-
-  return NextResponse.json({
-    ok: true,
-    item: {
-      id: result.data.id,
-      exerciseName: exerciseMap.get(result.data.exerciseId)?.name ?? "Unknown exercise",
-      instructions: exerciseMap.get(result.data.exerciseId)?.instructions ?? null,
-      sets: result.data.sets,
-      reps: result.data.reps,
-      durationMinutes: result.data.durationMinutes,
-      completedAt: result.data.completedAt,
-      scheduledTime: result.data.scheduledTime,
-      notes: result.data.notes,
-      repsMin: result.data.repsMin,
-      repsMax: result.data.repsMax,
-      intensityType: result.data.intensityType,
-      intensityValue: result.data.intensityValue,
-      cardioIntensity: result.data.cardioIntensity,
-      coachingNotes: result.data.coachingNotes,
-      substituted: result.data.substituted,
-      alternatives: buildAlternativeViews(options, exerciseMap, equipmentAccess),
-    },
-  });
+  return NextResponse.json(
+    { error: "Either targetProgramSessionExerciseId or exerciseId is required" },
+    { status: 400 }
+  );
 }

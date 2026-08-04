@@ -249,7 +249,7 @@ async function runScenario(opts: {
     return null;
   }
 
-  const result = materializeWorkoutPlan({ phase: hydrated, archetype, equipmentAccess, exercises });
+  const result = materializeWorkoutPlan({ phase: hydrated, archetype, equipmentAccess, exercises, sessionsPerWeek });
   const totalExercises = result.days.reduce((sum, d) => sum + d.exercises.length, 0);
   const substitutedCount = result.days.reduce(
     (sum, d) => sum + d.exercises.filter((e) => e.substituted).length,

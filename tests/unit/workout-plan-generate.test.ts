@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { generateWorkoutPlan } from "@/domains/workoutplan/generate";
+import { generateWorkoutPlan, materializeWorkoutPlan } from "@/domains/workoutplan/generate";
 import type { Exercise } from "@/domains/exerciselibrary/types";
+import type { HydratedProgramPhase } from "@/domains/trainingprogram/types";
 
 function exercise(overrides: Partial<Exercise>): Exercise {
   return {
@@ -67,7 +68,29 @@ describe("generateWorkoutPlan", () => {
 
     const usedIds = new Set(days.flatMap((d) => d.exercises.map((e) => e.exerciseId)));
     expect(usedIds.has("bb1")).toBe(true);
-    expect(warnings).toHaveLength(0);
+    // SAMPLE_EXERCISES only has one "powerlifter" exercise (bb1), so this
+    // legitimately warns about a narrow pool -- see the next test for the
+    // behavior that warning is describing.
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("repeats exercises rather than truncating a session when the eligible pool is smaller than exercisesPerSession", () => {
+    const { days, warnings } = generateWorkoutPlan({
+      sessionsPerWeek: 1,
+      archetype: "powerlifter",
+      equipmentAccess: ["Full gym access"],
+      exercises: SAMPLE_EXERCISES,
+      exercisesPerSession: 5,
+    });
+
+    const sessionDay = days.find((d) => !d.isRestDay);
+    expect(sessionDay).toBeDefined();
+    // Only one eligible exercise (bb1) exists for "powerlifter" -- a full
+    // 5-slot session must still be filled by repeating it, not truncated
+    // to 1 exercise (the bug this test guards against).
+    expect(sessionDay?.exercises).toHaveLength(5);
+    expect(sessionDay?.exercises.every((e) => e.exerciseId === "bb1")).toBe(true);
+    expect(warnings.some((w) => w.includes("Only 1 exercise"))).toBe(true);
   });
 
   it("falls back with a warning when no exercise matches archetype and equipment", () => {
@@ -112,5 +135,100 @@ describe("generateWorkoutPlan", () => {
     const runEntry = days.flatMap((d) => d.exercises).find((e) => e.exerciseId === "run1");
     expect(runEntry?.durationMinutes).toBeGreaterThan(0);
     expect(runEntry?.sets).toBeNull();
+  });
+});
+
+function hydratedPhase(sessionCount: number): HydratedProgramPhase {
+  return {
+    id: "phase1",
+    programId: "program1",
+    phaseOrder: 1,
+    name: "Test Phase",
+    focus: null,
+    lengthWeeks: 4,
+    intensityStyle: null,
+    isFinal: false,
+    sessions: Array.from({ length: sessionCount }, (_, i) => ({
+      id: `session${i}`,
+      phaseId: "phase1",
+      sessionIndex: i + 1,
+      name: `Session ${i + 1}`,
+      sessionType: "strength",
+      exercises: [
+        {
+          id: `rx${i}`,
+          sessionId: `session${i}`,
+          exerciseOrder: 1,
+          exerciseId: "bw1",
+          sets: 3,
+          repsMin: 10,
+          repsMax: 12,
+          intensityType: "none" as const,
+          intensityValue: null,
+          durationMinutes: null,
+          cardioIntensity: null,
+          coachingNotes: null,
+          primaryExerciseId: null,
+        },
+      ],
+    })),
+  };
+}
+
+describe("materializeWorkoutPlan", () => {
+  it("cycles through authored sessions to fill a requested week that has more sessions than are authored", () => {
+    // 3 sessions authored, but the user asked for 5/week -- previously
+    // this silently produced only 3 training days with the rest as
+    // unexplained rest days (the bug this test guards against).
+    const { days, warnings } = materializeWorkoutPlan({
+      phase: hydratedPhase(3),
+      archetype: "general_fitness",
+      equipmentAccess: ["Bodyweight only"],
+      exercises: SAMPLE_EXERCISES,
+      sessionsPerWeek: 5,
+    });
+
+    const sessionDays = days.filter((d) => !d.isRestDay);
+    expect(sessionDays).toHaveLength(5);
+    for (const day of sessionDays) {
+      expect(day.exercises.length).toBeGreaterThan(0);
+    }
+    expect(warnings.some((w) => w.includes("repeating sessions"))).toBe(true);
+  });
+
+  it("only schedules the requested count when more sessions are authored than requested", () => {
+    const { days } = materializeWorkoutPlan({
+      phase: hydratedPhase(6),
+      archetype: "general_fitness",
+      equipmentAccess: ["Bodyweight only"],
+      exercises: SAMPLE_EXERCISES,
+      sessionsPerWeek: 3,
+    });
+
+    expect(days.filter((d) => !d.isRestDay)).toHaveLength(3);
+  });
+
+  it("falls back to the authored session count when sessionsPerWeek is omitted (backward compatible)", () => {
+    const { days, warnings } = materializeWorkoutPlan({
+      phase: hydratedPhase(4),
+      archetype: "general_fitness",
+      equipmentAccess: ["Bodyweight only"],
+      exercises: SAMPLE_EXERCISES,
+    });
+
+    expect(days.filter((d) => !d.isRestDay)).toHaveLength(4);
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("schedules zero training days for a phase with no authored sessions, regardless of what was requested", () => {
+    const { days } = materializeWorkoutPlan({
+      phase: hydratedPhase(0),
+      archetype: "general_fitness",
+      equipmentAccess: ["Bodyweight only"],
+      exercises: SAMPLE_EXERCISES,
+      sessionsPerWeek: 5,
+    });
+
+    expect(days.every((d) => d.isRestDay)).toBe(true);
   });
 });

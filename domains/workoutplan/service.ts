@@ -36,8 +36,11 @@ function currentWeekStart(): string {
  * generator, which now only serves as the fallback when no program is
  * eligible for the user's archetype/equipment/experience combination.
  */
-export async function generateAndSaveWorkoutPlan(userId: string): Promise<ActionResult<{ warnings: string[] }>> {
-  const supabase = await createClient();
+export async function generateAndSaveWorkoutPlan(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ warnings: string[] }>> {
+  const supabase = client ?? (await createClient());
   const weekStart = currentWeekStart();
 
   const [sessionsPerWeek, parameters, { data: responses }] = await Promise.all([
@@ -160,7 +163,7 @@ export async function generateAndSaveWorkoutPlan(userId: string): Promise<Action
   if (phaseId) {
     const hydratedPhase = await getProgramPhaseHydrated(phaseId, supabase);
     if (hydratedPhase) {
-      const result = materializeWorkoutPlan({ phase: hydratedPhase, archetype, equipmentAccess, exercises });
+      const result = materializeWorkoutPlan({ phase: hydratedPhase, archetype, equipmentAccess, exercises, sessionsPerWeek });
       days = result.days;
       warnings.push(...result.warnings);
       phaseFocus = hydratedPhase.focus ?? legacyPhaseFocus;
@@ -572,6 +575,200 @@ export async function swapWorkoutPlanItemExercise(
       coachingNotes: targetRx.coachingNotes,
       substituted: false,
       programSessionExerciseId: targetRx.id,
+    },
+  };
+}
+
+export type CustomizeExerciseInput = {
+  exerciseId: string;
+  sets: number | null;
+  reps: number | null;
+  durationMinutes: number | null;
+};
+
+/**
+ * Free-form version of swapWorkoutPlanItemExercise -- lets a user pick
+ * ANY exercise in the library (mobile "browse by muscle group" picker),
+ * not just one of the slot's up-to-2 curated alternates, with their own
+ * sets/reps or duration. No sibling validation, since there's no
+ * authored slot to validate against; only equipment/archetype-blind by
+ * explicit product decision (the picker itself doesn't filter by
+ * equipment either -- see app/api/exercise/library/route.ts).
+ *
+ * program_session_exercise_id is cleared (same shape a legacy-generator
+ * item already has -- see generateWorkoutPlan) since this is no longer
+ * tied to an authored prescription, and so is exchange for a curated
+ * alternate afterward (getSlotOptions requires a program_session_exercise_id
+ * to resolve options from, which a customized item no longer has -- an
+ * item can be curated-swapped OR freely customized in its lifetime, not
+ * both in sequence, until the next weekly regeneration resets it).
+ */
+export async function customizeWorkoutPlanItemExercise(
+  userId: string,
+  itemId: string,
+  input: CustomizeExerciseInput,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<WorkoutPlanItemView>> {
+  const supabase = client ?? (await createClient());
+
+  const { data: item, error: itemError } = await supabase
+    .from("workout_plan_items")
+    .select("id, day_of_week, session_order, completed_at, scheduled_time, notes")
+    .eq("id", itemId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (itemError) return { ok: false, error: itemError.message };
+  if (!item) return { ok: false, error: "Planned exercise not found." };
+
+  const { data: exerciseRow, error: exerciseError } = await supabase
+    .from("exercises")
+    .select("id, name, instructions")
+    .eq("id", input.exerciseId)
+    .maybeSingle();
+  if (exerciseError) return { ok: false, error: exerciseError.message };
+  if (!exerciseRow) return { ok: false, error: "Exercise not found." };
+
+  const { error: updateError } = await supabase
+    .from("workout_plan_items")
+    .update({
+      exercise_id: exerciseRow.id,
+      sets: input.sets,
+      reps: input.reps,
+      duration_minutes: input.durationMinutes,
+      program_session_exercise_id: null,
+      reps_min: null,
+      reps_max: null,
+      intensity_type: null,
+      intensity_value: null,
+      cardio_intensity: null,
+      coaching_notes: null,
+      substituted: true,
+    })
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
+  if (updateError) return { ok: false, error: updateError.message };
+
+  return {
+    ok: true,
+    data: {
+      id: item.id,
+      dayOfWeek: item.day_of_week,
+      sessionOrder: item.session_order,
+      exerciseId: exerciseRow.id,
+      sets: input.sets,
+      reps: input.reps,
+      durationMinutes: input.durationMinutes,
+      completedAt: item.completed_at,
+      scheduledTime: item.scheduled_time,
+      notes: item.notes,
+      repsMin: null,
+      repsMax: null,
+      intensityType: null,
+      intensityValue: null,
+      cardioIntensity: null,
+      coachingNotes: null,
+      substituted: true,
+      programSessionExerciseId: null,
+    },
+  };
+}
+
+/**
+ * Inserts a brand-new plan item into today's session (Exercise tab
+ * "add exercise" flow), rather than replacing an existing one -- same
+ * free-form library access as customizeWorkoutPlanItemExercise, appended
+ * at the end of today's exercise order instead of overwriting a slot.
+ * Not scoped to "just today": workout_plan_items are keyed by
+ * day_of_week within the current active plan, so this reappears every
+ * calendar day that maps to today's day_of_week until the plan's next
+ * weekly regeneration -- the same lifetime the existing swap/customize
+ * paths already have, not a new persistence model.
+ */
+export async function addWorkoutPlanItemExercise(
+  userId: string,
+  dayOfWeek: number,
+  input: CustomizeExerciseInput,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<WorkoutPlanItemView>> {
+  const supabase = client ?? (await createClient());
+
+  const { data: plan, error: planError } = await supabase
+    .from("workout_plans")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("week_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (planError) return { ok: false, error: planError.message };
+  if (!plan) return { ok: false, error: "No active workout plan found." };
+
+  const { data: exerciseRow, error: exerciseError } = await supabase
+    .from("exercises")
+    .select("id, name, instructions")
+    .eq("id", input.exerciseId)
+    .maybeSingle();
+  if (exerciseError) return { ok: false, error: exerciseError.message };
+  if (!exerciseRow) return { ok: false, error: "Exercise not found." };
+
+  const { data: lastItem, error: lastItemError } = await supabase
+    .from("workout_plan_items")
+    .select("session_order")
+    .eq("workout_plan_id", plan.id)
+    .eq("day_of_week", dayOfWeek)
+    .order("session_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastItemError) return { ok: false, error: lastItemError.message };
+  const nextOrder = (lastItem?.session_order ?? -1) + 1;
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("workout_plan_items")
+    .insert({
+      workout_plan_id: plan.id,
+      user_id: userId,
+      day_of_week: dayOfWeek,
+      session_order: nextOrder,
+      exercise_id: exerciseRow.id,
+      sets: input.sets,
+      reps: input.reps,
+      duration_minutes: input.durationMinutes,
+      program_session_exercise_id: null,
+      reps_min: null,
+      reps_max: null,
+      intensity_type: null,
+      intensity_value: null,
+      cardio_intensity: null,
+      coaching_notes: null,
+      substituted: false,
+    })
+    .select("id, day_of_week, session_order, completed_at, scheduled_time, notes")
+    .single();
+  if (insertError || !inserted) return { ok: false, error: insertError?.message ?? "Failed to add exercise." };
+
+  return {
+    ok: true,
+    data: {
+      id: inserted.id,
+      dayOfWeek: inserted.day_of_week,
+      sessionOrder: inserted.session_order,
+      exerciseId: exerciseRow.id,
+      sets: input.sets,
+      reps: input.reps,
+      durationMinutes: input.durationMinutes,
+      completedAt: inserted.completed_at,
+      scheduledTime: inserted.scheduled_time,
+      notes: inserted.notes,
+      repsMin: null,
+      repsMax: null,
+      intensityType: null,
+      intensityValue: null,
+      cardioIntensity: null,
+      coachingNotes: null,
+      substituted: false,
+      programSessionExerciseId: null,
     },
   };
 }
