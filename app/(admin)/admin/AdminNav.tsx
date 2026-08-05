@@ -20,6 +20,7 @@ const TABS = [
   { href: "/admin/content/exercises", label: "Exercises", ownerOnly: false },
   { href: "/admin/content/recipes", label: "Recipes", ownerOnly: false },
   { href: "/admin/ops", label: "Ops", ownerOnly: true },
+  { href: "/admin/users", label: "Users", ownerOnly: true },
 ] as const;
 
 export function AdminNav({ adminRole }: { adminRole: AdminRole }) {
