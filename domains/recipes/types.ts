@@ -5,6 +5,8 @@ export type Ingredient = {
   section: string;
 };
 
+export type RecipeStatus = "active" | "review" | "deprecated";
+
 export type Recipe = {
   id: string;
   name: string;
@@ -21,4 +23,5 @@ export type Recipe = {
   ingredients: Ingredient[];
   instructions: string[];
   storageInstructions: string | null;
+  status: RecipeStatus;
 };
