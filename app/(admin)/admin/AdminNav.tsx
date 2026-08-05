@@ -18,6 +18,9 @@ const TABS = [
   { href: "/admin/sources", label: "Sources" },
   { href: "/admin/claims", label: "Claims" },
   { href: "/admin/limitation-rules", label: "Limitation rules" },
+  // Phase C content-management tabs start here — Recipes is the natural
+  // next one to add, once its nested ingredient/instruction editor exists.
+  { href: "/admin/content/exercises", label: "Exercises" },
 ] as const;
 
 export function AdminNav({ adminRole }: { adminRole: AdminRole }) {
