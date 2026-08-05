@@ -92,6 +92,36 @@ export const CREDIBLE_SOURCE_ALLOWLIST: AllowlistedSource[] = [
     category: "individual_specialist",
     specialty: "hybrid/concurrent strength and endurance athlete training -- widely credited with popularizing the term \"hybrid athlete\"",
   },
+  {
+    domain: "westside-barbell.com",
+    organization: "Louie Simmons / Westside Barbell",
+    category: "individual_specialist",
+    specialty: "powerlifting -- originator of the Conjugate Method (Max Effort / Dynamic Effort training), verified 2026-08-05",
+  },
+  {
+    domain: "vdoto2.com",
+    organization: "Dr. Jack Daniels / V.O2",
+    category: "individual_specialist",
+    specialty: "long-distance running -- creator of the VDOT five-training-pace system (Daniels' Running Formula), verified 2026-08-05",
+  },
+  {
+    domain: "hunterallenpowerblog.com",
+    organization: "Hunter Allen",
+    category: "individual_specialist",
+    specialty: "cycling -- co-author (with Andrew Coggan) of Training and Racing with a Power Meter, the source of the standard 7-zone power-based training system, verified 2026-08-05",
+  },
+  {
+    domain: "catalystathletics.com",
+    organization: "Greg Everett / Catalyst Athletics",
+    category: "individual_specialist",
+    specialty: "Olympic weightlifting -- author of Olympic Weightlifting: A Complete Guide for Athletes and Coaches, USA Weightlifting International Coach, verified 2026-08-05",
+  },
+  {
+    domain: "comptrain.com",
+    organization: "Ben Bergeron / CompTrain",
+    category: "individual_specialist",
+    specialty: "functional fitness / CrossFit -- coach of 6 CrossFit Games/World Champions, verified 2026-08-05",
+  },
 
   // Discovery source -- Huberman is a neuroscientist who interviews
   // strength/conditioning/endurance specialists, not a coach himself.

@@ -772,3 +772,94 @@ export async function addWorkoutPlanItemExercise(
     },
   };
 }
+
+/**
+ * Replaces today's entire planned session with a different session from
+ * the same phase (mobile Exercise tab's "Alternative workout suggestions"
+ * -- a whole-session swap, distinct from swapWorkoutPlanItemExercise's
+ * per-exercise one). The chosen session becomes the new "recommended"
+ * plan for today, fully customizable like any materialized day; whatever
+ * was there before is simply gone (not preserved as an alternative --
+ * getAlternativeSessions recomputes the phase's other sessions fresh on
+ * the next read, which already includes it).
+ *
+ * Re-validates sessionId belongs to the active plan's own program_phase_id
+ * server-side (not just trusts whatever the client sends) -- same class
+ * of guard as swapWorkoutPlanItemExercise's sibling-slot check, since a
+ * plan's phase is what scopes which sessions are legitimate "alternatives"
+ * for it.
+ */
+export async function selectAlternativeSessionForToday(
+  userId: string,
+  dayOfWeek: number,
+  sessionId: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
+
+  const { data: plan, error: planError } = await supabase
+    .from("workout_plans")
+    .select("id, program_phase_id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("week_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (planError) return { ok: false, error: planError.message };
+  if (!plan) return { ok: false, error: "No active workout plan found." };
+  if (!plan.program_phase_id) {
+    return { ok: false, error: "This plan wasn't generated from a training program and has no alternative sessions." };
+  }
+
+  const { data: sessionRow, error: sessionError } = await supabase
+    .from("program_sessions")
+    .select("id, phase_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (sessionError) return { ok: false, error: sessionError.message };
+  if (!sessionRow || sessionRow.phase_id !== plan.program_phase_id) {
+    return { ok: false, error: "The requested session isn't a valid alternative for today's plan." };
+  }
+
+  const { data: exerciseRows, error: exercisesError } = await supabase
+    .from("program_session_exercises")
+    .select("*")
+    .eq("session_id", sessionId)
+    .is("primary_exercise_id", null)
+    .order("exercise_order", { ascending: true });
+  if (exercisesError) return { ok: false, error: exercisesError.message };
+  if (!exerciseRows || exerciseRows.length === 0) {
+    return { ok: false, error: "That session has no exercises to switch to." };
+  }
+
+  const { error: deleteError } = await supabase
+    .from("workout_plan_items")
+    .delete()
+    .eq("workout_plan_id", plan.id)
+    .eq("day_of_week", dayOfWeek);
+  if (deleteError) return { ok: false, error: `Failed to clear today's plan: ${deleteError.message}` };
+
+  const items = exerciseRows.map((rx, index) => ({
+    workout_plan_id: plan.id,
+    user_id: userId,
+    day_of_week: dayOfWeek,
+    session_order: index,
+    exercise_id: rx.exercise_id,
+    sets: rx.sets,
+    reps: rx.reps_max ?? rx.reps_min,
+    duration_minutes: rx.duration_minutes,
+    program_session_exercise_id: rx.id,
+    reps_min: rx.reps_min,
+    reps_max: rx.reps_max,
+    intensity_type: rx.intensity_type,
+    intensity_value: rx.intensity_value,
+    cardio_intensity: rx.cardio_intensity,
+    coaching_notes: rx.coaching_notes,
+    substituted: false,
+  }));
+
+  const { error: insertError } = await supabase.from("workout_plan_items").insert(items);
+  if (insertError) return { ok: false, error: `Failed to save the new session: ${insertError.message}` };
+
+  return { ok: true, data: undefined };
+}

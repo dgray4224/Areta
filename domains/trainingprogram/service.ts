@@ -224,19 +224,21 @@ export async function getProgramPhaseHydrated(
   };
 }
 
-/** The human-readable session name (e.g. "Chest + Back", "Workout A -
- * Taper") a prescription belongs to -- lets the mobile Exercise tab show
- * *what* today's session is even on a short (1-2 exercise) day, so a
- * deliberate deload/taper/cardio-only day reads as intentional rather
- * than broken. Derived at read time via program_session_exercises ->
- * program_sessions rather than denormalized onto workout_plan_items,
- * since every item materialized for a given day already shares the same
- * session_id (domains/workoutplan/generate.ts's materializeWorkoutPlan
- * assigns one program_sessions row per day). */
-export async function getSessionNameForPrescription(
+/** The program_sessions row (name, sessionType, and -- notably -- phaseId
+ * and its own id) a prescription belongs to -- lets the mobile Exercise
+ * tab show *what* today's session is even on a short (1-2 exercise) day,
+ * so a deliberate deload/taper/cardio-only day reads as intentional
+ * rather than broken, and also gives it enough (phaseId, id) to look up
+ * getAlternativeSessions -- the other sessions in the same phase a user
+ * could swap today's whole plan to. Derived at read time via
+ * program_session_exercises -> program_sessions rather than denormalized
+ * onto workout_plan_items, since every item materialized for a given day
+ * already shares the same session_id (domains/workoutplan/generate.ts's
+ * materializeWorkoutPlan assigns one program_sessions row per day). */
+export async function getSessionForPrescription(
   sessionExerciseId: string,
   client?: SupabaseClient<Database>
-): Promise<string | null> {
+): Promise<ProgramSession | null> {
   const supabase = client ?? (await createClient());
   const { data: exerciseRow } = await supabase
     .from("program_session_exercises")
@@ -247,10 +249,69 @@ export async function getSessionNameForPrescription(
 
   const { data: sessionRow } = await supabase
     .from("program_sessions")
-    .select("name")
+    .select("*")
     .eq("id", exerciseRow.session_id)
     .maybeSingle();
-  return sessionRow?.name ?? null;
+  return sessionRow ? toSession(sessionRow) : null;
+}
+
+/**
+ * The *other* sessions defined in the same phase as today's -- e.g. if
+ * today materialized "Easy Aerobic", the phase's "Full Body Strength" and
+ * "Upper/Lower Split" sessions (whatever else phase_id defines) come back
+ * here. This is the mobile Exercise tab's "Alternative workout
+ * suggestions": a whole-session swap for someone who'd rather do a
+ * different kind of session today than what got materialized, distinct
+ * from getSlotOptions' per-exercise alternates within one session. Only
+ * recommended/default prescriptions per alternative session come back
+ * (primary_exercise_id null), same restriction getProgramPhaseHydrated
+ * applies -- a preview, not something individually customizable until
+ * selected (see selectAlternativeSessionForToday).
+ */
+export async function getAlternativeSessions(
+  phaseId: string,
+  excludeSessionId: string,
+  client?: SupabaseClient<Database>
+): Promise<(ProgramSession & { exercises: ProgramSessionExercise[] })[]> {
+  const supabase = client ?? (await createClient());
+
+  const { data: sessionRows, error: sessionsError } = await supabase
+    .from("program_sessions")
+    .select("*")
+    .eq("phase_id", phaseId)
+    .neq("id", excludeSessionId)
+    .order("session_index", { ascending: true });
+
+  if (sessionsError) {
+    throw new Error(`Failed to load alternative sessions: ${sessionsError.message}`);
+  }
+
+  const sessionIds = (sessionRows ?? []).map((s) => s.id);
+  const exercisesBySession = new Map<string, ProgramSessionExercise[]>();
+
+  if (sessionIds.length > 0) {
+    const { data: exerciseRows, error: exercisesError } = await supabase
+      .from("program_session_exercises")
+      .select("*")
+      .in("session_id", sessionIds)
+      .is("primary_exercise_id", null)
+      .order("exercise_order", { ascending: true });
+
+    if (exercisesError) {
+      throw new Error(`Failed to load alternative session exercises: ${exercisesError.message}`);
+    }
+
+    for (const row of exerciseRows ?? []) {
+      const list = exercisesBySession.get(row.session_id) ?? [];
+      list.push(toSessionExercise(row));
+      exercisesBySession.set(row.session_id, list);
+    }
+  }
+
+  return (sessionRows ?? []).map((row) => ({
+    ...toSession(row),
+    exercises: exercisesBySession.get(row.id) ?? [],
+  }));
 }
 
 /** A single prescription row by id -- used when validating/applying a
