@@ -70,14 +70,22 @@ function emitNewExercises(batch: ContentBatch): string {
     )
     .join(",\n  ");
 
+  // canonical_name/movement_patterns (added by migration 0044, NOT NULL,
+  // no column default) aren't set explicitly per row -- derived in the
+  // outer select from the same values instead, same pattern
+  // 0050_expand_exercise_library_variety.sql already uses by hand, so a
+  // new exercise can never drift from name/movement_pattern by a
+  // copy-paste mistake across rows.
   return (
     `-- New exercises this batch's programs need, seeded before the\n` +
     `-- programs that reference them so the exercise_id subqueries below\n` +
     `-- resolve within the same migration.\n` +
     `insert into public.exercises\n` +
-    `  (name, movement_pattern, equipment_required, archetype_tags, difficulty, primary_muscle_groups, instructions) values\n  ` +
+    `  (name, movement_pattern, equipment_required, archetype_tags, difficulty, primary_muscle_groups, instructions, canonical_name, movement_patterns)\n` +
+    `select name, movement_pattern, equipment_required, archetype_tags, difficulty, primary_muscle_groups, instructions, name, array[movement_pattern]\n` +
+    `from (values\n  ` +
     rows +
-    ";\n\n"
+    `\n) as t(name, movement_pattern, equipment_required, archetype_tags, difficulty, primary_muscle_groups, instructions);\n\n`
   );
 }
 

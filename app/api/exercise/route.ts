@@ -8,9 +8,10 @@ import {
   swapWorkoutPlanItemExercise,
   customizeWorkoutPlanItemExercise,
   addWorkoutPlanItemExercise,
+  selectAlternativeSessionForToday,
 } from "@/domains/workoutplan/service";
 import { getExercisesByIds } from "@/domains/exerciselibrary/service";
-import { getSlotOptions, getSessionNameForPrescription } from "@/domains/trainingprogram/service";
+import { getSlotOptions, getSessionForPrescription, getAlternativeSessions } from "@/domains/trainingprogram/service";
 import type { ProgramSessionExercise } from "@/domains/trainingprogram/types";
 import { hasEquipment } from "@/domains/workoutplan/generate";
 import type { Exercise } from "@/domains/exerciselibrary/types";
@@ -81,6 +82,34 @@ function buildAlternativeViews(
     }));
 }
 
+/** Formats a whole alternative session (name + preview of its default
+ * exercises) for the mobile client's "Alternative workout suggestions" --
+ * deliberately not equipment-filtered per exercise like buildAlternativeViews
+ * (a whole session isn't dropped over one exercise's equipment mismatch;
+ * that's sorted out via the usual per-exercise swap once the session is
+ * actually selected -- see selectAlternativeSessionForToday). */
+function buildAlternativeSessionViews(
+  sessions: Awaited<ReturnType<typeof getAlternativeSessions>>,
+  exerciseMap: Map<string, Exercise>
+) {
+  return sessions.map((session) => ({
+    id: session.id,
+    name: session.name,
+    sessionType: session.sessionType,
+    exercises: session.exercises.map((ex) => ({
+      exerciseName: exerciseMap.get(ex.exerciseId)?.name ?? "Unknown exercise",
+      sets: ex.sets,
+      reps: ex.repsMax ?? ex.repsMin,
+      durationMinutes: ex.durationMinutes,
+      repsMin: ex.repsMin,
+      repsMax: ex.repsMax,
+      intensityType: ex.intensityType,
+      intensityValue: ex.intensityValue,
+      cardioIntensity: ex.cardioIntensity,
+    })),
+  }));
+}
+
 export async function GET(request: NextRequest) {
   const auth = await authenticateBearerRequest(request);
   if (!auth) {
@@ -95,19 +124,27 @@ export async function GET(request: NextRequest) {
   const currentPrescriptionIds = todaysItems
     .map((item) => item.programSessionExerciseId)
     .filter((id): id is string => id !== null);
-  const [slotOptionsByCurrentId, equipmentAccess, todaysSessionName] = await Promise.all([
+  const [slotOptionsByCurrentId, equipmentAccess, todaysSession] = await Promise.all([
     getSlotOptions(currentPrescriptionIds, supabase),
     getUserEquipmentAccess(userId, supabase),
     // Every item materialized for a given day shares one program_sessions
-    // row, so the first item's prescription is enough to name the whole
-    // day (e.g. "Chest + Back") -- lets a legitimately short day (deload/
-    // taper/cardio-only) read as intentional instead of broken.
-    currentPrescriptionIds.length > 0 ? getSessionNameForPrescription(currentPrescriptionIds[0], supabase) : null,
+    // row, so the first item's prescription is enough to identify the
+    // whole day's session -- both its name (lets a legitimately short day
+    // like deload/taper/cardio-only read as intentional instead of
+    // broken) and its id/phaseId (to look up alternative sessions below).
+    currentPrescriptionIds.length > 0 ? getSessionForPrescription(currentPrescriptionIds[0], supabase) : null,
   ]);
+
+  const alternativeSessions = todaysSession
+    ? await getAlternativeSessions(todaysSession.phaseId, todaysSession.id, supabase)
+    : [];
 
   const allExerciseIds = new Set(todaysItems.map((item) => item.exerciseId));
   for (const options of slotOptionsByCurrentId.values()) {
     for (const opt of options) allExerciseIds.add(opt.exerciseId);
+  }
+  for (const session of alternativeSessions) {
+    for (const ex of session.exercises) allExerciseIds.add(ex.exerciseId);
   }
   const exerciseMap = await getExercisesByIds(Array.from(allExerciseIds), supabase);
 
@@ -153,7 +190,8 @@ export async function GET(request: NextRequest) {
     plan: plannedExercises,
     todaysWorkoutLogs: workoutLogs ?? [],
     programContext: plan?.programContext ?? null,
-    todaysSessionName,
+    todaysSessionName: todaysSession?.name ?? null,
+    alternativeSessions: buildAlternativeSessionViews(alternativeSessions, exerciseMap),
   });
 }
 
@@ -231,6 +269,7 @@ export async function POST(request: NextRequest) {
     sets?: unknown;
     reps?: unknown;
     durationMinutes?: unknown;
+    sessionId?: unknown;
   };
   try {
     body = await request.json();
@@ -238,11 +277,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Three distinct actions share this endpoint: swap to one of the
-  // slot's up-to-2 curated alternates (itemId + targetProgramSessionExerciseId),
+  // Four distinct actions share this endpoint: swap to one of the slot's
+  // up-to-2 curated alternates (itemId + targetProgramSessionExerciseId),
   // a free-form customize of an existing item to any library exercise
-  // (itemId + exerciseId), or adding a brand-new item to today's session
-  // (exerciseId alone, no itemId).
+  // (itemId + exerciseId), adding a brand-new item to today's session
+  // (exerciseId alone, no itemId), or replacing today's whole plan with a
+  // different session from the same phase (sessionId alone -- "Alternative
+  // workout suggestions"). Checked first since it's a distinct shape from
+  // the other three (no itemId/exerciseId at all).
+  if (typeof body.sessionId === "string") {
+    const result = await selectAlternativeSessionForToday(userId, todayDayOfWeek(), body.sessionId, supabase);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+    // The client re-fetches via GET afterward for the full new plan
+    // (today's session name, program context, fresh alternatives) rather
+    // than this duplicating that response shape inline.
+    return NextResponse.json({ ok: true });
+  }
+
   if (typeof body.targetProgramSessionExerciseId === "string") {
     if (typeof body.itemId !== "string") {
       return NextResponse.json({ error: "itemId (string) is required" }, { status: 400 });
