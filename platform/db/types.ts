@@ -1784,6 +1784,7 @@ export type Database = {
           prep_minutes: number
           protein_g: number
           servings: number
+          status: string
           storage_instructions: string | null
         }
         Insert: {
@@ -1802,6 +1803,7 @@ export type Database = {
           prep_minutes?: number
           protein_g: number
           servings?: number
+          status?: string
           storage_instructions?: string | null
         }
         Update: {
@@ -1820,6 +1822,7 @@ export type Database = {
           prep_minutes?: number
           protein_g?: number
           servings?: number
+          status?: string
           storage_instructions?: string | null
         }
         Relationships: []

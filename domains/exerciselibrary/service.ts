@@ -11,9 +11,19 @@ import type {
   ExerciseStatus,
 } from "@/domains/exerciselibrary/types";
 
+/** Only `status: 'active'` exercises — this feeds real workout-plan
+ * generation (domains/workoutplan/service.ts) and the mobile library
+ * endpoint, so an admin-authored exercise still sitting in "review"
+ * never reaches a real user. (Fixed alongside the recipes work below —
+ * this filter was missing when the exercise admin editor first shipped,
+ * so its "review" default status wasn't actually enforced anywhere yet.)
+ * Also used to populate the exercise picker on the claims/limitation-rule
+ * admin forms, which as a side effect means those can only cite
+ * already-active exercises — reasonable, since a claim about an exercise
+ * still being vetted isn't very actionable yet either. */
 export async function getAllExercises(client?: SupabaseClient<Database>): Promise<Exercise[]> {
   const supabase = client ?? (await createClient());
-  const { data, error } = await supabase.from("exercises").select("*");
+  const { data, error } = await supabase.from("exercises").select("*").eq("status", "active");
 
   if (error) {
     throw new Error(`Failed to load exercises: ${error.message}`);
