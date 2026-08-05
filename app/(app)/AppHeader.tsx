@@ -17,6 +17,19 @@ export function AppHeader({ isAdmin }: { isAdmin: boolean }) {
           <span className="hidden text-sm text-neutral-400 sm:inline">
             | Become more of who you are
           </span>
+          {/* Leftmost, always-visible (not gated to the xl-only nav below)
+           * so it's the first thing an admin sees regardless of screen
+           * size — a distinct accent color (unused elsewhere in the app)
+           * rather than the brand terracotta used for normal nav-active
+           * state, so it reads as its own thing, not just another tab. */}
+          {isAdmin ? (
+            <Link
+              href="/admin"
+              className="rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-ink hover:opacity-90"
+            >
+              Admin
+            </Link>
+          ) : null}
         </div>
 
         {/* Phone/tablet keeps just the logo — BottomTabBar owns primary nav
@@ -29,15 +42,6 @@ export function AppHeader({ isAdmin }: { isAdmin: boolean }) {
               {link.label}
             </Link>
           ))}
-          {/* Admin-only, desktop-only entry point (this nav row is already
-           * `hidden xl:flex` above — mobile gets its own entry via the
-           * Settings tabs instead, rather than adding a 5th icon to the
-           * tuned 4-item BottomTabBar). */}
-          {isAdmin ? (
-            <Link href="/admin" className={navLinkClass(pathname.startsWith("/admin"))}>
-              Admin
-            </Link>
-          ) : null}
           <form action={signOut}>
             <button type="submit" className="text-neutral-500 hover:text-brand">
               Sign out
