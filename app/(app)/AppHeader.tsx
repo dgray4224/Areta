@@ -17,11 +17,19 @@ export function AppHeader({ isAdmin }: { isAdmin: boolean }) {
           <span className="hidden text-sm text-neutral-400 sm:inline">
             | Become more of who you are
           </span>
-          {/* Leftmost, always-visible (not gated to the xl-only nav below)
-           * so it's the first thing an admin sees regardless of screen
-           * size — a distinct accent color (unused elsewhere in the app)
-           * rather than the brand terracotta used for normal nav-active
-           * state, so it reads as its own thing, not just another tab. */}
+        </div>
+
+        {/* Phone/tablet keeps just the logo — BottomTabBar owns primary nav
+         * there, matching native app tab-bar conventions on those sizes
+         * (including iPad portrait/landscape, which is wider than
+         * Tailwind's `sm` but still a touch device, not a desktop).
+         * Mobile's admin entry point lives in the Settings tabs instead
+         * (SettingsNav). */}
+        <nav className="hidden items-center gap-4 text-sm xl:flex">
+          {/* First item in the row, ahead of Today — a distinct accent
+           * color (unused elsewhere in the app) instead of the brand
+           * terracotta used for normal nav-active state, so it reads as
+           * its own thing rather than just another tab. */}
           {isAdmin ? (
             <Link
               href="/admin"
@@ -30,13 +38,6 @@ export function AppHeader({ isAdmin }: { isAdmin: boolean }) {
               Admin
             </Link>
           ) : null}
-        </div>
-
-        {/* Phone/tablet keeps just the logo — BottomTabBar owns primary nav
-         * there, matching native app tab-bar conventions on those sizes
-         * (including iPad portrait/landscape, which is wider than
-         * Tailwind's `sm` but still a touch device, not a desktop). */}
-        <nav className="hidden items-center gap-4 text-sm xl:flex">
           {NAV_LINKS.map((link) => (
             <Link key={link.href} href={link.href} className={navLinkClass(isNavLinkActive(pathname, link.href))}>
               {link.label}
