@@ -5,31 +5,30 @@ import { usePathname } from "next/navigation";
 import { navTabClass } from "@/app/(app)/nav-links";
 import type { AdminRole } from "@/platform/auth/admin";
 
-/** Content-review tabs (Phase B) are available to both roles — the
- * `experts`/`sources`/`expert_claims`/`limitation_rules` RLS write
- * policies key off `is_admin()`, not role, so reviewers genuinely can
- * act on all of these. Ops/user-management tabs (Phase D/E) don't exist
- * yet; when they're built, gate their entries here on `adminRole ===
- * "owner"` the same way this list would grow, rather than showing a
- * dead link a reviewer can click into and get bounced from. */
+/** Content-review (Phase B) and content-management (Phase C) tabs are
+ * available to both roles — their RLS write policies key off
+ * `is_admin()`, not role, so reviewers genuinely can act on all of
+ * these. Ops (Phase D) is the first owner-only tab, gated below on
+ * `ownerOnly` — matches `requireAdminOwner()` actually enforcing it
+ * server-side too, so this isn't just cosmetic hiding. */
 const TABS = [
-  { href: "/admin", label: "Overview" },
-  { href: "/admin/experts", label: "Experts" },
-  { href: "/admin/sources", label: "Sources" },
-  { href: "/admin/claims", label: "Claims" },
-  { href: "/admin/limitation-rules", label: "Limitation rules" },
-  // Phase C content-management tabs.
-  { href: "/admin/content/exercises", label: "Exercises" },
-  { href: "/admin/content/recipes", label: "Recipes" },
+  { href: "/admin", label: "Overview", ownerOnly: false },
+  { href: "/admin/experts", label: "Experts", ownerOnly: false },
+  { href: "/admin/sources", label: "Sources", ownerOnly: false },
+  { href: "/admin/claims", label: "Claims", ownerOnly: false },
+  { href: "/admin/limitation-rules", label: "Limitation rules", ownerOnly: false },
+  { href: "/admin/content/exercises", label: "Exercises", ownerOnly: false },
+  { href: "/admin/content/recipes", label: "Recipes", ownerOnly: false },
+  { href: "/admin/ops", label: "Ops", ownerOnly: true },
 ] as const;
 
 export function AdminNav({ adminRole }: { adminRole: AdminRole }) {
   const pathname = usePathname();
-  void adminRole; // no owner-only tabs exist yet — see comment above
+  const tabs = TABS.filter((tab) => !tab.ownerOnly || adminRole === "owner");
 
   return (
     <nav className="flex flex-wrap gap-1 border-b border-neutral-200 dark:border-neutral-800">
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active = tab.href === "/admin" ? pathname === "/admin" : pathname.startsWith(tab.href);
         return (
           <Link
