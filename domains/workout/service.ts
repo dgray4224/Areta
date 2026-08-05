@@ -84,8 +84,8 @@ export async function insertImportedWorkoutLog(
   return { ok: true, data: { skipped: false } };
 }
 
-export async function getRecentWorkoutLogs(userId: string, days = 30) {
-  const supabase = await createClient();
+export async function getRecentWorkoutLogs(userId: string, days = 30, client?: SupabaseClient<Database>) {
+  const supabase = client ?? (await createClient());
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await supabase
     .from("workout_logs")
