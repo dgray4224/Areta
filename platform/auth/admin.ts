@@ -2,7 +2,8 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/platform/auth/session";
 import { createClient } from "@/platform/supabase/server";
-import type { User } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { Database } from "@/platform/db/types";
 
 export type AdminRole = "owner" | "reviewer";
 
@@ -10,6 +11,32 @@ export type AdminSession = {
   user: User;
   adminRole: AdminRole;
 };
+
+export type AdminStatus = {
+  isAdmin: boolean;
+  adminRole: AdminRole | null;
+};
+
+/** Non-redirecting read of admin status — use this in the regular app
+ * shell (nav links, etc.) where a non-admin should just see nothing extra,
+ * not get bounced. `requireAdmin`/`requireAdminOwner` below build on this
+ * for pages that actually need to gate. */
+export async function getAdminStatus(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<AdminStatus> {
+  const supabase = client ?? (await createClient());
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_admin, admin_role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return {
+    isAdmin: profile?.is_admin ?? false,
+    adminRole: (profile?.admin_role as AdminRole | null) ?? null,
+  };
+}
 
 /** Use at the top of any Server Component under `app/(admin)`. Redirects
  * anyone without `profiles.is_admin` back to the regular dashboard — this
@@ -21,18 +48,13 @@ export type AdminSession = {
  * inconsistency fails closed instead of open. */
 export async function requireAdmin(): Promise<AdminSession> {
   const user = await requireUser();
-  const supabase = await createClient();
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("is_admin, admin_role")
-    .eq("id", user.id)
-    .single();
+  const status = await getAdminStatus(user.id);
 
-  if (!profile?.is_admin) {
+  if (!status.isAdmin) {
     redirect("/dashboard");
   }
 
-  return { user, adminRole: (profile.admin_role as AdminRole) ?? "reviewer" };
+  return { user, adminRole: status.adminRole ?? "reviewer" };
 }
 
 /** Use at the top of owner-only admin pages (ops, users). Reviewers who

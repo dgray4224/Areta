@@ -6,7 +6,7 @@ import { signOut } from "@/platform/auth/actions";
 import { Logo } from "@/platform/ui/Logo";
 import { NAV_LINKS, isNavLinkActive, navLinkClass } from "./nav-links";
 
-export function AppHeader() {
+export function AppHeader({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -29,6 +29,15 @@ export function AppHeader() {
               {link.label}
             </Link>
           ))}
+          {/* Admin-only, desktop-only entry point (this nav row is already
+           * `hidden xl:flex` above — mobile gets its own entry via the
+           * Settings tabs instead, rather than adding a 5th icon to the
+           * tuned 4-item BottomTabBar). */}
+          {isAdmin ? (
+            <Link href="/admin" className={navLinkClass(pathname.startsWith("/admin"))}>
+              Admin
+            </Link>
+          ) : null}
           <form action={signOut}>
             <button type="submit" className="text-neutral-500 hover:text-brand">
               Sign out
