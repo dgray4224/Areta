@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       action_events: {
@@ -397,6 +422,42 @@ export type Database = {
         }
         Relationships: []
       }
+      exercise_progressions: {
+        Row: {
+          exercise_id: string
+          id: string
+          related_exercise_id: string
+          relation: string
+        }
+        Insert: {
+          exercise_id: string
+          id?: string
+          related_exercise_id: string
+          relation: string
+        }
+        Update: {
+          exercise_id?: string
+          id?: string
+          related_exercise_id?: string
+          relation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exercise_progressions_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exercise_progressions_related_exercise_id_fkey"
+            columns: ["related_exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exercises: {
         Row: {
           aliases: string[]
@@ -425,7 +486,7 @@ export type Database = {
         Insert: {
           aliases?: string[]
           archetype_tags?: string[]
-          canonical_name?: string
+          canonical_name: string
           compound?: boolean
           contraindication_notes?: string | null
           created_at?: string
@@ -469,120 +530,6 @@ export type Database = {
           status?: string
           unilateral?: boolean
           video_url?: string | null
-        }
-        Relationships: []
-      }
-      exercise_progressions: {
-        Row: {
-          exercise_id: string
-          id: string
-          related_exercise_id: string
-          relation: string
-        }
-        Insert: {
-          exercise_id: string
-          id?: string
-          related_exercise_id: string
-          relation: string
-        }
-        Update: {
-          exercise_id?: string
-          id?: string
-          related_exercise_id?: string
-          relation?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "exercise_progressions_exercise_id_fkey"
-            columns: ["exercise_id"]
-            isOneToOne: false
-            referencedRelation: "exercises"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "exercise_progressions_related_exercise_id_fkey"
-            columns: ["related_exercise_id"]
-            isOneToOne: false
-            referencedRelation: "exercises"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      experts: {
-        Row: {
-          affiliations: Json
-          coaching_evidence: Json
-          created_at: string
-          credentials: Json
-          entity_type: string
-          evidence_score: number | null
-          id: string
-          inclusion_reason: string | null
-          name: string
-          official_channels: Json
-          practice_score: number | null
-          reach_score: number | null
-          reputation_score: number | null
-          research_profiles: Json
-          reviewed_at: string | null
-          reviewed_by: string | null
-          roles: string[]
-          slug: string
-          specialties: string[]
-          specialty_scores: Json
-          status: string
-          transparency_score: number | null
-          updated_at: string
-        }
-        Insert: {
-          affiliations?: Json
-          coaching_evidence?: Json
-          created_at?: string
-          credentials?: Json
-          entity_type: string
-          evidence_score?: number | null
-          id?: string
-          inclusion_reason?: string | null
-          name: string
-          official_channels?: Json
-          practice_score?: number | null
-          reach_score?: number | null
-          reputation_score?: number | null
-          research_profiles?: Json
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          roles?: string[]
-          slug: string
-          specialties?: string[]
-          specialty_scores?: Json
-          status?: string
-          transparency_score?: number | null
-          updated_at?: string
-        }
-        Update: {
-          affiliations?: Json
-          coaching_evidence?: Json
-          created_at?: string
-          credentials?: Json
-          entity_type?: string
-          evidence_score?: number | null
-          id?: string
-          inclusion_reason?: string | null
-          name?: string
-          official_channels?: Json
-          practice_score?: number | null
-          reach_score?: number | null
-          reputation_score?: number | null
-          research_profiles?: Json
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          roles?: string[]
-          slug?: string
-          specialties?: string[]
-          specialty_scores?: Json
-          status?: string
-          transparency_score?: number | null
-          updated_at?: string
         }
         Relationships: []
       }
@@ -698,6 +645,84 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      experts: {
+        Row: {
+          affiliations: Json
+          coaching_evidence: Json
+          created_at: string
+          credentials: Json
+          entity_type: string
+          evidence_score: number | null
+          id: string
+          inclusion_reason: string | null
+          name: string
+          official_channels: Json
+          practice_score: number | null
+          reach_score: number | null
+          reputation_score: number | null
+          research_profiles: Json
+          reviewed_at: string | null
+          reviewed_by: string | null
+          roles: string[]
+          slug: string
+          specialties: string[]
+          specialty_scores: Json
+          status: string
+          transparency_score: number | null
+          updated_at: string
+        }
+        Insert: {
+          affiliations?: Json
+          coaching_evidence?: Json
+          created_at?: string
+          credentials?: Json
+          entity_type: string
+          evidence_score?: number | null
+          id?: string
+          inclusion_reason?: string | null
+          name: string
+          official_channels?: Json
+          practice_score?: number | null
+          reach_score?: number | null
+          reputation_score?: number | null
+          research_profiles?: Json
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          roles?: string[]
+          slug: string
+          specialties?: string[]
+          specialty_scores?: Json
+          status?: string
+          transparency_score?: number | null
+          updated_at?: string
+        }
+        Update: {
+          affiliations?: Json
+          coaching_evidence?: Json
+          created_at?: string
+          credentials?: Json
+          entity_type?: string
+          evidence_score?: number | null
+          id?: string
+          inclusion_reason?: string | null
+          name?: string
+          official_channels?: Json
+          practice_score?: number | null
+          reach_score?: number | null
+          reputation_score?: number | null
+          research_profiles?: Json
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          roles?: string[]
+          slug?: string
+          specialties?: string[]
+          specialty_scores?: Json
+          status?: string
+          transparency_score?: number | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       generated_parameters: {
         Row: {
@@ -977,6 +1002,69 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      limitation_rules: {
+        Row: {
+          action: string
+          created_at: string
+          exercise_id: string | null
+          id: string
+          limitation_tag: string
+          movement_pattern: string | null
+          rationale: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          source_id: string | null
+          status: string
+          substitute_movement_pattern: string | null
+          updated_at: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          exercise_id?: string | null
+          id?: string
+          limitation_tag: string
+          movement_pattern?: string | null
+          rationale: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source_id?: string | null
+          status?: string
+          substitute_movement_pattern?: string | null
+          updated_at?: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          exercise_id?: string | null
+          id?: string
+          limitation_tag?: string
+          movement_pattern?: string | null
+          rationale?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source_id?: string | null
+          status?: string
+          substitute_movement_pattern?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "limitation_rules_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "limitation_rules_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       meal_plan_items: {
         Row: {
@@ -1308,435 +1396,144 @@ export type Database = {
           },
         ]
       }
-      sources: {
+      prep_plans: {
         Row: {
-          accessed_at: string
-          canonical_url: string
+          container_count: number | null
           created_at: string
-          expert_id: string | null
+          estimated_minutes: number | null
           id: string
-          organization: string
-          published_at: string | null
-          source_type: string
+          meal_plan_id: string | null
           status: string
-          title: string
-          updated_at: string
-        }
-        Insert: {
-          accessed_at: string
-          canonical_url: string
-          created_at?: string
-          expert_id?: string | null
-          id?: string
-          organization: string
-          published_at?: string | null
-          source_type: string
-          status?: string
-          title: string
-          updated_at?: string
-        }
-        Update: {
-          accessed_at?: string
-          canonical_url?: string
-          created_at?: string
-          expert_id?: string | null
-          id?: string
-          organization?: string
-          published_at?: string | null
-          source_type?: string
-          status?: string
-          title?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sources_expert_id_fkey"
-            columns: ["expert_id"]
-            isOneToOne: false
-            referencedRelation: "experts"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      limitation_rules: {
-        Row: {
-          action: string
-          created_at: string
-          exercise_id: string | null
-          id: string
-          limitation_tag: string
-          movement_pattern: string | null
-          rationale: string
-          reviewed_at: string | null
-          reviewed_by: string | null
-          source_id: string | null
-          status: string
-          substitute_movement_pattern: string | null
-          updated_at: string
-        }
-        Insert: {
-          action: string
-          created_at?: string
-          exercise_id?: string | null
-          id?: string
-          limitation_tag: string
-          movement_pattern?: string | null
-          rationale: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          source_id?: string | null
-          status?: string
-          substitute_movement_pattern?: string | null
-          updated_at?: string
-        }
-        Update: {
-          action?: string
-          created_at?: string
-          exercise_id?: string | null
-          id?: string
-          limitation_tag?: string
-          movement_pattern?: string | null
-          rationale?: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          source_id?: string | null
-          status?: string
-          substitute_movement_pattern?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "limitation_rules_exercise_id_fkey"
-            columns: ["exercise_id"]
-            isOneToOne: false
-            referencedRelation: "exercises"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "limitation_rules_source_id_fkey"
-            columns: ["source_id"]
-            isOneToOne: false
-            referencedRelation: "sources"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      program_templates: {
-        Row: {
-          created_at: string
-          days_per_week_max: number
-          days_per_week_min: number
-          description: string | null
-          equipment_context: string
-          experience_tier: string
-          goal: string
-          id: string
-          is_active: boolean
-          limitation_compatible_tags: string[]
-          name: string
-          session_duration_band: string
-          slug: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          days_per_week_max: number
-          days_per_week_min: number
-          description?: string | null
-          equipment_context: string
-          experience_tier: string
-          goal: string
-          id?: string
-          is_active?: boolean
-          limitation_compatible_tags?: string[]
-          name: string
-          session_duration_band: string
-          slug: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          days_per_week_max?: number
-          days_per_week_min?: number
-          description?: string | null
-          equipment_context?: string
-          experience_tier?: string
-          goal?: string
-          id?: string
-          is_active?: boolean
-          limitation_compatible_tags?: string[]
-          name?: string
-          session_duration_band?: string
-          slug?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      template_phases: {
-        Row: {
-          focus: string | null
-          id: string
-          intensity_style: string | null
-          is_final: boolean
-          length_weeks: number
-          name: string
-          phase_order: number
-          template_id: string
-        }
-        Insert: {
-          focus?: string | null
-          id?: string
-          intensity_style?: string | null
-          is_final?: boolean
-          length_weeks: number
-          name: string
-          phase_order: number
-          template_id: string
-        }
-        Update: {
-          focus?: string | null
-          id?: string
-          intensity_style?: string | null
-          is_final?: boolean
-          length_weeks?: number
-          name?: string
-          phase_order?: number
-          template_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "template_phases_template_id_fkey"
-            columns: ["template_id"]
-            isOneToOne: false
-            referencedRelation: "program_templates"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      template_sessions: {
-        Row: {
-          id: string
-          name: string
-          phase_id: string
-          session_index: number
-          session_type: string | null
-        }
-        Insert: {
-          id?: string
-          name: string
-          phase_id: string
-          session_index: number
-          session_type?: string | null
-        }
-        Update: {
-          id?: string
-          name?: string
-          phase_id?: string
-          session_index?: number
-          session_type?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "template_sessions_phase_id_fkey"
-            columns: ["phase_id"]
-            isOneToOne: false
-            referencedRelation: "template_phases"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      template_slots: {
-        Row: {
-          coaching_notes: string | null
-          duration_minutes_max: number | null
-          duration_minutes_min: number | null
-          effort_target: string | null
-          id: string
-          is_optional: boolean
-          modality: string
-          movement_pattern: string
-          reps_max: number | null
-          reps_min: number | null
-          rest_seconds: number | null
-          session_id: string
-          sets_max: number | null
-          sets_min: number | null
-          slot_label: string
-          slot_order: number
-        }
-        Insert: {
-          coaching_notes?: string | null
-          duration_minutes_max?: number | null
-          duration_minutes_min?: number | null
-          effort_target?: string | null
-          id?: string
-          is_optional?: boolean
-          modality: string
-          movement_pattern: string
-          reps_max?: number | null
-          reps_min?: number | null
-          rest_seconds?: number | null
-          session_id: string
-          sets_max?: number | null
-          sets_min?: number | null
-          slot_label: string
-          slot_order: number
-        }
-        Update: {
-          coaching_notes?: string | null
-          duration_minutes_max?: number | null
-          duration_minutes_min?: number | null
-          effort_target?: string | null
-          id?: string
-          is_optional?: boolean
-          modality?: string
-          movement_pattern?: string
-          reps_max?: number | null
-          reps_min?: number | null
-          rest_seconds?: number | null
-          session_id?: string
-          sets_max?: number | null
-          sets_min?: number | null
-          slot_label?: string
-          slot_order?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "template_slots_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "template_sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      workout_plan_item_alternatives: {
-        Row: {
-          cardio_intensity: string | null
-          coaching_notes: string | null
-          created_at: string
-          duration_minutes: number | null
-          exercise_id: string
-          id: string
-          intensity_type: string | null
-          intensity_value: string | null
-          provenance: Json | null
-          rank: number
-          reps_max: number | null
-          reps_min: number | null
-          score: number | null
-          sets: number | null
-          workout_plan_item_id: string
-        }
-        Insert: {
-          cardio_intensity?: string | null
-          coaching_notes?: string | null
-          created_at?: string
-          duration_minutes?: number | null
-          exercise_id: string
-          id?: string
-          intensity_type?: string | null
-          intensity_value?: string | null
-          provenance?: Json | null
-          rank: number
-          reps_max?: number | null
-          reps_min?: number | null
-          score?: number | null
-          sets?: number | null
-          workout_plan_item_id: string
-        }
-        Update: {
-          cardio_intensity?: string | null
-          coaching_notes?: string | null
-          created_at?: string
-          duration_minutes?: number | null
-          exercise_id?: string
-          id?: string
-          intensity_type?: string | null
-          intensity_value?: string | null
-          provenance?: Json | null
-          rank?: number
-          reps_max?: number | null
-          reps_min?: number | null
-          score?: number | null
-          sets?: number | null
-          workout_plan_item_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "workout_plan_item_alternatives_exercise_id_fkey"
-            columns: ["exercise_id"]
-            isOneToOne: false
-            referencedRelation: "exercises"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "workout_plan_item_alternatives_workout_plan_item_id_fkey"
-            columns: ["workout_plan_item_id"]
-            isOneToOne: false
-            referencedRelation: "workout_plan_items"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      weekly_adaptation_responses: {
-        Row: {
-          created_at: string
-          disliked_exercise_ids: string[]
-          id: string
-          liked_exercise_ids: string[]
-          next_week_preference: string | null
-          pain_location: string | null
-          pain_or_discomfort: string | null
-          perceived_difficulty: string | null
-          planned_sessions_completed: number | null
-          recovery_quality: string | null
-          submitted_at: string | null
           user_id: string
           week_start: string
-          workout_plan_id: string
         }
         Insert: {
+          container_count?: number | null
           created_at?: string
-          disliked_exercise_ids?: string[]
+          estimated_minutes?: number | null
           id?: string
-          liked_exercise_ids?: string[]
-          next_week_preference?: string | null
-          pain_location?: string | null
-          pain_or_discomfort?: string | null
-          perceived_difficulty?: string | null
-          planned_sessions_completed?: number | null
-          recovery_quality?: string | null
-          submitted_at?: string | null
+          meal_plan_id?: string | null
+          status?: string
           user_id: string
           week_start: string
-          workout_plan_id: string
         }
         Update: {
+          container_count?: number | null
           created_at?: string
-          disliked_exercise_ids?: string[]
+          estimated_minutes?: number | null
           id?: string
-          liked_exercise_ids?: string[]
-          next_week_preference?: string | null
-          pain_location?: string | null
-          pain_or_discomfort?: string | null
-          perceived_difficulty?: string | null
-          planned_sessions_completed?: number | null
-          recovery_quality?: string | null
-          submitted_at?: string | null
+          meal_plan_id?: string | null
+          status?: string
           user_id?: string
           week_start?: string
-          workout_plan_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "weekly_adaptation_responses_workout_plan_id_fkey"
-            columns: ["workout_plan_id"]
+            foreignKeyName: "prep_plans_meal_plan_id_fkey"
+            columns: ["meal_plan_id"]
             isOneToOne: false
-            referencedRelation: "workout_plans"
+            referencedRelation: "meal_plans"
             referencedColumns: ["id"]
           },
         ]
+      }
+      prep_steps: {
+        Row: {
+          created_at: string
+          id: string
+          instruction: string
+          prep_plan_id: string
+          step_number: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          instruction: string
+          prep_plan_id: string
+          step_number: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          instruction?: string
+          prep_plan_id?: string
+          step_number?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prep_steps_prep_plan_id_fkey"
+            columns: ["prep_plan_id"]
+            isOneToOne: false
+            referencedRelation: "prep_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          admin_role: string | null
+          bed_time: string | null
+          created_at: string
+          full_name: string | null
+          grocery_day: number | null
+          id: string
+          is_admin: boolean
+          learning_time_minutes_per_week: number | null
+          meal_prep_day: number | null
+          onboarding_completed_at: string | null
+          school_commitments: string | null
+          time_zone: string | null
+          units: string | null
+          updated_at: string
+          wake_time: string | null
+          weekly_review_day: number | null
+          work_hours_note: string | null
+          work_status: string | null
+        }
+        Insert: {
+          admin_role?: string | null
+          bed_time?: string | null
+          created_at?: string
+          full_name?: string | null
+          grocery_day?: number | null
+          id: string
+          is_admin?: boolean
+          learning_time_minutes_per_week?: number | null
+          meal_prep_day?: number | null
+          onboarding_completed_at?: string | null
+          school_commitments?: string | null
+          time_zone?: string | null
+          units?: string | null
+          updated_at?: string
+          wake_time?: string | null
+          weekly_review_day?: number | null
+          work_hours_note?: string | null
+          work_status?: string | null
+        }
+        Update: {
+          admin_role?: string | null
+          bed_time?: string | null
+          created_at?: string
+          full_name?: string | null
+          grocery_day?: number | null
+          id?: string
+          is_admin?: boolean
+          learning_time_minutes_per_week?: number | null
+          meal_prep_day?: number | null
+          onboarding_completed_at?: string | null
+          school_commitments?: string | null
+          time_zone?: string | null
+          units?: string | null
+          updated_at?: string
+          wake_time?: string | null
+          weekly_review_day?: number | null
+          work_hours_note?: string | null
+          work_status?: string | null
+        }
+        Relationships: []
       }
       program_session_exercises: {
         Row: {
@@ -1881,228 +1678,54 @@ export type Database = {
           },
         ]
       }
-      training_program_phases: {
+      program_templates: {
         Row: {
-          focus: string | null
-          id: string
-          intensity_style: string | null
-          is_final: boolean
-          length_weeks: number
-          name: string
-          phase_order: number
-          program_id: string
-        }
-        Insert: {
-          focus?: string | null
-          id?: string
-          intensity_style?: string | null
-          is_final?: boolean
-          length_weeks?: number
-          name: string
-          phase_order: number
-          program_id: string
-        }
-        Update: {
-          focus?: string | null
-          id?: string
-          intensity_style?: string | null
-          is_final?: boolean
-          length_weeks?: number
-          name?: string
-          phase_order?: number
-          program_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "training_program_phases_program_id_fkey"
-            columns: ["program_id"]
-            isOneToOne: false
-            referencedRelation: "training_programs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      training_programs: {
-        Row: {
-          archetype: string
           created_at: string
+          days_per_week_max: number
+          days_per_week_min: number
           description: string | null
-          display_order: number
-          equipment_required: string[]
-          experience_level: string | null
+          equipment_context: string
+          experience_tier: string
+          goal: string
           id: string
           is_active: boolean
-          methodology_note: string | null
+          limitation_compatible_tags: string[]
           name: string
-          sessions_per_week_max: number
-          sessions_per_week_min: number
+          session_duration_band: string
           slug: string
-        }
-        Insert: {
-          archetype: string
-          created_at?: string
-          description?: string | null
-          display_order?: number
-          equipment_required?: string[]
-          experience_level?: string | null
-          id?: string
-          is_active?: boolean
-          methodology_note?: string | null
-          name: string
-          sessions_per_week_max: number
-          sessions_per_week_min: number
-          slug: string
-        }
-        Update: {
-          archetype?: string
-          created_at?: string
-          description?: string | null
-          display_order?: number
-          equipment_required?: string[]
-          experience_level?: string | null
-          id?: string
-          is_active?: boolean
-          methodology_note?: string | null
-          name?: string
-          sessions_per_week_max?: number
-          sessions_per_week_min?: number
-          slug?: string
-        }
-        Relationships: []
-      }
-      prep_plans: {
-        Row: {
-          container_count: number | null
-          created_at: string
-          estimated_minutes: number | null
-          id: string
-          meal_plan_id: string | null
-          status: string
-          user_id: string
-          week_start: string
-        }
-        Insert: {
-          container_count?: number | null
-          created_at?: string
-          estimated_minutes?: number | null
-          id?: string
-          meal_plan_id?: string | null
-          status?: string
-          user_id: string
-          week_start: string
-        }
-        Update: {
-          container_count?: number | null
-          created_at?: string
-          estimated_minutes?: number | null
-          id?: string
-          meal_plan_id?: string | null
-          status?: string
-          user_id?: string
-          week_start?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "prep_plans_meal_plan_id_fkey"
-            columns: ["meal_plan_id"]
-            isOneToOne: false
-            referencedRelation: "meal_plans"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      prep_steps: {
-        Row: {
-          created_at: string
-          id: string
-          instruction: string
-          prep_plan_id: string
-          step_number: number
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          instruction: string
-          prep_plan_id: string
-          step_number: number
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          instruction?: string
-          prep_plan_id?: string
-          step_number?: number
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "prep_steps_prep_plan_id_fkey"
-            columns: ["prep_plan_id"]
-            isOneToOne: false
-            referencedRelation: "prep_plans"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      profiles: {
-        Row: {
-          bed_time: string | null
-          created_at: string
-          full_name: string | null
-          grocery_day: number | null
-          id: string
-          is_admin: boolean
-          learning_time_minutes_per_week: number | null
-          meal_prep_day: number | null
-          onboarding_completed_at: string | null
-          school_commitments: string | null
-          time_zone: string | null
-          units: string | null
           updated_at: string
-          wake_time: string | null
-          weekly_review_day: number | null
-          work_hours_note: string | null
-          work_status: string | null
         }
         Insert: {
-          bed_time?: string | null
           created_at?: string
-          full_name?: string | null
-          grocery_day?: number | null
-          id: string
-          is_admin?: boolean
-          learning_time_minutes_per_week?: number | null
-          meal_prep_day?: number | null
-          onboarding_completed_at?: string | null
-          school_commitments?: string | null
-          time_zone?: string | null
-          units?: string | null
+          days_per_week_max: number
+          days_per_week_min: number
+          description?: string | null
+          equipment_context: string
+          experience_tier: string
+          goal: string
+          id?: string
+          is_active?: boolean
+          limitation_compatible_tags?: string[]
+          name: string
+          session_duration_band: string
+          slug: string
           updated_at?: string
-          wake_time?: string | null
-          weekly_review_day?: number | null
-          work_hours_note?: string | null
-          work_status?: string | null
         }
         Update: {
-          bed_time?: string | null
           created_at?: string
-          full_name?: string | null
-          grocery_day?: number | null
+          days_per_week_max?: number
+          days_per_week_min?: number
+          description?: string | null
+          equipment_context?: string
+          experience_tier?: string
+          goal?: string
           id?: string
-          is_admin?: boolean
-          learning_time_minutes_per_week?: number | null
-          meal_prep_day?: number | null
-          onboarding_completed_at?: string | null
-          school_commitments?: string | null
-          time_zone?: string | null
-          units?: string | null
+          is_active?: boolean
+          limitation_compatible_tags?: string[]
+          name?: string
+          session_duration_band?: string
+          slug?: string
           updated_at?: string
-          wake_time?: string | null
-          weekly_review_day?: number | null
-          work_hours_note?: string | null
-          work_status?: string | null
         }
         Relationships: []
       }
@@ -2398,6 +2021,56 @@ export type Database = {
         }
         Relationships: []
       }
+      sources: {
+        Row: {
+          accessed_at: string
+          canonical_url: string
+          created_at: string
+          expert_id: string | null
+          id: string
+          organization: string
+          published_at: string | null
+          source_type: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          accessed_at: string
+          canonical_url: string
+          created_at?: string
+          expert_id?: string | null
+          id?: string
+          organization: string
+          published_at?: string | null
+          source_type: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          accessed_at?: string
+          canonical_url?: string
+          created_at?: string
+          expert_id?: string | null
+          id?: string
+          organization?: string
+          published_at?: string | null
+          source_type?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sources_expert_id_fkey"
+            columns: ["expert_id"]
+            isOneToOne: false
+            referencedRelation: "experts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       step_logs: {
         Row: {
           count: number
@@ -2481,6 +2154,292 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      template_phases: {
+        Row: {
+          focus: string | null
+          id: string
+          intensity_style: string | null
+          is_final: boolean
+          length_weeks: number
+          name: string
+          phase_order: number
+          template_id: string
+        }
+        Insert: {
+          focus?: string | null
+          id?: string
+          intensity_style?: string | null
+          is_final?: boolean
+          length_weeks: number
+          name: string
+          phase_order: number
+          template_id: string
+        }
+        Update: {
+          focus?: string | null
+          id?: string
+          intensity_style?: string | null
+          is_final?: boolean
+          length_weeks?: number
+          name?: string
+          phase_order?: number
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "template_phases_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "program_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      template_sessions: {
+        Row: {
+          id: string
+          name: string
+          phase_id: string
+          session_index: number
+          session_type: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          phase_id: string
+          session_index: number
+          session_type?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          phase_id?: string
+          session_index?: number
+          session_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "template_sessions_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "template_phases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      template_slots: {
+        Row: {
+          coaching_notes: string | null
+          duration_minutes_max: number | null
+          duration_minutes_min: number | null
+          effort_target: string | null
+          id: string
+          is_optional: boolean
+          modality: string
+          movement_pattern: string
+          reps_max: number | null
+          reps_min: number | null
+          rest_seconds: number | null
+          session_id: string
+          sets_max: number | null
+          sets_min: number | null
+          slot_label: string
+          slot_order: number
+        }
+        Insert: {
+          coaching_notes?: string | null
+          duration_minutes_max?: number | null
+          duration_minutes_min?: number | null
+          effort_target?: string | null
+          id?: string
+          is_optional?: boolean
+          modality: string
+          movement_pattern: string
+          reps_max?: number | null
+          reps_min?: number | null
+          rest_seconds?: number | null
+          session_id: string
+          sets_max?: number | null
+          sets_min?: number | null
+          slot_label: string
+          slot_order: number
+        }
+        Update: {
+          coaching_notes?: string | null
+          duration_minutes_max?: number | null
+          duration_minutes_min?: number | null
+          effort_target?: string | null
+          id?: string
+          is_optional?: boolean
+          modality?: string
+          movement_pattern?: string
+          reps_max?: number | null
+          reps_min?: number | null
+          rest_seconds?: number | null
+          session_id?: string
+          sets_max?: number | null
+          sets_min?: number | null
+          slot_label?: string
+          slot_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "template_slots_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "template_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      training_program_phases: {
+        Row: {
+          focus: string | null
+          id: string
+          intensity_style: string | null
+          is_final: boolean
+          length_weeks: number
+          name: string
+          phase_order: number
+          program_id: string
+        }
+        Insert: {
+          focus?: string | null
+          id?: string
+          intensity_style?: string | null
+          is_final?: boolean
+          length_weeks?: number
+          name: string
+          phase_order: number
+          program_id: string
+        }
+        Update: {
+          focus?: string | null
+          id?: string
+          intensity_style?: string | null
+          is_final?: boolean
+          length_weeks?: number
+          name?: string
+          phase_order?: number
+          program_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_program_phases_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "training_programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      training_programs: {
+        Row: {
+          archetype: string
+          created_at: string
+          description: string | null
+          display_order: number
+          equipment_required: string[]
+          experience_level: string | null
+          id: string
+          is_active: boolean
+          methodology_note: string | null
+          name: string
+          sessions_per_week_max: number
+          sessions_per_week_min: number
+          slug: string
+        }
+        Insert: {
+          archetype: string
+          created_at?: string
+          description?: string | null
+          display_order?: number
+          equipment_required?: string[]
+          experience_level?: string | null
+          id?: string
+          is_active?: boolean
+          methodology_note?: string | null
+          name: string
+          sessions_per_week_max: number
+          sessions_per_week_min: number
+          slug: string
+        }
+        Update: {
+          archetype?: string
+          created_at?: string
+          description?: string | null
+          display_order?: number
+          equipment_required?: string[]
+          experience_level?: string | null
+          id?: string
+          is_active?: boolean
+          methodology_note?: string | null
+          name?: string
+          sessions_per_week_max?: number
+          sessions_per_week_min?: number
+          slug?: string
+        }
+        Relationships: []
+      }
+      weekly_adaptation_responses: {
+        Row: {
+          created_at: string
+          disliked_exercise_ids: string[]
+          id: string
+          liked_exercise_ids: string[]
+          next_week_preference: string | null
+          pain_location: string | null
+          pain_or_discomfort: string | null
+          perceived_difficulty: string | null
+          planned_sessions_completed: number | null
+          recovery_quality: string | null
+          submitted_at: string | null
+          user_id: string
+          week_start: string
+          workout_plan_id: string
+        }
+        Insert: {
+          created_at?: string
+          disliked_exercise_ids?: string[]
+          id?: string
+          liked_exercise_ids?: string[]
+          next_week_preference?: string | null
+          pain_location?: string | null
+          pain_or_discomfort?: string | null
+          perceived_difficulty?: string | null
+          planned_sessions_completed?: number | null
+          recovery_quality?: string | null
+          submitted_at?: string | null
+          user_id: string
+          week_start: string
+          workout_plan_id: string
+        }
+        Update: {
+          created_at?: string
+          disliked_exercise_ids?: string[]
+          id?: string
+          liked_exercise_ids?: string[]
+          next_week_preference?: string | null
+          pain_location?: string | null
+          pain_or_discomfort?: string | null
+          perceived_difficulty?: string | null
+          planned_sessions_completed?: number | null
+          recovery_quality?: string | null
+          submitted_at?: string | null
+          user_id?: string
+          week_start?: string
+          workout_plan_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weekly_adaptation_responses_workout_plan_id_fkey"
+            columns: ["workout_plan_id"]
+            isOneToOne: false
+            referencedRelation: "workout_plans"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       weekly_outcomes: {
         Row: {
@@ -2655,6 +2614,75 @@ export type Database = {
         }
         Relationships: []
       }
+      workout_plan_item_alternatives: {
+        Row: {
+          cardio_intensity: string | null
+          coaching_notes: string | null
+          created_at: string
+          duration_minutes: number | null
+          exercise_id: string
+          id: string
+          intensity_type: string | null
+          intensity_value: string | null
+          provenance: Json | null
+          rank: number
+          reps_max: number | null
+          reps_min: number | null
+          score: number | null
+          sets: number | null
+          workout_plan_item_id: string
+        }
+        Insert: {
+          cardio_intensity?: string | null
+          coaching_notes?: string | null
+          created_at?: string
+          duration_minutes?: number | null
+          exercise_id: string
+          id?: string
+          intensity_type?: string | null
+          intensity_value?: string | null
+          provenance?: Json | null
+          rank: number
+          reps_max?: number | null
+          reps_min?: number | null
+          score?: number | null
+          sets?: number | null
+          workout_plan_item_id: string
+        }
+        Update: {
+          cardio_intensity?: string | null
+          coaching_notes?: string | null
+          created_at?: string
+          duration_minutes?: number | null
+          exercise_id?: string
+          id?: string
+          intensity_type?: string | null
+          intensity_value?: string | null
+          provenance?: Json | null
+          rank?: number
+          reps_max?: number | null
+          reps_min?: number | null
+          score?: number | null
+          sets?: number | null
+          workout_plan_item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workout_plan_item_alternatives_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workout_plan_item_alternatives_workout_plan_item_id_fkey"
+            columns: ["workout_plan_item_id"]
+            isOneToOne: false
+            referencedRelation: "workout_plan_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workout_plan_items: {
         Row: {
           cardio_intensity: string | null
@@ -2824,7 +2852,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_admin: { Args: { uid: string }; Returns: boolean }
+      is_admin_owner: { Args: { uid: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
@@ -2953,6 +2982,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
