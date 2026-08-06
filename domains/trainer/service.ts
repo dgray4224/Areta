@@ -1,12 +1,18 @@
 "use server";
 
 import { randomBytes } from "crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
 import { createAdminClient } from "@/platform/supabase/admin";
 import { requireTrainer } from "@/platform/auth/trainer";
 import { requireUser } from "@/platform/auth/session";
 import { logAdminAction } from "@/platform/audit/log";
+import { getApprovedParameterValue } from "@/domains/parameters/service";
+import { generateAndSaveMealPlan, getActiveMealPlan, type MealPlanView } from "@/domains/mealplan/service";
+import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
+import { generateAndSaveWorkoutPlan, getActiveWorkoutPlan, approveWorkoutPlan, type WorkoutPlanView } from "@/domains/workoutplan/service";
 import type { ActionResult } from "@/platform/auth/actions";
+import type { Database } from "@/platform/db/types";
 import type {
   TrainerClientSummary,
   InviteCode,
@@ -14,6 +20,30 @@ import type {
   ClientGoal,
   MyTrainerInfo,
 } from "@/domains/trainer/types";
+
+/** Shared guard for every trainer action that touches a specific client's
+ * data — re-verifies the trainer_clients relationship server-side before
+ * calling any generate/approve/edit function below, on top of the RLS
+ * policies (migration 0066) that are the real backstop either way. Every
+ * domain function this calls into (generateAndSaveMealPlan,
+ * approveWorkoutPlan, etc.) takes a plain userId and trusts RLS rather
+ * than deriving identity from the caller's own session — same convention
+ * this file already uses, and exactly why this check has to happen here
+ * instead of inside those functions. */
+async function requireActiveClient(
+  trainerId: string,
+  clientId: string,
+  supabase: SupabaseClient<Database>
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("trainer_clients")
+    .select("id")
+    .eq("trainer_id", trainerId)
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  return !!data;
+}
 
 // Excludes visually ambiguous characters (0/O, 1/I/L) since a client has
 // to type this in by hand.
@@ -130,14 +160,9 @@ export async function getClientHistorySummary(clientId: string): Promise<ActionR
   const { user } = await requireTrainer();
   const supabase = await createClient();
 
-  const { data: relationship } = await supabase
-    .from("trainer_clients")
-    .select("id")
-    .eq("trainer_id", user.id)
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .maybeSingle();
-  if (!relationship) return { ok: false, error: "This is not your client." };
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
 
   const [weightRes, sleepRes, nutritionRes, recoveryRes, goalsRes] = await Promise.all([
     supabase
@@ -226,14 +251,9 @@ export async function updateClientGoal(
   const { user } = await requireTrainer();
   const supabase = await createClient();
 
-  const { data: relationship } = await supabase
-    .from("trainer_clients")
-    .select("id")
-    .eq("trainer_id", user.id)
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .maybeSingle();
-  if (!relationship) return { ok: false, error: "This is not your client." };
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
 
   const { error } = await supabase
     .from("goals")
@@ -246,6 +266,106 @@ export async function updateClientGoal(
   if (error) return { ok: false, error: error.message };
 
   return { ok: true, data: undefined };
+}
+
+// ---------------------------------------------------------------------------
+// Nutrition and workout customization. Deliberately reuses the exact same
+// deterministic generate/approve pipeline the client uses on themselves
+// (domains/mealplan, domains/workoutplan, domains/parameters) rather than
+// hand-editing plan rows — a trainer regenerating/approving a plan runs
+// the same vetted engine, just on a client's behalf. Item-level exercise
+// swap/customize (domains/workoutplan/service.ts's
+// swapWorkoutPlanItemExercise/customizeWorkoutPlanItemExercise) isn't
+// wired up here yet — deliberate next step, same as goal editing above.
+// ---------------------------------------------------------------------------
+
+export type ClientNutritionOverview = {
+  calorieTarget: number | null;
+  proteinTarget: number | null;
+  mealPlan: MealPlanView | null;
+};
+
+export async function getClientNutritionOverview(
+  clientId: string
+): Promise<ActionResult<ClientNutritionOverview>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const [calorieTarget, proteinTarget, mealPlan] = await Promise.all([
+    getApprovedParameterValue(clientId, "nutrition", "calorie_target"),
+    getApprovedParameterValue(clientId, "nutrition", "protein_target_g"),
+    getActiveMealPlan(clientId, supabase),
+  ]);
+
+  return { ok: true, data: { calorieTarget, proteinTarget, mealPlan } };
+}
+
+/** Requires calorie/protein targets already approved (by the client
+ * themselves, in onboarding/plan setup — a trainer doesn't get a separate
+ * path to approve those targets in this pass) — same precondition
+ * generateAndSaveMealPlan enforces for anyone calling it. */
+export async function generateClientMealPlan(clientId: string): Promise<ActionResult<{ warnings: string[] }>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  return generateAndSaveMealPlan(clientId);
+}
+
+/** Cascades into the grocery list and Sunday prep plan too, same as when
+ * the client approves their own plan (approveMealPlanAndGenerateDownstream). */
+export async function approveClientMealPlan(clientId: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  return approveMealPlanAndGenerateDownstream(clientId);
+}
+
+export async function getClientWorkoutOverview(
+  clientId: string
+): Promise<ActionResult<{ workoutPlan: WorkoutPlanView | null }>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const workoutPlan = await getActiveWorkoutPlan(clientId, supabase);
+  return { ok: true, data: { workoutPlan } };
+}
+
+export async function generateClientWorkoutPlan(clientId: string): Promise<ActionResult<{ warnings: string[] }>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  return generateAndSaveWorkoutPlan(clientId);
+}
+
+export async function approveClientWorkoutPlan(clientId: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  return approveWorkoutPlan(clientId);
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +443,22 @@ export async function redeemTrainerInviteCode(rawCode: string): Promise<ActionRe
     return { ok: false, error: "This trainer's access has been revoked." };
   }
 
+  // Atomic claim on the code itself (WHERE used_at IS NULL) before the
+  // trainer_clients insert, not after — closes a race where two
+  // concurrent redemptions of the same leaked/shared code could both
+  // pass the used_at check above and both link, since neither had
+  // claimed the code yet at check time.
+  const { data: claimed } = await admin
+    .from("trainer_invite_codes")
+    .update({ used_by: user.id, used_at: new Date().toISOString() })
+    .eq("id", invite.id)
+    .is("used_at", null)
+    .select("id")
+    .maybeSingle();
+  if (!claimed) {
+    return { ok: false, error: "This code has already been used." };
+  }
+
   const { error: insertError } = await admin.from("trainer_clients").insert({
     trainer_id: invite.trainer_id,
     client_id: user.id,
@@ -330,13 +466,10 @@ export async function redeemTrainerInviteCode(rawCode: string): Promise<ActionRe
   if (insertError) {
     // Most likely the partial unique index (trainer_clients_one_active_client)
     // rejecting a race with another redemption for this same client.
+    // Release the claim above so the code isn't burned for nothing.
+    await admin.from("trainer_invite_codes").update({ used_by: null, used_at: null }).eq("id", invite.id);
     return { ok: false, error: "Could not link to this trainer — you may already have an active trainer." };
   }
-
-  await admin
-    .from("trainer_invite_codes")
-    .update({ used_by: user.id, used_at: new Date().toISOString() })
-    .eq("id", invite.id);
 
   await logAdminAction({
     actorId: user.id,

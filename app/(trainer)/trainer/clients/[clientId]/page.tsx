@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getClientHistorySummary } from "@/domains/trainer/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
+import { LinkButton } from "@/platform/ui/Button";
 import { GoalEditor } from "./GoalEditor";
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ clientId: string }> }) {
@@ -17,11 +18,19 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
         ← Your clients
       </Link>
 
+      <div className="flex flex-wrap gap-2">
+        <LinkButton href={`/trainer/clients/${clientId}/nutrition`} variant="secondary">
+          Nutrition
+        </LinkButton>
+        <LinkButton href={`/trainer/clients/${clientId}/workout`} variant="secondary">
+          Workout program
+        </LinkButton>
+      </div>
+
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Goals</h2>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Status and priority are editable here. Nutrition targets and workout programs aren&apos;t yet —
-          that&apos;s the next pass; the access to write them already exists at the database level.
+          Status and priority are editable here.
         </p>
         {goals.length === 0 ? (
           <EmptyState title="No goals yet" description="This client hasn't set any goals." />
