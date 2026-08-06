@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getClientWorkoutOverview, generateClientWorkoutPlan, approveClientWorkoutPlan } from "@/domains/trainer/service";
+import {
+  getClientWorkoutOverview,
+  generateClientWorkoutPlan,
+  approveClientWorkoutPlan,
+  getClientProgramAssignment,
+} from "@/domains/trainer/service";
+import { listMyPrograms } from "@/domains/trainerprogram/service";
 import { getExercisesByIds, getAllExercises } from "@/domains/exerciselibrary/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { PlanActions } from "../PlanActions";
 import { WorkoutItemCustomizer } from "./WorkoutItemCustomizer";
 import { AddWorkoutItem } from "./AddWorkoutItem";
+import { AssignedProgramPanel } from "./AssignedProgramPanel";
+import { AssignProgramForm } from "./AssignProgramForm";
 import type { WorkoutPlanItemView } from "@/domains/workoutplan/service";
 import type { Exercise } from "@/domains/exerciselibrary/types";
 
@@ -38,9 +46,14 @@ function formatPrescription(item: WorkoutPlanItemView): string {
 
 export default async function ClientWorkoutPage({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
-  const result = await getClientWorkoutOverview(clientId);
+  const [result, assignment, allPrograms] = await Promise.all([
+    getClientWorkoutOverview(clientId),
+    getClientProgramAssignment(clientId),
+    listMyPrograms(),
+  ]);
   if (!result.ok) notFound();
   const { workoutPlan } = result.data;
+  const publishedPrograms = allPrograms.filter((p) => p.status === "published");
 
   return (
     <div className="space-y-6">
@@ -49,25 +62,49 @@ export default async function ClientWorkoutPage({ params }: { params: Promise<{ 
       </Link>
       <h2 className="text-lg font-semibold">Workout program</h2>
 
-      <p className="text-sm text-neutral-600 dark:text-neutral-400">
-        Generating pulls from the same training-program library your client&apos;s own plan would use.
-        Each item can be freely replaced with any exercise in the library, or you can add extra exercises
-        to a day — both need an already-<span className="font-medium">approved</span> plan to start from,
-        and both send it back to draft afterward so the change gets approved before it&apos;s live again,
-        same as a fresh generate.
-      </p>
+      {assignment ? (
+        <AssignedProgramPanel clientId={clientId} assignment={assignment} programs={publishedPrograms} />
+      ) : (
+        <Card>
+          <p className="mb-2 text-sm font-medium">Assign one of your programs</p>
+          <p className="mb-3 text-sm text-neutral-600 dark:text-neutral-400">
+            Write and reuse your own programs at{" "}
+            <Link href="/trainer/programs" className="underline">
+              Your programs
+            </Link>
+            . Once assigned, this client&apos;s weekly plan is generated straight from it — no need to fall back to
+            the library generator below.
+          </p>
+          <AssignProgramForm clientId={clientId} programs={publishedPrograms} />
+        </Card>
+      )}
 
-      <PlanActions
-        clientId={clientId}
-        hasDraft={workoutPlan?.status === "draft"}
-        onGenerate={generateClientWorkoutPlan}
-        onApprove={approveClientWorkoutPlan}
-        generateLabel={workoutPlan ? "Regenerate plan" : "Generate workout plan"}
-        approveLabel="Approve plan"
-      />
+      <details className="text-sm text-neutral-500">
+        <summary className="cursor-pointer select-none">
+          {workoutPlan ? "Library-generated plan options" : "Or generate from the shared library instead"}
+        </summary>
+        <div className="mt-3 space-y-3">
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            Pulls from the same training-program library your client&apos;s own onboarding-driven plan would use.
+            Blocked automatically while a program is assigned above (unassign it first) — the two would otherwise
+            silently overwrite each other&apos;s draft for the same week.
+          </p>
+          <PlanActions
+            clientId={clientId}
+            hasDraft={workoutPlan?.status === "draft"}
+            onGenerate={generateClientWorkoutPlan}
+            onApprove={approveClientWorkoutPlan}
+            generateLabel={workoutPlan ? "Regenerate plan" : "Generate workout plan"}
+            approveLabel="Approve plan"
+          />
+        </div>
+      </details>
 
       {!workoutPlan || workoutPlan.items.length === 0 ? (
-        <EmptyState title="No workout plan yet" description="Generate one above." />
+        <EmptyState
+          title="No workout plan yet"
+          description="Assign a program above, or generate one from the library."
+        />
       ) : (
         <WorkoutPlanBody clientId={clientId} items={workoutPlan.items} status={workoutPlan.status} />
       )}

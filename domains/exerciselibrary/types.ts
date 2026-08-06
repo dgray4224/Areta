@@ -33,4 +33,8 @@ export type AdminExercise = Exercise & {
   imageUrl: string | null;
   videoUrl: string | null;
   createdAt: string;
+  /** Set only for exercises a trainer submitted while building a
+   * program (migration 0075) — null for every pre-existing and
+   * admin-authored row. */
+  createdBy: string | null;
 };

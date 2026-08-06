@@ -20,6 +20,8 @@ import {
   type WorkoutPlanItemView,
   type CustomizeExerciseInput,
 } from "@/domains/workoutplan/service";
+import { getFirstPhase } from "@/domains/trainerprogram/service";
+import { generateAndSaveFromTrainerProgram } from "@/domains/trainerprogram/materialize";
 import type { ActionResult } from "@/platform/auth/actions";
 import type { Database } from "@/platform/db/types";
 import type {
@@ -33,6 +35,7 @@ import type {
   MyTrainerRequest,
   IncomingTrainerRequest,
 } from "@/domains/trainer/types";
+import type { TrainerProgramAssignment } from "@/domains/trainerprogram/types";
 
 /** Shared guard for every trainer action that touches a specific client's
  * data — re-verifies the trainer_clients relationship server-side before
@@ -581,6 +584,157 @@ export async function addClientWorkoutItem(
   if (!demoted.ok) return demoted;
 
   await logTrainerAction(user, "client_workout_item_added", clientId, { dayOfWeek, ...input });
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Trainer-authored programs (2026-08-06) — assigning one of the trainer's
+// own domains/trainerprogram programs to a client, the default workout
+// view for a trainer's client page now. Authoring itself (create program/
+// phase/session/exercise) lives in domains/trainerprogram/service.ts,
+// since it's not client-scoped — these are the only trainer-program
+// functions that need requireActiveClient.
+// ---------------------------------------------------------------------------
+
+export async function assignProgramToClient(
+  clientId: string,
+  programId: string,
+  onComplete: "repeat" | "freeze" = "repeat"
+): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { data: programRow } = await supabase
+    .from("trainer_programs")
+    .select("id, trainer_id, status")
+    .eq("id", programId)
+    .maybeSingle();
+  if (!programRow || programRow.trainer_id !== user.id) {
+    return { ok: false, error: "Program not found." };
+  }
+  // Also enforced by only listing published programs in the assign UI,
+  // but checked again here since a draft (including one an AI import
+  // just created, before the trainer has reviewed it) must never reach a
+  // client via a direct action call either.
+  if (programRow.status !== "published") {
+    return { ok: false, error: "Publish this program before assigning it." };
+  }
+
+  const firstPhase = await getFirstPhase(programId, supabase);
+  if (!firstPhase) {
+    return { ok: false, error: "Add at least one phase to this program before assigning it." };
+  }
+
+  // End any existing active assignment for this client first — the
+  // partial unique index (one active assignment per client, migration
+  // 0075) would otherwise reject the new insert. Switching programs
+  // deliberately doesn't require a separate "unassign" step first.
+  const { error: endError } = await supabase
+    .from("trainer_program_assignments")
+    .update({ status: "ended", ended_at: new Date().toISOString() })
+    .eq("client_id", clientId)
+    .eq("status", "active");
+  if (endError) return { ok: false, error: endError.message };
+
+  const { error: insertError } = await supabase.from("trainer_program_assignments").insert({
+    program_id: programId,
+    trainer_id: user.id,
+    client_id: clientId,
+    on_complete: onComplete,
+    current_phase_id: firstPhase.id,
+    phase_week_number: 1,
+  });
+  if (insertError) return { ok: false, error: insertError.message };
+
+  const generated = await generateAndSaveFromTrainerProgram(clientId, supabase);
+  if (!generated.ok) return generated;
+
+  await logTrainerAction(user, "client_program_assigned", clientId, { programId, onComplete });
+  return { ok: true, data: undefined };
+}
+
+export async function unassignProgram(clientId: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { error } = await supabase
+    .from("trainer_program_assignments")
+    .update({ status: "ended", ended_at: new Date().toISOString() })
+    .eq("client_id", clientId)
+    .eq("status", "active");
+  if (error) return { ok: false, error: error.message };
+
+  await logTrainerAction(user, "client_program_unassigned", clientId, {});
+  return { ok: true, data: undefined };
+}
+
+async function loadAssignmentView(
+  clientId: string,
+  supabase: SupabaseClient<Database>
+): Promise<TrainerProgramAssignment | null> {
+  const { data: row } = await supabase
+    .from("trainer_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!row) return null;
+
+  const [{ data: programRow }, { data: phaseRow }] = await Promise.all([
+    supabase.from("trainer_programs").select("name").eq("id", row.program_id).maybeSingle(),
+    row.current_phase_id
+      ? supabase.from("trainer_program_phases").select("name").eq("id", row.current_phase_id).maybeSingle()
+      : Promise.resolve({ data: null as { name: string } | null }),
+  ]);
+
+  return {
+    id: row.id,
+    programId: row.program_id,
+    programName: programRow?.name ?? "Untitled program",
+    trainerId: row.trainer_id,
+    clientId: row.client_id,
+    status: row.status as TrainerProgramAssignment["status"],
+    onComplete: row.on_complete as TrainerProgramAssignment["onComplete"],
+    currentPhaseId: row.current_phase_id,
+    currentPhaseName: phaseRow?.name ?? null,
+    phaseWeekNumber: row.phase_week_number,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+  };
+}
+
+export async function getClientProgramAssignment(clientId: string): Promise<TrainerProgramAssignment | null> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) return null;
+  return loadAssignmentView(clientId, supabase);
+}
+
+/** Manual "(re)generate this week" for a trainer-assigned program — same
+ * button whether it's the very first week or a mid-program regenerate;
+ * generateAndSaveFromTrainerProgram's own existingPlan check decides
+ * whether that means progressing to a new week or re-materializing the
+ * current one. */
+export async function generateClientWorkoutPlanFromProgram(
+  clientId: string
+): Promise<ActionResult<{ warnings: string[] }>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await generateAndSaveFromTrainerProgram(clientId, supabase);
+  if (result.ok) await logTrainerAction(user, "client_workout_plan_generated_from_program", clientId, {});
   return result;
 }
 

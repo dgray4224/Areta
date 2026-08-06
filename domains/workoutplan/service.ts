@@ -43,6 +43,28 @@ export async function generateAndSaveWorkoutPlan(
   const supabase = client ?? (await createClient());
   const weekStart = currentWeekStart();
 
+  // A client with an active trainer-assigned program (2026-08-06) should
+  // never have it silently clobbered by the library generator — both
+  // upsert onto the same (user_id, week_start) row, so whichever ran last
+  // would win with no warning either way. Trainer-side generation always
+  // goes through generateAndSaveFromTrainerProgram instead, which is
+  // exempt from this check (different code path entirely); this only
+  // guards the path a client or trainer could otherwise reach by mistake
+  // (the client's own "Generate" button on their Workouts page, or a
+  // trainer's demoted-to-secondary "Generate from library" action).
+  const { data: activeAssignment } = await supabase
+    .from("trainer_program_assignments")
+    .select("id")
+    .eq("client_id", userId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (activeAssignment) {
+    return {
+      ok: false,
+      error: "Your trainer has assigned you a program. Ask them to change or unassign it before generating a plan here.",
+    };
+  }
+
   const [sessionsPerWeek, parameters, { data: responses }] = await Promise.all([
     getApprovedParameterValue(userId, "exercise", "sessions_per_week"),
     getGeneratedParameters(userId, "exercise"),
