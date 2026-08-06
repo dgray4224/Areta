@@ -4,8 +4,10 @@ import {
   getClientWorkoutOverview,
   getClientProgramAssignment,
   listClientAssignmentHistory,
+  getNextScheduledSession,
 } from "@/domains/trainer/service";
 import { listMyPrograms } from "@/domains/trainerprogram/service";
+import { sundayOfWeekContaining, addDays } from "@/domains/trainerprogram/calendar-projection";
 import { getExercisesByIds, getAllExercises } from "@/domains/exerciselibrary/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
@@ -53,16 +55,22 @@ export default async function ClientWorkoutPage({
 }) {
   const { clientId } = await params;
   const { assignWarnings } = await searchParams;
-  const [result, assignment, allPrograms, historyResult] = await Promise.all([
+  const [result, assignment, allPrograms, historyResult, nextSessionResult] = await Promise.all([
     getClientWorkoutOverview(clientId),
     getClientProgramAssignment(clientId),
     listMyPrograms(),
     listClientAssignmentHistory(clientId),
+    getNextScheduledSession(clientId),
   ]);
   if (!result.ok) notFound();
   const { workoutPlan } = result.data;
   const publishedPrograms = allPrograms.filter((p) => p.status === "published");
   const history = historyResult.ok ? historyResult.data : [];
+  const nextSession = nextSessionResult.ok ? nextSessionResult.data : null;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const thisWeekStart = sundayOfWeekContaining(today);
+  const thisWeekEnd = addDays(thisWeekStart, 6);
 
   let warnings: string[] = [];
   if (assignWarnings) {
@@ -112,7 +120,18 @@ export default async function ClientWorkoutPage({
       ) : null}
 
       {!workoutPlan || workoutPlan.items.length === 0 ? (
-        <EmptyState title="No workout plan yet" description="Assign a program above to get started." />
+        assignment ? (
+          <EmptyState
+            title={`Nothing scheduled ${thisWeekStart} – ${thisWeekEnd}`}
+            description={
+              nextSession
+                ? `This program has no session in the rest of this week. Next one: ${nextSession.date}${nextSession.sessionName ? ` — ${nextSession.sessionName}` : ""}. See the calendar above for the full schedule.`
+                : "This program has no session in the rest of this week, and none in the next 30 days either — check the program's phases and sessions, or the calendar above."
+            }
+          />
+        ) : (
+          <EmptyState title="No workout plan yet" description="Assign a program above to get started." />
+        )
       ) : (
         <WorkoutPlanBody clientId={clientId} items={workoutPlan.items} status={workoutPlan.status} />
       )}

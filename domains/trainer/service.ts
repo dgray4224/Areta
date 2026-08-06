@@ -21,7 +21,7 @@ import {
 } from "@/domains/workoutplan/service";
 import { getFirstPhase, getHydratedPhasesForProgram } from "@/domains/trainerprogram/service";
 import { generateAndSaveFromTrainerProgram } from "@/domains/trainerprogram/materialize";
-import { projectProgramRange } from "@/domains/trainerprogram/calendar-projection";
+import { projectProgramRange, addDays } from "@/domains/trainerprogram/calendar-projection";
 import {
   setDateOverride,
   clearDateOverride,
@@ -920,6 +920,53 @@ export async function getClientMonthCalendar(
   });
 
   return { ok: true, data: days };
+}
+
+/** For the workout page's empty-state -- when the *current* week
+ * genuinely has nothing scheduled (a real, common case: any program with
+ * fewer than 7 sessions/week will have some weeks where none of its
+ * days fall between "today" and the end of the week, especially right
+ * after assigning mid-week), "No workout plan yet" reads as broken even
+ * though it's accurate to that one week. This looks further ahead (30
+ * days) so the page can say what's actually coming instead of just
+ * looking empty. Found 2026-08-06 when a trainer assigned a Mon/Wed-only
+ * program on a Thursday -- the rest of that calendar week legitimately
+ * has no sessions, but the UI gave no indication why or what to expect
+ * next. */
+export async function getNextScheduledSession(
+  clientId: string
+): Promise<ActionResult<{ date: string; sessionName: string | null } | null>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { data: assignment } = await supabase
+    .from("trainer_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!assignment) return { ok: true, data: null };
+
+  const phases = await getHydratedPhasesForProgram(assignment.program_id, supabase);
+  const today = new Date().toISOString().slice(0, 10);
+  const rangeEnd = addDays(today, 30);
+  const overridesByDate = await getOverridesForRange(assignment.id, today, rangeEnd, supabase);
+
+  const days = projectProgramRange({
+    startsOn: assignment.starts_on,
+    endDate: assignment.end_date,
+    phases,
+    onComplete: assignment.on_complete as TrainerProgramAssignment["onComplete"],
+    rangeStart: today,
+    rangeEnd,
+    overridesByDate,
+  });
+
+  const next = days.find((d) => d.exercises.length > 0);
+  return { ok: true, data: next ? { date: next.date, sessionName: next.sessionName } : null };
 }
 
 export async function setClientDateOverride(

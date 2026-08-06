@@ -6,6 +6,7 @@ import Link from "next/link";
 import { unassignProgram, generateClientWorkoutPlanFromProgram } from "@/domains/trainer/service";
 import { Button } from "@/platform/ui/Button";
 import { Card } from "@/platform/ui/Card";
+import { sundayOfWeekContaining, addDays } from "@/domains/trainerprogram/calendar-projection";
 import type { TrainerProgramAssignment, TrainerProgram } from "@/domains/trainerprogram/types";
 import { AssignProgramForm } from "./AssignProgramForm";
 
@@ -23,6 +24,9 @@ export function AssignedProgramPanel({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const today = new Date().toISOString().slice(0, 10);
+  const weekStart = sundayOfWeekContaining(today);
+  const weekEnd = addDays(weekStart, 6);
 
   const onRegenerate = () => {
     setError(null);
@@ -93,9 +97,9 @@ export function AssignedProgramPanel({
           variant="secondary"
           disabled={isPending}
           onClick={onRegenerate}
-          title="Re-materializes this week's draft from the program (and any calendar edits) — use after changing the program's content."
+          title={`Re-materializes ${weekStart} – ${weekEnd}'s draft from the program (and any calendar edits) — use after changing the program's content. If nothing falls in that range, this stays empty; check the calendar for other weeks.`}
         >
-          {isPending ? "Working…" : "Regenerate this week"}
+          {isPending ? "Working…" : `Regenerate this week (${weekStart} – ${weekEnd})`}
         </Button>
         <Button
           type="button"
