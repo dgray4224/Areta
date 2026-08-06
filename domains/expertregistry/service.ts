@@ -598,6 +598,16 @@ export async function createEvidenceBundle(input: unknown): Promise<
     .single();
   if (claimError) return { ok: false, error: `Claim: ${claimError.message}` };
 
+  // Known, confirmed capability gap (2026-08-06, same shape and same
+  // resolution as evidenceBundleSchema's expertMode note): source_id is
+  // always the bundle's own mandatory source here, even though
+  // limitation_rules.source_id is nullable and the deleted
+  // LimitationRuleForm let a rule be recorded on internal clinical
+  // judgment alone, no citation required. Accepted consequence of
+  // authoring a limitation rule only ever as an add-on to a full
+  // expert+source+claim bundle now, not a standalone capability —
+  // same "fully combined" trade-off already confirmed for bare
+  // institutional sources.
   let limitationRuleId: string | null = null;
   if (v.includeLimitationRule) {
     const { data: rule, error: ruleError } = await supabase

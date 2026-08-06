@@ -22,10 +22,9 @@ export async function getTrainerStatus(userId: string): Promise<boolean> {
  * bounced to /dashboard, same "just go home" pattern as requireAdmin(). */
 export async function requireTrainer(): Promise<TrainerSession> {
   const user = await requireUser();
-  const supabase = await createClient();
-  const { data: profile } = await supabase.from("profiles").select("is_trainer").eq("id", user.id).maybeSingle();
+  const isTrainer = await getTrainerStatus(user.id);
 
-  if (!profile?.is_trainer) {
+  if (!isTrainer) {
     redirect("/dashboard");
   }
 

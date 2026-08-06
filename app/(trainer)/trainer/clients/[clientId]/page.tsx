@@ -93,7 +93,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
                   <span>
                     {log.date} · {log.meal}
                   </span>
-                  <span>{log.calories ? `${log.calories} cal` : log.food}</span>
+                  <span>{log.calories != null ? `${log.calories} cal` : log.food}</span>
                 </li>
               ))}
             </ul>

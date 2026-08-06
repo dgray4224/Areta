@@ -8,11 +8,11 @@ import { requireTrainer } from "@/platform/auth/trainer";
 import { requireUser } from "@/platform/auth/session";
 import { logAdminAction } from "@/platform/audit/log";
 import { getApprovedParameterValue, getGeneratedParameters, approveAllGeneratedParameters, type StoredParameter } from "@/domains/parameters/service";
-import { generateAndSaveMealPlan, getActiveMealPlan, type MealPlanView } from "@/domains/mealplan/service";
+import { generateAndSaveMealPlan, getMealPlanForWeek, type MealPlanView } from "@/domains/mealplan/service";
 import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
 import {
   generateAndSaveWorkoutPlan,
-  getActiveWorkoutPlan,
+  getWorkoutPlanForWeek,
   approveWorkoutPlan,
   customizeWorkoutPlanItemExercise,
   addWorkoutPlanItemExercise,
@@ -373,7 +373,12 @@ export async function getClientNutritionOverview(
     getApprovedParameterValue(clientId, "nutrition", "calorie_target"),
     getApprovedParameterValue(clientId, "nutrition", "protein_target_g"),
     getGeneratedParameters(clientId, "nutrition"),
-    getActiveMealPlan(clientId, supabase),
+    // getMealPlanForWeek, not getActiveMealPlan (status='active' only) —
+    // found in the third code-review pass: generateAndSaveMealPlan always
+    // inserts status:"draft", so getActiveMealPlan could never see a
+    // plan the trainer had just generated, and the Approve action was
+    // unreachable. Matches app/(app)/plan/meals/page.tsx's own pattern.
+    getMealPlanForWeek(clientId, undefined, supabase),
   ]);
 
   return { ok: true, data: { calorieTarget, proteinTarget, parameters, mealPlan } };
@@ -452,7 +457,9 @@ export async function getClientWorkoutOverview(
     return { ok: false, error: "This is not your client." };
   }
 
-  const workoutPlan = await getActiveWorkoutPlan(clientId, supabase);
+  // getWorkoutPlanForWeek, not getActiveWorkoutPlan — same fix and same
+  // reasoning as getClientNutritionOverview above.
+  const workoutPlan = await getWorkoutPlanForWeek(clientId, undefined, supabase);
   return { ok: true, data: { workoutPlan } };
 }
 
@@ -482,13 +489,6 @@ export async function approveClientWorkoutPlan(clientId: string): Promise<Action
   return result;
 }
 
-/** Free-form replace — see CustomizeExerciseInput's own doc comment in
- * domains/workoutplan/service.ts. Curated "alternates" swap
- * (swapWorkoutPlanItemExercise, mobile-only today via app/api/exercise)
- * isn't wired up here — that needs the same slot-options/equipment
- * filtering app/api/exercise/route.ts's GET handler does, which is a
- * bigger lift than a free-pick replace; deliberately out of scope for
- * this pass. */
 /** customizeWorkoutPlanItemExercise/addWorkoutPlanItemExercise (unlike
  * this file's own generate/approve wrappers) write straight to an
  * existing plan with no approval gate of their own — fine for a client
@@ -498,11 +498,48 @@ export async function approveClientWorkoutPlan(clientId: string): Promise<Action
  * plans"). Found in the 2026-08-06 code-review pass. Demoting the
  * client's active plan back to draft after a trainer edit means the
  * change has to be approved (by the trainer or the client) before it's
- * live again, same as a fresh generate — not a silent live rewrite. */
-async function demoteActivePlanToDraft(supabase: SupabaseClient<Database>, clientId: string): Promise<void> {
-  await supabase.from("workout_plans").update({ status: "draft" }).eq("user_id", clientId).eq("status", "active");
+ * live again, same as a fresh generate — not a silent live rewrite.
+ *
+ * Returns an ActionResult rather than swallowing its own error (found
+ * missing in the third code-review pass): the caller's item-write can
+ * succeed while this demotion fails, and the original code returned the
+ * item-write's own `ok: true` regardless, silently leaving the trainer's
+ * change live on an "active" plan with no re-approval step required —
+ * exactly the bug this function exists to prevent.
+ *
+ * Honest limit, also raised in the third pass: this is an app-level
+ * speed bump, not a database-enforced one — workout_plans_trainer_update
+ * (migration 0066) grants a trainer row-level UPDATE with no column/
+ * value restriction (unlike goals/generated_parameters, which got a
+ * BEFORE UPDATE trigger in migration 0070/0072), so a trainer could set
+ * status back to 'active' via a direct API call instead of the intended
+ * approveClientWorkoutPlan flow. A trigger can't meaningfully close that
+ * gap here without also breaking the legitimate approve path, which
+ * performs the exact same "set status = active" write — there's no
+ * value-level way to distinguish a reviewed approval from a bypass.
+ * What this function *does* guarantee: the normal app-mediated flow
+ * always pauses for re-approval, and no edit is silently left live by
+ * accident. */
+async function demoteActivePlanToDraft(
+  supabase: SupabaseClient<Database>,
+  clientId: string
+): Promise<ActionResult> {
+  const { error } = await supabase
+    .from("workout_plans")
+    .update({ status: "draft" })
+    .eq("user_id", clientId)
+    .eq("status", "active");
+  if (error) return { ok: false, error: `Saved, but couldn't require re-approval: ${error.message}` };
+  return { ok: true, data: undefined };
 }
 
+/** Free-form replace — see CustomizeExerciseInput's own doc comment in
+ * domains/workoutplan/service.ts. Curated "alternates" swap
+ * (swapWorkoutPlanItemExercise, mobile-only today via app/api/exercise)
+ * isn't wired up here — that needs the same slot-options/equipment
+ * filtering app/api/exercise/route.ts's GET handler does, which is a
+ * bigger lift than a free-pick replace; deliberately out of scope for
+ * this pass. */
 export async function customizeClientWorkoutItem(
   clientId: string,
   itemId: string,
@@ -516,10 +553,12 @@ export async function customizeClientWorkoutItem(
   }
 
   const result = await customizeWorkoutPlanItemExercise(clientId, itemId, input, supabase);
-  if (result.ok) {
-    await demoteActivePlanToDraft(supabase, clientId);
-    await logTrainerAction(user, "client_workout_item_customized", clientId, { itemId, ...input });
-  }
+  if (!result.ok) return result;
+
+  const demoted = await demoteActivePlanToDraft(supabase, clientId);
+  if (!demoted.ok) return demoted;
+
+  await logTrainerAction(user, "client_workout_item_customized", clientId, { itemId, ...input });
   return result;
 }
 
@@ -536,10 +575,12 @@ export async function addClientWorkoutItem(
   }
 
   const result = await addWorkoutPlanItemExercise(clientId, dayOfWeek, input, supabase);
-  if (result.ok) {
-    await demoteActivePlanToDraft(supabase, clientId);
-    await logTrainerAction(user, "client_workout_item_added", clientId, { dayOfWeek, ...input });
-  }
+  if (!result.ok) return result;
+
+  const demoted = await demoteActivePlanToDraft(supabase, clientId);
+  if (!demoted.ok) return demoted;
+
+  await logTrainerAction(user, "client_workout_item_added", clientId, { dayOfWeek, ...input });
   return result;
 }
 
@@ -967,10 +1008,21 @@ export async function respondToTrainerRequest(requestId: string, accept: boolean
   }
 
   if (!accept) {
-    await admin
+    const { error: declineError } = await admin
       .from("trainer_requests")
       .update({ status: "declined", responded_at: new Date().toISOString() })
       .eq("id", requestId);
+    if (declineError) return { ok: false, error: declineError.message };
+
+    await logAdminAction({
+      actorId: user.id,
+      actorEmail: user.email ?? null,
+      action: "trainer_request_declined",
+      targetType: "trainer_client",
+      targetId: request.client_id,
+      detail: { trainerId: user.id, clientId: request.client_id, requestId },
+    });
+
     return { ok: true, data: undefined };
   }
 

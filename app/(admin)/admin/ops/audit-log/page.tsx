@@ -26,6 +26,7 @@ const ACTION_LABELS: Record<string, string> = {
   trainer_invite_code_generated: "Trainer invite code generated",
   trainer_invite_code_revoked: "Trainer invite code revoked",
   trainer_request_accepted: "Trainer request accepted",
+  trainer_request_declined: "Trainer request declined",
 };
 
 function shortId(id: string): string {
