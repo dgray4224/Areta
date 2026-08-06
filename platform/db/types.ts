@@ -2992,6 +2992,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_visible_profile_names: {
+        Args: { target_ids: string[] }
+        Returns: {
+          full_name: string
+          id: string
+        }[]
+      }
       is_admin: { Args: { uid: string }; Returns: boolean }
       is_admin_owner: { Args: { uid: string }; Returns: boolean }
       is_trainer: { Args: { uid: string }; Returns: boolean }

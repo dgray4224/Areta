@@ -58,6 +58,22 @@ async function requireActiveClient(
   return !!data;
 }
 
+/** Every profiles.full_name lookup in this file goes through this RPC
+ * (migration 0072), never a direct `.from("profiles").select(...)` —
+ * profiles has no row-level SELECT policy granting cross-user access
+ * anymore (dropped in 0072, over-exposed every column, not just the
+ * name this app actually needs). get_visible_profile_names is
+ * SECURITY DEFINER and column-scoped by construction: it can only ever
+ * return full_name, regardless of what profiles gains in the future. */
+async function getVisibleNames(
+  supabase: SupabaseClient<Database>,
+  ids: string[]
+): Promise<Map<string, string | null>> {
+  if (ids.length === 0) return new Map();
+  const { data } = await supabase.rpc("get_visible_profile_names", { target_ids: ids });
+  return new Map((data ?? []).map((row) => [row.id, row.full_name]));
+}
+
 /** Thin wrapper over logAdminAction for the trainer-on-client-data
  * actions below — same admin_actions table, so an owner can see trainer
  * activity in the same Ops → Audit log as everything else, not a
@@ -115,8 +131,7 @@ export async function listMyClients(): Promise<TrainerClientSummary[]> {
   if (!relationships || relationships.length === 0) return [];
 
   const clientIds = relationships.map((r) => r.client_id);
-  const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", clientIds);
-  const nameById = new Map(profiles?.map((p) => [p.id, p.full_name]) ?? []);
+  const nameById = await getVisibleNames(supabase, clientIds);
 
   return relationships.map((r) => ({
     relationshipId: r.id,
@@ -172,11 +187,7 @@ export async function listMyInviteCodes(): Promise<InviteCode[]> {
   if (error) throw new Error(`Failed to load invite codes: ${error.message}`);
 
   const usedByIds = (data ?? []).map((c) => c.used_by).filter((id): id is string => !!id);
-  const nameById = new Map<string, string | null>();
-  if (usedByIds.length > 0) {
-    const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", usedByIds);
-    for (const p of profiles ?? []) nameById.set(p.id, p.full_name);
-  }
+  const nameById = await getVisibleNames(supabase, usedByIds);
 
   return (data ?? []).map((c) => ({
     id: c.id,
@@ -471,6 +482,20 @@ export async function approveClientWorkoutPlan(clientId: string): Promise<Action
  * filtering app/api/exercise/route.ts's GET handler does, which is a
  * bigger lift than a free-pick replace; deliberately out of scope for
  * this pass. */
+/** customizeWorkoutPlanItemExercise/addWorkoutPlanItemExercise (unlike
+ * this file's own generate/approve wrappers) write straight to an
+ * existing plan with no approval gate of their own — fine for a client
+ * tweaking their own already-approved plan, but a trainer silently
+ * rewriting a client's *already-active* plan with no new approval step
+ * breaks CLAUDE.md rule 10 ("require approval before changing active
+ * plans"). Found in the 2026-08-06 code-review pass. Demoting the
+ * client's active plan back to draft after a trainer edit means the
+ * change has to be approved (by the trainer or the client) before it's
+ * live again, same as a fresh generate — not a silent live rewrite. */
+async function demoteActivePlanToDraft(supabase: SupabaseClient<Database>, clientId: string): Promise<void> {
+  await supabase.from("workout_plans").update({ status: "draft" }).eq("user_id", clientId).eq("status", "active");
+}
+
 export async function customizeClientWorkoutItem(
   clientId: string,
   itemId: string,
@@ -485,6 +510,7 @@ export async function customizeClientWorkoutItem(
 
   const result = await customizeWorkoutPlanItemExercise(clientId, itemId, input, supabase);
   if (result.ok) {
+    await demoteActivePlanToDraft(supabase, clientId);
     await logTrainerAction(user, "client_workout_item_customized", clientId, { itemId, ...input });
   }
   return result;
@@ -504,6 +530,7 @@ export async function addClientWorkoutItem(
 
   const result = await addWorkoutPlanItemExercise(clientId, dayOfWeek, input, supabase);
   if (result.ok) {
+    await demoteActivePlanToDraft(supabase, clientId);
     await logTrainerAction(user, "client_workout_item_added", clientId, { dayOfWeek, ...input });
   }
   return result;
@@ -529,16 +556,12 @@ export async function getMyTrainerRelationship(): Promise<MyTrainerInfo | null> 
     .maybeSingle();
   if (!relationship) return null;
 
-  const { data: trainerProfile } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("id", relationship.trainer_id)
-    .maybeSingle();
+  const nameById = await getVisibleNames(supabase, [relationship.trainer_id]);
 
   return {
     relationshipId: relationship.id,
     trainerId: relationship.trainer_id,
-    trainerName: trainerProfile?.full_name ?? null,
+    trainerName: nameById.get(relationship.trainer_id) ?? null,
     startedAt: relationship.started_at,
   };
 }
@@ -774,8 +797,7 @@ export async function listDiscoverableTrainers(filters?: {
   if (!data || data.length === 0) return [];
 
   const trainerIds = data.map((row) => row.trainer_id);
-  const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", trainerIds);
-  const nameById = new Map(profiles?.map((p) => [p.id, p.full_name]) ?? []);
+  const nameById = await getVisibleNames(supabase, trainerIds);
 
   return data.map((row) => ({ ...toTrainerProfile(row), fullName: nameById.get(row.trainer_id) ?? null }));
 }
@@ -790,8 +812,8 @@ export async function getTrainerPublicProfile(trainerId: string): Promise<Discov
   const { data } = await supabase.from("trainer_profiles").select("*").eq("trainer_id", trainerId).maybeSingle();
   if (!data) return null;
 
-  const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", trainerId).maybeSingle();
-  return { ...toTrainerProfile(data), fullName: profile?.full_name ?? null };
+  const nameById = await getVisibleNames(supabase, [trainerId]);
+  return { ...toTrainerProfile(data), fullName: nameById.get(trainerId) ?? null };
 }
 
 export async function requestTrainer(trainerId: string, message: string): Promise<ActionResult> {
@@ -800,6 +822,24 @@ export async function requestTrainer(trainerId: string, message: string): Promis
 
   if (trainerId === user.id) {
     return { ok: false, error: "You can't request yourself as a trainer." };
+  }
+
+  // Checked against trainer_profiles.is_discoverable rather than
+  // profiles.is_trainer directly — a client's own session can no
+  // longer read another user's is_trainer column at all (migration
+  // 0072 dropped the only cross-user profiles SELECT policies), and
+  // this check is arguably the more correct one anyway: it also
+  // naturally rejects a trainer who's since unlisted themselves or
+  // been revoked (setUserTrainerStatus unsets is_discoverable on
+  // revoke), not just a never-was-a-trainer id.
+  const { data: trainerProfile } = await supabase
+    .from("trainer_profiles")
+    .select("trainer_id")
+    .eq("trainer_id", trainerId)
+    .eq("is_discoverable", true)
+    .maybeSingle();
+  if (!trainerProfile) {
+    return { ok: false, error: "This trainer isn't available to request right now." };
   }
 
   const { data: existingRelationship } = await supabase
@@ -846,8 +886,7 @@ export async function listMyTrainerRequests(): Promise<MyTrainerRequest[]> {
   if (!data || data.length === 0) return [];
 
   const trainerIds = [...new Set(data.map((r) => r.trainer_id))];
-  const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", trainerIds);
-  const nameById = new Map(profiles?.map((p) => [p.id, p.full_name]) ?? []);
+  const nameById = await getVisibleNames(supabase, trainerIds);
 
   return data.map((r) => ({
     id: r.id,
@@ -888,8 +927,7 @@ export async function listIncomingTrainerRequests(): Promise<IncomingTrainerRequ
   if (!data || data.length === 0) return [];
 
   const clientIds = [...new Set(data.map((r) => r.client_id))];
-  const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", clientIds);
-  const nameById = new Map(profiles?.map((p) => [p.id, p.full_name]) ?? []);
+  const nameById = await getVisibleNames(supabase, clientIds);
 
   return data.map((r) => ({
     id: r.id,

@@ -52,8 +52,9 @@ export default async function ClientWorkoutPage({ params }: { params: Promise<{ 
       <p className="text-sm text-neutral-600 dark:text-neutral-400">
         Generating pulls from the same training-program library your client&apos;s own plan would use.
         Each item can be freely replaced with any exercise in the library, or you can add extra exercises
-        to a day — customizing and adding both require an <span className="font-medium">approved</span>{" "}
-        plan, not a draft.
+        to a day — both need an already-<span className="font-medium">approved</span> plan to start from,
+        and both send it back to draft afterward so the change gets approved before it&apos;s live again,
+        same as a fresh generate.
       </p>
 
       <PlanActions

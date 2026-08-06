@@ -93,6 +93,13 @@ export async function setUserTrainerStatus(targetUserId: string, isTrainer: bool
       .eq("status", "active")
       .select("id");
     endedRelationships = ended?.length ?? 0;
+
+    // Also unlist them from the marketplace (migration 0071) — found
+    // missing in the 2026-08-06 code-review pass: without this, a
+    // revoked trainer kept appearing at /trainers and could still
+    // receive new client requests indefinitely (requestTrainer checks
+    // exactly this flag, not is_trainer directly).
+    await admin.from("trainer_profiles").update({ is_discoverable: false }).eq("trainer_id", targetUserId);
   }
 
   await logAdminAction({
