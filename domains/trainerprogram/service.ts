@@ -263,22 +263,24 @@ export async function updatePhase(phaseId: string, input: unknown): Promise<Acti
   return { ok: true, data: undefined };
 }
 
-/** Refuses to delete a phase any active assignment currently points to
- * (trainer_program_assignments.current_phase_id) -- the FK has no
- * on-delete behavior specified (defaults to restrict), so this would
- * fail at the database anyway; checking first gives a readable error
- * instead of a raw constraint-violation message. */
+/** Refuses to delete a phase any already-materialized workout_plans row
+ * still points to (trainer_program_phase_id) -- the FK has no on-delete
+ * behavior specified (defaults to restrict), so this would fail at the
+ * database anyway; checking first gives a readable error instead of a
+ * raw constraint-violation message. Progression is computed fresh from
+ * starts_on + phase list each time now (calendar-projection.ts), not a
+ * stored pointer, so there's no "a client is currently on this phase"
+ * state to check independent of what's already been generated. */
 export async function deletePhase(phaseId: string): Promise<ActionResult> {
   await requireTrainer();
   const supabase = await createClient();
 
   const { count } = await supabase
-    .from("trainer_program_assignments")
+    .from("workout_plans")
     .select("id", { count: "exact", head: true })
-    .eq("current_phase_id", phaseId)
-    .eq("status", "active");
+    .eq("trainer_program_phase_id", phaseId);
   if (count && count > 0) {
-    return { ok: false, error: "A client is currently on this phase -- reassign or end that first." };
+    return { ok: false, error: "A client already has a generated plan from this phase -- delete won't proceed." };
   }
 
   const { error } = await supabase.from("trainer_program_phases").delete().eq("id", phaseId);
@@ -509,6 +511,62 @@ export async function getPhaseHydrated(
       exercises: exercisesBySession.get(row.id) ?? [],
     })),
   };
+}
+
+/** Every phase of a program, fully hydrated, sorted by phase_order --
+ * what calendar-projection.ts needs (it walks phases in order to resolve
+ * which one a given date falls into). Three batched queries regardless
+ * of phase count, not N calls to getPhaseHydrated -- this runs on every
+ * weekly generation and every calendar month load. */
+export async function getHydratedPhasesForProgram(
+  programId: string,
+  client?: SupabaseClient<Database>
+): Promise<HydratedTrainerProgramPhase[]> {
+  const supabase = client ?? (await createClient());
+
+  const { data: phaseRows, error: phaseError } = await supabase
+    .from("trainer_program_phases")
+    .select("*")
+    .eq("program_id", programId)
+    .order("phase_order", { ascending: true });
+  if (phaseError) throw new Error(`Failed to load phases: ${phaseError.message}`);
+  if (!phaseRows || phaseRows.length === 0) return [];
+
+  const phaseIds = phaseRows.map((p) => p.id);
+  const { data: sessionRows, error: sessionsError } = await supabase
+    .from("trainer_program_sessions")
+    .select("*")
+    .in("phase_id", phaseIds)
+    .order("day_of_week", { ascending: true });
+  if (sessionsError) throw new Error(`Failed to load sessions: ${sessionsError.message}`);
+
+  const sessionIds = (sessionRows ?? []).map((s) => s.id);
+  const exercisesBySession = new Map<string, TrainerProgramSessionExercise[]>();
+  if (sessionIds.length > 0) {
+    const { data: exerciseRows, error: exercisesError } = await supabase
+      .from("trainer_program_session_exercises")
+      .select("*")
+      .in("session_id", sessionIds)
+      .order("exercise_order", { ascending: true });
+    if (exercisesError) throw new Error(`Failed to load session exercises: ${exercisesError.message}`);
+    for (const row of exerciseRows ?? []) {
+      const list = exercisesBySession.get(row.session_id) ?? [];
+      list.push(toSessionExercise(row));
+      exercisesBySession.set(row.session_id, list);
+    }
+  }
+
+  const sessionsByPhase = new Map<string, HydratedTrainerProgramPhase["sessions"]>();
+  for (const row of sessionRows ?? []) {
+    const list = sessionsByPhase.get(row.phase_id) ?? [];
+    list.push({ ...toSession(row), exercises: exercisesBySession.get(row.id) ?? [] });
+    sessionsByPhase.set(row.phase_id, list);
+  }
+
+  return phaseRows.map((row) => ({
+    ...toPhase(row),
+    sessions: sessionsByPhase.get(row.id) ?? [],
+  }));
 }
 
 // ---------------------------------------------------------------------------

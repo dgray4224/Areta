@@ -33,6 +33,9 @@ const ACTION_LABELS: Record<string, string> = {
   client_program_assigned: "Client assigned a trainer program",
   client_program_unassigned: "Client unassigned from a trainer program",
   client_workout_plan_generated_from_program: "Client workout plan generated from trainer program",
+  client_date_override_set: "Client calendar date customized",
+  client_date_override_cleared: "Client calendar date reset to template",
+  client_session_moved: "Client session moved on calendar",
 };
 
 function shortId(id: string): string {

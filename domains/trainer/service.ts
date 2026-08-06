@@ -20,8 +20,15 @@ import {
   type WorkoutPlanItemView,
   type CustomizeExerciseInput,
 } from "@/domains/workoutplan/service";
-import { getFirstPhase } from "@/domains/trainerprogram/service";
+import { getFirstPhase, getHydratedPhasesForProgram } from "@/domains/trainerprogram/service";
 import { generateAndSaveFromTrainerProgram } from "@/domains/trainerprogram/materialize";
+import { projectProgramRange } from "@/domains/trainerprogram/calendar-projection";
+import {
+  setDateOverride,
+  clearDateOverride,
+  getOverridesForRange,
+  type OverrideExerciseInput,
+} from "@/domains/trainerprogram/overrides";
 import type { ActionResult } from "@/platform/auth/actions";
 import type { Database } from "@/platform/db/types";
 import type {
@@ -599,7 +606,8 @@ export async function addClientWorkoutItem(
 export async function assignProgramToClient(
   clientId: string,
   programId: string,
-  onComplete: "repeat" | "freeze" = "repeat"
+  onComplete: "repeat" | "freeze" = "repeat",
+  startsOn?: string
 ): Promise<ActionResult> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
@@ -645,15 +653,16 @@ export async function assignProgramToClient(
     trainer_id: user.id,
     client_id: clientId,
     on_complete: onComplete,
-    current_phase_id: firstPhase.id,
-    phase_week_number: 1,
+    starts_on: startsOn || new Date().toISOString().slice(0, 10),
   });
   if (insertError) return { ok: false, error: insertError.message };
 
+  // A no-op (with an explanatory warning, not an error) if startsOn is in
+  // the future — generateAndSaveFromTrainerProgram itself checks that.
   const generated = await generateAndSaveFromTrainerProgram(clientId, supabase);
   if (!generated.ok) return generated;
 
-  await logTrainerAction(user, "client_program_assigned", clientId, { programId, onComplete });
+  await logTrainerAction(user, "client_program_assigned", clientId, { programId, onComplete, startsOn });
   return { ok: true, data: undefined };
 }
 
@@ -688,12 +697,23 @@ async function loadAssignmentView(
     .maybeSingle();
   if (!row) return null;
 
-  const [{ data: programRow }, { data: phaseRow }] = await Promise.all([
+  const [{ data: programRow }, phases] = await Promise.all([
     supabase.from("trainer_programs").select("name").eq("id", row.program_id).maybeSingle(),
-    row.current_phase_id
-      ? supabase.from("trainer_program_phases").select("name").eq("id", row.current_phase_id).maybeSingle()
-      : Promise.resolve({ data: null as { name: string } | null }),
+    getHydratedPhasesForProgram(row.program_id, supabase),
   ]);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const [todayProjection] =
+    phases.length > 0 && row.starts_on <= today
+      ? projectProgramRange({
+          startsOn: row.starts_on,
+          phases,
+          onComplete: row.on_complete as TrainerProgramAssignment["onComplete"],
+          rangeStart: today,
+          rangeEnd: today,
+          overridesByDate: new Map(),
+        })
+      : [];
 
   return {
     id: row.id,
@@ -703,9 +723,9 @@ async function loadAssignmentView(
     clientId: row.client_id,
     status: row.status as TrainerProgramAssignment["status"],
     onComplete: row.on_complete as TrainerProgramAssignment["onComplete"],
-    currentPhaseId: row.current_phase_id,
-    currentPhaseName: phaseRow?.name ?? null,
-    phaseWeekNumber: row.phase_week_number,
+    startsOn: row.starts_on,
+    currentPhaseName: todayProjection?.phaseName ?? null,
+    currentWeekInPhase: todayProjection?.weekInPhase ?? null,
     startedAt: row.started_at,
     endedAt: row.ended_at,
   };
@@ -719,10 +739,9 @@ export async function getClientProgramAssignment(clientId: string): Promise<Trai
 }
 
 /** Manual "(re)generate this week" for a trainer-assigned program — same
- * button whether it's the very first week or a mid-program regenerate;
- * generateAndSaveFromTrainerProgram's own existingPlan check decides
- * whether that means progressing to a new week or re-materializing the
- * current one. */
+ * button whether it's the very first week or a mid-program regenerate,
+ * naturally idempotent now that generation is a pure projection of
+ * (starts_on, phases, overrides) rather than a pointer that advances. */
 export async function generateClientWorkoutPlanFromProgram(
   clientId: string
 ): Promise<ActionResult<{ warnings: string[] }>> {
@@ -736,6 +755,131 @@ export async function generateClientWorkoutPlanFromProgram(
   const result = await generateAndSaveFromTrainerProgram(clientId, supabase);
   if (result.ok) await logTrainerAction(user, "client_workout_plan_generated_from_program", clientId, {});
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Calendar (2026-08-06) — month-by-month view of a client's assigned
+// program, and per-date overrides/drag-move on top of it. All still
+// scoped through requireActiveClient like every other trainer-on-client
+// action here; the low-level read/write logic lives in
+// domains/trainerprogram/overrides.ts and calendar-projection.ts.
+// ---------------------------------------------------------------------------
+
+export async function getClientMonthCalendar(
+  clientId: string,
+  monthStart: string,
+  monthEnd: string
+): Promise<ActionResult<ReturnType<typeof projectProgramRange>>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { data: assignment } = await supabase
+    .from("trainer_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!assignment) return { ok: false, error: "No active program assigned." };
+
+  const phases = await getHydratedPhasesForProgram(assignment.program_id, supabase);
+  const overridesByDate = await getOverridesForRange(assignment.id, monthStart, monthEnd, supabase);
+
+  const days = projectProgramRange({
+    startsOn: assignment.starts_on,
+    phases,
+    onComplete: assignment.on_complete as TrainerProgramAssignment["onComplete"],
+    rangeStart: monthStart,
+    rangeEnd: monthEnd,
+    overridesByDate,
+  });
+
+  return { ok: true, data: days };
+}
+
+export async function setClientDateOverride(
+  clientId: string,
+  date: string,
+  input: { isRestDay: boolean; exercises: OverrideExerciseInput[] }
+): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await setDateOverride(clientId, date, input, supabase);
+  if (result.ok) {
+    await logTrainerAction(user, "client_date_override_set", clientId, { date, isRestDay: input.isRestDay });
+  }
+  return result;
+}
+
+export async function clearClientDateOverride(clientId: string, date: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await clearDateOverride(clientId, date, supabase);
+  if (result.ok) await logTrainerAction(user, "client_date_override_cleared", clientId, { date });
+  return result;
+}
+
+/** Drag-and-drop "move" semantics: fromDate's effective content (whether
+ * already an override or just the recurring template) becomes toDate's
+ * new override, and fromDate itself becomes a rest-day override — a
+ * move, not a copy, matching normal calendar drag UX. Both dates go
+ * through the same past/not-started validation as any other override
+ * write (setDateOverride), so this refuses to touch history either. */
+export async function moveClientSessionToDate(
+  clientId: string,
+  fromDate: string,
+  toDate: string
+): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+  if (fromDate === toDate) return { ok: true, data: undefined };
+
+  const { data: assignment } = await supabase
+    .from("trainer_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!assignment) return { ok: false, error: "No active program assigned." };
+
+  const phases = await getHydratedPhasesForProgram(assignment.program_id, supabase);
+  const overridesByDate = await getOverridesForRange(assignment.id, fromDate, fromDate, supabase);
+  const [fromProjection] = projectProgramRange({
+    startsOn: assignment.starts_on,
+    phases,
+    onComplete: assignment.on_complete as TrainerProgramAssignment["onComplete"],
+    rangeStart: fromDate,
+    rangeEnd: fromDate,
+    overridesByDate,
+  });
+  if (!fromProjection) return { ok: false, error: "Couldn't read that date." };
+
+  const toResult = await setDateOverride(
+    clientId,
+    toDate,
+    { isRestDay: fromProjection.exercises.length === 0, exercises: fromProjection.exercises },
+    supabase
+  );
+  if (!toResult.ok) return toResult;
+
+  const fromResult = await setDateOverride(clientId, fromDate, { isRestDay: true, exercises: [] }, supabase);
+  if (!fromResult.ok) return fromResult;
+
+  await logTrainerAction(user, "client_session_moved", clientId, { fromDate, toDate });
+  return { ok: true, data: undefined };
 }
 
 // ---------------------------------------------------------------------------

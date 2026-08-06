@@ -4,11 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
-import { getPhaseById, getNextPhase, getFirstPhase, getPhaseHydrated } from "@/domains/trainerprogram/service";
-import { resolveTrainerProgramProgression } from "@/domains/trainerprogram/progression";
+import { getHydratedPhasesForProgram } from "@/domains/trainerprogram/service";
+import { getOverridesForRange } from "@/domains/trainerprogram/overrides";
+import { projectProgramRange, addDays, sundayOfWeekContaining } from "@/domains/trainerprogram/calendar-projection";
 import type { OnProgramComplete } from "@/domains/trainerprogram/types";
 
-function currentWeekStart(): string {
+function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
@@ -21,27 +22,36 @@ function currentWeekStart(): string {
  * (app/api/cron/regenerate-workout-plans/route.ts), neither of which has
  * a user session — so, same convention, this takes a plain clientId and
  * trusts RLS/the caller's own client rather than deriving identity
- * itself. Still only ever produces a DRAFT (CLAUDE.md rule 10) — approval
- * happens the same way as any other plan, via the client's or trainer's
- * "Approve plan" action.
+ * itself. Still only ever produces a DRAFT (CLAUDE.md rule 10) —
+ * approval happens the same way as any other plan.
  *
- * Unlike the shared library's generator (which decides continue-vs-
- * advance by looking backward at the last *completed* week), this stores
- * a forward pointer directly on the assignment row: (current_phase_id,
- * phase_week_number) always means "the phase/week to use the next time a
- * *new* week is generated". Regenerating the *same* week (trainer clicks
- * "Regenerate" twice, or the cron somehow fires twice for one week)
- * re-materializes from whatever phase that week's existing plan already
- * points to, without moving the pointer again — otherwise every
- * redundant regenerate call would silently skip the client ahead an
- * extra week.
+ * Rewritten (2026-08-06, calendar feature) to compute the target week
+ * via calendar-projection.ts's pure projectProgramRange instead of a
+ * stored "pointer" that got manually advanced — the same function the
+ * calendar UI uses to show a trainer what any date looks like, so
+ * regenerating is now naturally idempotent (same inputs -> same output,
+ * no special-casing needed to detect "is this a re-run") and a date
+ * override a trainer sets always lands correctly whenever that week
+ * next gets materialized, without this function needing to know
+ * anything about overrides beyond fetching them.
+ *
+ * workout_plans keeps the rest of the app's existing (slightly
+ * misleading) "week_start" convention: it's literally today's date at
+ * generation time, not an aligned Sunday — see getWorkoutPlanForWeek's
+ * callers, which all key off "whatever date generation last ran" as an
+ * opaque version identifier. The *items* still span the full Sun-Sat
+ * calendar week containing today (sundayOfWeekContaining), matching how
+ * the shared library's own generator always produces day_of_week 0-6
+ * regardless of which weekday generation happens to run on.
  */
 export async function generateAndSaveFromTrainerProgram(
   clientId: string,
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const supabase = client ?? (await createClient());
-  const weekStart = currentWeekStart();
+  const today = todayIso();
+  const weekStart = sundayOfWeekContaining(today);
+  const weekEnd = addDays(weekStart, 6);
 
   const { data: assignmentRow, error: assignmentError } = await supabase
     .from("trainer_program_assignments")
@@ -50,53 +60,35 @@ export async function generateAndSaveFromTrainerProgram(
     .eq("status", "active")
     .maybeSingle();
   if (assignmentError) return { ok: false, error: assignmentError.message };
-  if (!assignmentRow || !assignmentRow.current_phase_id) {
-    return { ok: false, error: "No active trainer program assigned." };
+  if (!assignmentRow) return { ok: false, error: "No active trainer program assigned." };
+
+  if (assignmentRow.starts_on > weekEnd) {
+    return {
+      ok: true,
+      data: { warnings: [`This program starts ${assignmentRow.starts_on} — nothing to generate for this week yet.`] },
+    };
   }
 
-  const { data: existingPlan } = await supabase
-    .from("workout_plans")
-    .select("trainer_program_phase_id")
-    .eq("user_id", clientId)
-    .eq("week_start", weekStart)
-    .eq("trainer_program_id", assignmentRow.program_id)
-    .maybeSingle();
+  const phases = await getHydratedPhasesForProgram(assignmentRow.program_id, supabase);
+  if (phases.length === 0) return { ok: false, error: "This program has no phases defined yet." };
+
+  const overridesByDate = await getOverridesForRange(assignmentRow.id, weekStart, weekEnd, supabase);
+
+  const projectedDays = projectProgramRange({
+    startsOn: assignmentRow.starts_on,
+    phases,
+    onComplete: assignmentRow.on_complete as OnProgramComplete,
+    rangeStart: weekStart,
+    rangeEnd: weekEnd,
+    overridesByDate,
+  });
 
   const warnings: string[] = [];
-  let targetPhaseId: string;
-  let advanceTo: { phaseId: string; weekNumber: number } | null = null;
-
-  if (existingPlan?.trainer_program_phase_id) {
-    // Same-week regenerate: re-materialize the phase this week already
-    // points to (picks up any edits the trainer made since), no
-    // progression change.
-    targetPhaseId = existingPlan.trainer_program_phase_id;
-  } else {
-    // A genuinely new week: use the assignment's pointer as-is, then
-    // compute where the pointer should move to for the week after this
-    // one.
-    targetPhaseId = assignmentRow.current_phase_id;
-    const [currentPhase, firstPhase] = await Promise.all([
-      getPhaseById(assignmentRow.current_phase_id, supabase),
-      getFirstPhase(assignmentRow.program_id, supabase),
-    ]);
-    if (!currentPhase || !firstPhase) {
-      return { ok: false, error: "This program has no phases defined yet." };
-    }
-    const nextPhase = currentPhase.isFinal ? null : await getNextPhase(currentPhase, supabase);
-    advanceTo = resolveTrainerProgramProgression({
-      currentPhase,
-      currentWeekNumber: assignmentRow.phase_week_number,
-      nextPhase,
-      firstPhase,
-      onComplete: assignmentRow.on_complete as OnProgramComplete,
-    });
-  }
-
-  const hydratedPhase = await getPhaseHydrated(targetPhaseId, supabase);
-  if (!hydratedPhase) return { ok: false, error: "Failed to load phase content." };
-  if (hydratedPhase.sessions.length === 0) {
-    warnings.push(`"${hydratedPhase.name}" has no sessions defined yet — this week will be entirely rest days.`);
+  const todaysProjection = projectedDays.find((d) => d.date === today) ?? projectedDays[0];
+  const phaseName = todaysProjection?.phaseName ?? null;
+  const phaseId = todaysProjection?.phaseId ?? null;
+  if (projectedDays.every((d) => d.exercises.length === 0)) {
+    warnings.push("No sessions are scheduled this week — check the calendar or phase content.");
   }
 
   const { data: plan, error: planError } = await supabase
@@ -104,11 +96,11 @@ export async function generateAndSaveFromTrainerProgram(
     .upsert(
       {
         user_id: clientId,
-        week_start: weekStart,
+        week_start: today,
         status: "draft",
-        phase_focus: hydratedPhase.focus,
+        phase_focus: phaseName,
         trainer_program_id: assignmentRow.program_id,
-        trainer_program_phase_id: hydratedPhase.id,
+        trainer_program_phase_id: phaseId,
         program_id: null,
         program_phase_id: null,
         phase_week_number: null,
@@ -122,17 +114,17 @@ export async function generateAndSaveFromTrainerProgram(
   const { error: deleteError } = await supabase.from("workout_plan_items").delete().eq("workout_plan_id", plan.id);
   if (deleteError) return { ok: false, error: `Failed to clear previous plan items: ${deleteError.message}` };
 
-  const items = hydratedPhase.sessions.flatMap((session) =>
-    session.exercises.map((ex) => ({
+  const items = projectedDays.flatMap((day) =>
+    day.exercises.map((ex, index) => ({
       workout_plan_id: plan.id,
       user_id: clientId,
-      day_of_week: session.dayOfWeek,
-      session_order: ex.exerciseOrder,
+      day_of_week: day.dayOfWeek,
+      session_order: index,
       exercise_id: ex.exerciseId,
       sets: ex.sets,
       reps: ex.repsMax ?? ex.repsMin,
       duration_minutes: ex.durationMinutes,
-      trainer_program_session_exercise_id: ex.id,
+      trainer_program_session_exercise_id: ex.sourceSessionExerciseId,
       reps_min: ex.repsMin,
       reps_max: ex.repsMax,
       intensity_type: ex.intensityType,
@@ -146,16 +138,6 @@ export async function generateAndSaveFromTrainerProgram(
   if (items.length > 0) {
     const { error: itemsError } = await supabase.from("workout_plan_items").insert(items);
     if (itemsError) return { ok: false, error: `Failed to save workout plan items: ${itemsError.message}` };
-  }
-
-  if (advanceTo) {
-    const { error: updateError } = await supabase
-      .from("trainer_program_assignments")
-      .update({ current_phase_id: advanceTo.phaseId, phase_week_number: advanceTo.weekNumber })
-      .eq("id", assignmentRow.id);
-    if (updateError) {
-      warnings.push(`Plan generated, but progression tracking failed to update: ${updateError.message}`);
-    }
   }
 
   return { ok: true, data: { warnings } };

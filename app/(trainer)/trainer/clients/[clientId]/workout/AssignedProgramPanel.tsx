@@ -59,12 +59,22 @@ export function AssignedProgramPanel({
             </Link>
           </p>
           <p className="text-sm text-neutral-500">
-            {assignment.currentPhaseName ? `${assignment.currentPhaseName}, ` : ""}week {assignment.phaseWeekNumber}
+            {assignment.startsOn > new Date().toISOString().slice(0, 10)
+              ? `Starts ${assignment.startsOn}`
+              : assignment.currentPhaseName
+                ? `${assignment.currentPhaseName}, week ${assignment.currentWeekInPhase}`
+                : "Not started"}
           </p>
         </div>
       </div>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
+        <Link
+          href={`/trainer/clients/${clientId}/workout/calendar`}
+          className="inline-flex items-center justify-center rounded-full border border-neutral-300 px-5 py-2.5 text-sm font-semibold text-foreground hover:bg-black/5 dark:border-neutral-700 dark:hover:bg-white/5"
+        >
+          Calendar
+        </Link>
         <Button type="button" variant="secondary" disabled={isPending} onClick={onRegenerate}>
           {isPending ? "Working…" : "Regenerate this week"}
         </Button>

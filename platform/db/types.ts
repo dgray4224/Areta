@@ -2409,56 +2409,150 @@ export type Database = {
       trainer_program_assignments: {
         Row: {
           client_id: string
-          current_phase_id: string | null
           ended_at: string | null
           id: string
           on_complete: string
-          phase_week_number: number
           program_id: string
           started_at: string
+          starts_on: string
           status: string
           trainer_id: string
           updated_at: string
         }
         Insert: {
           client_id: string
-          current_phase_id?: string | null
           ended_at?: string | null
           id?: string
           on_complete?: string
-          phase_week_number?: number
           program_id: string
           started_at?: string
+          starts_on?: string
           status?: string
           trainer_id: string
           updated_at?: string
         }
         Update: {
           client_id?: string
-          current_phase_id?: string | null
           ended_at?: string | null
           id?: string
           on_complete?: string
-          phase_week_number?: number
           program_id?: string
           started_at?: string
+          starts_on?: string
           status?: string
           trainer_id?: string
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "trainer_program_assignments_current_phase_id_fkey"
-            columns: ["current_phase_id"]
-            isOneToOne: false
-            referencedRelation: "trainer_program_phases"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "trainer_program_assignments_program_id_fkey"
             columns: ["program_id"]
             isOneToOne: false
             referencedRelation: "trainer_programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trainer_program_date_override_exercises: {
+        Row: {
+          cardio_intensity: string | null
+          coaching_notes: string | null
+          duration_minutes: number | null
+          exercise_id: string
+          exercise_order: number
+          id: string
+          intensity_type: string | null
+          intensity_value: string | null
+          override_id: string
+          reps_max: number | null
+          reps_min: number | null
+          sets: number | null
+        }
+        Insert: {
+          cardio_intensity?: string | null
+          coaching_notes?: string | null
+          duration_minutes?: number | null
+          exercise_id: string
+          exercise_order?: number
+          id?: string
+          intensity_type?: string | null
+          intensity_value?: string | null
+          override_id: string
+          reps_max?: number | null
+          reps_min?: number | null
+          sets?: number | null
+        }
+        Update: {
+          cardio_intensity?: string | null
+          coaching_notes?: string | null
+          duration_minutes?: number | null
+          exercise_id?: string
+          exercise_order?: number
+          id?: string
+          intensity_type?: string | null
+          intensity_value?: string | null
+          override_id?: string
+          reps_max?: number | null
+          reps_min?: number | null
+          sets?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trainer_program_date_override_exercises_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trainer_program_date_override_exercises_override_id_fkey"
+            columns: ["override_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_program_date_overrides"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trainer_program_date_overrides: {
+        Row: {
+          assignment_id: string
+          client_id: string
+          created_at: string
+          id: string
+          is_rest_day: boolean
+          notes: string | null
+          override_date: string
+          trainer_id: string
+          updated_at: string
+        }
+        Insert: {
+          assignment_id: string
+          client_id: string
+          created_at?: string
+          id?: string
+          is_rest_day?: boolean
+          notes?: string | null
+          override_date: string
+          trainer_id: string
+          updated_at?: string
+        }
+        Update: {
+          assignment_id?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          is_rest_day?: boolean
+          notes?: string | null
+          override_date?: string
+          trainer_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trainer_program_date_overrides_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_program_assignments"
             referencedColumns: ["id"]
           },
         ]

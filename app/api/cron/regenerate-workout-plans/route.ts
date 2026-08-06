@@ -23,19 +23,23 @@ function currentWeekStart(): string {
  * generateAndSaveWorkoutPlan's upsert (onConflict: user_id,week_start) on
  * workout_plans makes re-running this safe if the cron fires more than
  * once for the same week -- it overwrites the same draft row rather than
- * creating a duplicate. generateAndSaveFromTrainerProgram is the same
- * shape for the trainer-program path (2026-08-06) and has its own
- * same-week idempotency guard (see its own doc comment) since its
- * progression pointer would otherwise advance an extra time on a
- * double-fire.
+ * creating a duplicate. generateAndSaveFromTrainerProgram (2026-08-06) is
+ * the same shape for the trainer-program path and is naturally
+ * idempotent too, now that it's a pure projection of (starts_on, phases,
+ * overrides) rather than a stored pointer that advances.
  *
- * Routes each stale user to whichever generator applies: a user with an
- * active trainer_program_assignment always goes through the trainer-
- * program path, never the library one -- generateAndSaveWorkoutPlan
- * itself now refuses to run for them (see its own guard), so routing
- * correctly here isn't just an optimization, it avoids every
- * trainer-assigned client showing up as a manufactured "failure" in the
- * results below.
+ * The two paths are found two different ways, not one shared "stale"
+ * query: every user with an *active* trainer_program_assignment runs
+ * every time this fires, regardless of whether they already have a
+ * stale plan -- a brand-new future-dated assignment has no workout_plans
+ * row yet to ever look "stale", so it would never get picked up
+ * otherwise once its start date arrives (generateAndSaveFromTrainerProgram
+ * itself is the one that no-ops gracefully until then). The library path
+ * keeps the original stale-active-plan query, explicitly excluding
+ * anyone with an active trainer program assignment -- generateAndSaveWorkoutPlan
+ * itself refuses to run for them (see its own guard), so excluding them
+ * here isn't just an optimization, it avoids every trainer-assigned
+ * client showing up as a manufactured "failure" in the results below.
  */
 export async function GET(request: NextRequest) {
   const { CRON_SECRET } = getServerEnv();
@@ -47,32 +51,26 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminClient();
   const weekStart = currentWeekStart();
 
-  const { data: stalePlans, error } = await supabase
-    .from("workout_plans")
-    .select("user_id")
-    .eq("status", "active")
-    .lt("week_start", weekStart);
+  const [{ data: stalePlans, error: staleError }, { data: assignmentRows, error: assignmentError }] =
+    await Promise.all([
+      supabase.from("workout_plans").select("user_id").eq("status", "active").lt("week_start", weekStart),
+      supabase.from("trainer_program_assignments").select("client_id").eq("status", "active"),
+    ]);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (staleError) return NextResponse.json({ error: staleError.message }, { status: 500 });
+  if (assignmentError) return NextResponse.json({ error: assignmentError.message }, { status: 500 });
 
-  const userIds = Array.from(new Set((stalePlans ?? []).map((row) => row.user_id)));
-
-  const { data: assignmentRows } = await supabase
-    .from("trainer_program_assignments")
-    .select("client_id")
-    .eq("status", "active")
-    .in("client_id", userIds);
   const trainerAssignedIds = new Set((assignmentRows ?? []).map((row) => row.client_id));
-
-  const results = await Promise.allSettled(
-    userIds.map((userId) =>
-      trainerAssignedIds.has(userId)
-        ? generateAndSaveFromTrainerProgram(userId, supabase)
-        : generateAndSaveWorkoutPlan(userId, supabase)
-    )
+  const libraryUserIds = Array.from(
+    new Set((stalePlans ?? []).map((row) => row.user_id).filter((id) => !trainerAssignedIds.has(id)))
   );
+  const trainerUserIds = Array.from(trainerAssignedIds);
+  const userIds = [...libraryUserIds, ...trainerUserIds];
+
+  const results = await Promise.allSettled([
+    ...libraryUserIds.map((userId) => generateAndSaveWorkoutPlan(userId, supabase)),
+    ...trainerUserIds.map((userId) => generateAndSaveFromTrainerProgram(userId, supabase)),
+  ]);
 
   const draftsGenerated = results.filter((r) => r.status === "fulfilled" && r.value.ok).length;
   const failures: { userId: string; error: string }[] = [];

@@ -4,14 +4,19 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { assignProgramToClient } from "@/domains/trainer/service";
-import { SelectInput } from "@/platform/ui/FormField";
+import { SelectInput, TextInput } from "@/platform/ui/FormField";
 import { Button } from "@/platform/ui/Button";
 import type { TrainerProgram } from "@/domains/trainerprogram/types";
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export function AssignProgramForm({ clientId, programs }: { clientId: string; programs: TrainerProgram[] }) {
   const router = useRouter();
   const [programId, setProgramId] = useState("");
   const [onComplete, setOnComplete] = useState<"repeat" | "freeze">("repeat");
+  const [startsOn, setStartsOn] = useState(todayIso());
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -34,7 +39,7 @@ export function AssignProgramForm({ clientId, programs }: { clientId: string; pr
     }
     setError(null);
     startTransition(async () => {
-      const result = await assignProgramToClient(clientId, programId, onComplete);
+      const result = await assignProgramToClient(clientId, programId, onComplete, startsOn);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -45,7 +50,7 @@ export function AssignProgramForm({ clientId, programs }: { clientId: string; pr
 
   return (
     <div className="space-y-2">
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         <SelectInput value={programId} onChange={(e) => setProgramId(e.target.value)} aria-label="Program">
           <option value="">Pick a program…</option>
           {programs.map((p) => (
@@ -54,6 +59,12 @@ export function AssignProgramForm({ clientId, programs }: { clientId: string; pr
             </option>
           ))}
         </SelectInput>
+        <TextInput
+          type="date"
+          value={startsOn}
+          onChange={(e) => setStartsOn(e.target.value)}
+          aria-label="Starts on"
+        />
         <SelectInput
           value={onComplete}
           onChange={(e) => setOnComplete(e.target.value as "repeat" | "freeze")}
@@ -63,6 +74,9 @@ export function AssignProgramForm({ clientId, programs }: { clientId: string; pr
           <option value="freeze">When finished: keep the last week</option>
         </SelectInput>
       </div>
+      <p className="text-xs text-neutral-500">
+        A future start date won&apos;t generate anything until that week arrives.
+      </p>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <Button type="button" disabled={isPending} onClick={onAssign}>
         {isPending ? "Assigning…" : "Assign program"}

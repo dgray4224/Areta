@@ -75,9 +75,16 @@ export type TrainerProgramAssignment = {
   clientId: string;
   status: TrainerProgramAssignmentStatus;
   onComplete: OnProgramComplete;
-  currentPhaseId: string | null;
+  /** When this program run began (or begins, if in the future) on the
+   * calendar. Phase/week are no longer stored -- see
+   * domains/trainerprogram/calendar-projection.ts, which computes them
+   * fresh from this plus the program's phases for any given date. */
+  startsOn: string;
+  /** Computed for "today" at load time, purely for display -- null if
+   * startsOn is in the future (program hasn't started) or the program
+   * has no phases. */
   currentPhaseName: string | null;
-  phaseWeekNumber: number;
+  currentWeekInPhase: number | null;
   startedAt: string;
   endedAt: string | null;
 };
