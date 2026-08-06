@@ -23,6 +23,8 @@ const ACTION_LABELS: Record<string, string> = {
   client_workout_plan_approved: "Client workout plan approved",
   client_workout_item_customized: "Client workout item customized",
   client_workout_item_added: "Client workout item added",
+  trainer_invite_code_generated: "Trainer invite code generated",
+  trainer_invite_code_revoked: "Trainer invite code revoked",
 };
 
 function shortId(id: string): string {

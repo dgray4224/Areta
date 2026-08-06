@@ -131,13 +131,27 @@ export async function generateInviteCode(): Promise<ActionResult<{ code: string 
   // (32^8 possibilities) but cheap to guard anyway.
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateCode();
-    const { error } = await supabase.from("trainer_invite_codes").insert({
-      trainer_id: user.id,
-      code,
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    });
-    if (!error) return { ok: true, data: { code } };
-    if (!error.message.includes("duplicate")) return { ok: false, error: error.message };
+    const { data, error } = await supabase
+      .from("trainer_invite_codes")
+      .insert({
+        trainer_id: user.id,
+        code,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      })
+      .select("id")
+      .single();
+    if (!error && data) {
+      await logAdminAction({
+        actorId: user.id,
+        actorEmail: user.email ?? null,
+        action: "trainer_invite_code_generated",
+        targetType: "trainer_invite_code",
+        targetId: data.id,
+        detail: null,
+      });
+      return { ok: true, data: { code } };
+    }
+    if (!error?.message.includes("duplicate")) return { ok: false, error: error?.message ?? "Unknown error" };
   }
   return { ok: false, error: "Could not generate a unique code — try again." };
 }
@@ -180,6 +194,16 @@ export async function revokeInviteCode(id: string): Promise<ActionResult> {
     .eq("id", id)
     .eq("trainer_id", user.id);
   if (error) return { ok: false, error: error.message };
+
+  await logAdminAction({
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "trainer_invite_code_revoked",
+    targetType: "trainer_invite_code",
+    targetId: id,
+    detail: null,
+  });
+
   return { ok: true, data: undefined };
 }
 
@@ -598,6 +622,13 @@ export async function redeemTrainerInviteCode(rawCode: string): Promise<ActionRe
 
 /** Callable by either side of the relationship — a client dropping their
  * trainer, or a trainer ending their coaching of a client. */
+/** Client-side "drop my trainer" — always targets the relationship where
+ * *I'm* the client, never ambiguous even for an account that's also a
+ * trainer with clients of its own (fixed 2026-08-22: the original
+ * `.or(trainer_id.eq...,client_id.eq...)` could match more than one row
+ * for a dual-role account, and .maybeSingle() erroring on >1 row was
+ * silently swallowed into a false "no active relationship found"). See
+ * removeClient below for the trainer-initiated equivalent. */
 export async function endTrainerRelationship(): Promise<ActionResult> {
   const user = await requireUser();
   const admin = createAdminClient();
@@ -605,7 +636,7 @@ export async function endTrainerRelationship(): Promise<ActionResult> {
   const { data: relationship } = await admin
     .from("trainer_clients")
     .select("id, trainer_id, client_id")
-    .or(`trainer_id.eq.${user.id},client_id.eq.${user.id}`)
+    .eq("client_id", user.id)
     .eq("status", "active")
     .maybeSingle();
   if (!relationship) return { ok: false, error: "No active trainer relationship found." };
@@ -623,6 +654,40 @@ export async function endTrainerRelationship(): Promise<ActionResult> {
     targetType: "trainer_client",
     targetId: relationship.id,
     detail: { trainerId: relationship.trainer_id, clientId: relationship.client_id, endedBy: user.id },
+  });
+
+  return { ok: true, data: undefined };
+}
+
+/** Trainer-side equivalent of endTrainerRelationship — a trainer
+ * dropping one specific client, unambiguous by construction since it
+ * takes the target clientId rather than inferring "the" relationship. */
+export async function removeClient(clientId: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const admin = createAdminClient();
+
+  const { data: relationship } = await admin
+    .from("trainer_clients")
+    .select("id")
+    .eq("trainer_id", user.id)
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!relationship) return { ok: false, error: "This is not your client." };
+
+  const { error } = await admin
+    .from("trainer_clients")
+    .update({ status: "ended", ended_at: new Date().toISOString() })
+    .eq("id", relationship.id);
+  if (error) return { ok: false, error: error.message };
+
+  await logAdminAction({
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "trainer_relationship_ended",
+    targetType: "trainer_client",
+    targetId: relationship.id,
+    detail: { trainerId: user.id, clientId, endedBy: user.id },
   });
 
   return { ok: true, data: undefined };

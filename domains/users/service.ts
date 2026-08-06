@@ -78,13 +78,30 @@ export async function setUserTrainerStatus(targetUserId: string, isTrainer: bool
   const { error } = await admin.from("profiles").update({ is_trainer: isTrainer }).eq("id", targetUserId);
   if (error) return { ok: false, error: error.message };
 
+  // is_trainer_of() (migration 0070) now re-checks profiles.is_trainer,
+  // so revoking here already cuts off RLS access to every former
+  // client's data immediately — this is belt-and-suspenders on top of
+  // that, so the relationship rows themselves reflect reality too
+  // (a former client's Settings → Trainer screen would otherwise still
+  // show an "active" trainer who can no longer actually do anything).
+  let endedRelationships = 0;
+  if (!isTrainer) {
+    const { data: ended } = await admin
+      .from("trainer_clients")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("trainer_id", targetUserId)
+      .eq("status", "active")
+      .select("id");
+    endedRelationships = ended?.length ?? 0;
+  }
+
   await logAdminAction({
     actorId: currentUser.id,
     actorEmail: currentUser.email ?? null,
     action: "user_trainer_status_changed",
     targetType: "user",
     targetId: targetUserId,
-    detail: { isTrainer },
+    detail: { isTrainer, endedRelationships },
   });
 
   return { ok: true, data: undefined };

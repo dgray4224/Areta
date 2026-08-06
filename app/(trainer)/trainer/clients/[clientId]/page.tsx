@@ -5,6 +5,7 @@ import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { LinkButton } from "@/platform/ui/Button";
 import { GoalEditor } from "./GoalEditor";
+import { RemoveClientSection } from "./RemoveClientSection";
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
@@ -118,6 +119,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
           )}
         </Card>
       </section>
+
+      <RemoveClientSection clientId={clientId} />
     </div>
   );
 }

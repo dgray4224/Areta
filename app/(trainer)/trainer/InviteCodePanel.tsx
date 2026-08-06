@@ -38,8 +38,13 @@ export function InviteCodePanel({ initialCodes }: { initialCodes: InviteCode[] }
   };
 
   const onRevoke = (id: string) => {
+    setError(null);
     startTransition(async () => {
-      await revokeInviteCode(id);
+      const result = await revokeInviteCode(id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setCodes((prev) => prev.map((c) => (c.id === id ? { ...c, revokedAt: new Date().toISOString() } : c)));
       router.refresh();
     });
