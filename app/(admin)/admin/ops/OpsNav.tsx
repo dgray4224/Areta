@@ -7,6 +7,7 @@ import { navTabClass } from "@/app/(app)/nav-links";
 const TABS = [
   { href: "/admin/ops/ai-runs", label: "AI runs" },
   { href: "/admin/ops/cron", label: "Cron health" },
+  { href: "/admin/ops/audit-log", label: "Audit log" },
 ] as const;
 
 export function OpsNav() {

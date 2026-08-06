@@ -18,3 +18,18 @@ export type AiRun = {
   error: string | null;
   createdAt: string;
 };
+
+/** admin_actions (migration 0064) — append-only audit trail for admin
+ * actions (role changes, deletions, content-review decisions). actorEmail
+ * is a snapshot taken at write time, not a live join, so it survives the
+ * actor's account later being deleted. */
+export type AdminAction = {
+  id: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
+};

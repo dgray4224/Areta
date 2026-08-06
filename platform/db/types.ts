@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       action_events: {
@@ -161,6 +136,39 @@ export type Database = {
           workout_first_start_local_hour?: number | null
           workout_last_start_at?: string | null
           workout_total_minutes?: number
+        }
+        Relationships: []
+      }
+      admin_actions: {
+        Row: {
+          action: string
+          actor_email: string | null
+          actor_id: string | null
+          created_at: string
+          detail: Json | null
+          id: string
+          target_id: string | null
+          target_type: string
+        }
+        Insert: {
+          action: string
+          actor_email?: string | null
+          actor_id?: string | null
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          target_id?: string | null
+          target_type: string
+        }
+        Update: {
+          action?: string
+          actor_email?: string | null
+          actor_id?: string | null
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          target_id?: string | null
+          target_type?: string
         }
         Relationships: []
       }
@@ -1481,6 +1489,7 @@ export type Database = {
           grocery_day: number | null
           id: string
           is_admin: boolean
+          is_trainer: boolean
           learning_time_minutes_per_week: number | null
           meal_prep_day: number | null
           onboarding_completed_at: string | null
@@ -1501,6 +1510,7 @@ export type Database = {
           grocery_day?: number | null
           id: string
           is_admin?: boolean
+          is_trainer?: boolean
           learning_time_minutes_per_week?: number | null
           meal_prep_day?: number | null
           onboarding_completed_at?: string | null
@@ -1521,6 +1531,7 @@ export type Database = {
           grocery_day?: number | null
           id?: string
           is_admin?: boolean
+          is_trainer?: boolean
           learning_time_minutes_per_week?: number | null
           meal_prep_day?: number | null
           onboarding_completed_at?: string | null
@@ -2296,6 +2307,66 @@ export type Database = {
           },
         ]
       }
+      trainer_clients: {
+        Row: {
+          client_id: string
+          ended_at: string | null
+          id: string
+          started_at: string
+          status: string
+          trainer_id: string
+        }
+        Insert: {
+          client_id: string
+          ended_at?: string | null
+          id?: string
+          started_at?: string
+          status?: string
+          trainer_id: string
+        }
+        Update: {
+          client_id?: string
+          ended_at?: string | null
+          id?: string
+          started_at?: string
+          status?: string
+          trainer_id?: string
+        }
+        Relationships: []
+      }
+      trainer_invite_codes: {
+        Row: {
+          code: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          revoked_at: string | null
+          trainer_id: string
+          used_at: string | null
+          used_by: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          revoked_at?: string | null
+          trainer_id: string
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          revoked_at?: string | null
+          trainer_id?: string
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Relationships: []
+      }
       training_program_phases: {
         Row: {
           focus: string | null
@@ -2857,6 +2928,11 @@ export type Database = {
     Functions: {
       is_admin: { Args: { uid: string }; Returns: boolean }
       is_admin_owner: { Args: { uid: string }; Returns: boolean }
+      is_trainer: { Args: { uid: string }; Returns: boolean }
+      is_trainer_of: {
+        Args: { p_client_id: string; p_trainer_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
@@ -2985,9 +3061,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

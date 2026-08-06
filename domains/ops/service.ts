@@ -3,7 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
 import type { Database } from "@/platform/db/types";
-import type { AiRun } from "@/domains/ops/types";
+import type { AiRun, AdminAction } from "@/domains/ops/types";
 
 export type AiRunFilter = "all" | "success" | "failure";
 
@@ -68,6 +68,36 @@ export async function countAiRunFailures(
  * week — exactly the set that cron's own query targets — so a growing
  * number here means the cron either hasn't run recently or is failing,
  * even without a historical log to point at directly. */
+/** Owner-only (RLS: admin_actions_owner_select, migration 0064) — same
+ * empty-result-not-error shape as listAiRunsAdmin for a reviewer session.
+ * requireAdminOwner() in the page is what actually keeps reviewers off
+ * this route. */
+export async function listAdminActionsAdmin(
+  limit = 100,
+  client?: SupabaseClient<Database>
+): Promise<AdminAction[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("admin_actions")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Failed to load admin actions: ${error.message}`);
+
+  return (data ?? []).map(
+    (row): AdminAction => ({
+      id: row.id,
+      actorId: row.actor_id,
+      actorEmail: row.actor_email,
+      action: row.action,
+      targetType: row.target_type,
+      targetId: row.target_id,
+      detail: row.detail as Record<string, unknown> | null,
+      createdAt: row.created_at,
+    })
+  );
+}
+
 export async function countStaleWorkoutPlans(client?: SupabaseClient<Database>): Promise<number> {
   const supabase = client ?? (await createClient());
   const weekStart = new Date().toISOString().slice(0, 10);

@@ -4,6 +4,7 @@ import { getUserAdmin } from "@/domains/users/service";
 import { requireAdminOwner } from "@/platform/auth/admin";
 import { Card } from "@/platform/ui/Card";
 import { RoleForm } from "./RoleForm";
+import { TrainerStatusForm } from "./TrainerStatusForm";
 import { DeleteUserSection } from "./DeleteUserSection";
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -44,6 +45,11 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           isAdmin={user.isAdmin}
           adminRole={user.adminRole}
         />
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Trainer</p>
+        <TrainerStatusForm targetUserId={user.id} isTrainer={user.isTrainer} />
       </div>
 
       <DeleteUserSection targetUserId={user.id} currentUserId={currentUser.id} email={user.email} />

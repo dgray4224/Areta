@@ -2,6 +2,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
+import { requireAdmin } from "@/platform/auth/admin";
+import { logAdminAction } from "@/platform/audit/log";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { recipeSchema } from "@/domains/recipes/schema";
@@ -139,9 +141,20 @@ export async function updateRecipe(id: string, input: unknown): Promise<ActionRe
  * is the retirement mechanism, and a hard delete risks orphaning meal
  * plans/grocery lists/prep plans that already reference the row. */
 export async function setRecipeStatus(id: string, status: RecipeStatus): Promise<ActionResult> {
+  const { user } = await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("recipes").update({ status }).eq("id", id);
   if (error) return { ok: false, error: error.message };
+
+  await logAdminAction({
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "recipe_status_changed",
+    targetType: "recipe",
+    targetId: id,
+    detail: { status },
+  });
+
   return { ok: true, data: undefined };
 }
 

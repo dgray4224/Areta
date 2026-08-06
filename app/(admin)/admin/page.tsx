@@ -24,19 +24,9 @@ export default async function AdminDashboardPage() {
 
   const tiles = [
     {
-      href: "/admin/experts?status=candidate",
-      label: "Candidate experts awaiting review",
-      value: counts.candidateExperts,
-    },
-    {
-      href: "/admin/claims?status=unreviewed",
-      label: "Unreviewed claims",
-      value: counts.unreviewedClaims,
-    },
-    {
-      href: "/admin/limitation-rules?status=unreviewed",
-      label: "Unreviewed limitation rules",
-      value: counts.unreviewedLimitationRules,
+      href: "/admin/evidence?bucket=needs_review",
+      label: "Evidence awaiting review",
+      value: counts.candidateExperts + counts.unreviewedClaims + counts.unreviewedLimitationRules,
     },
     {
       href: "/admin/content/exercises?status=review",
@@ -69,13 +59,13 @@ export default async function AdminDashboardPage() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-neutral-600 dark:text-neutral-400">
-        Experts/sources/claims/limitation rules are a content-review queue for the goal-first training
-        system (migration 0044) — nothing approved there feeds live user plans yet, since the
+        Evidence (experts/sources/claims/limitation rules) is a content-review queue for the goal-first
+        training system (migration 0044) — nothing approved there feeds live user plans yet, since the
         recommendation engine that would read it hasn&apos;t been built (see README &quot;Known
         gaps&quot;). Exercises and recipes are different: <span className="font-medium">active</span>{" "}
         rows in both already feed real workout and meal-plan generation, which is exactly why new ones
         default to <span className="font-medium">review</span> instead of going live immediately.
-        {adminRole === "owner" ? " Ops below is owner-only; user management isn't built yet." : null}
+        {adminRole === "owner" ? " Ops and Users below are owner-only." : null}
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

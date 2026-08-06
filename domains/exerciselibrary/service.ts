@@ -2,6 +2,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
+import { requireAdmin } from "@/platform/auth/admin";
+import { logAdminAction } from "@/platform/audit/log";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { exerciseAdminSchema } from "@/domains/exerciselibrary/schema";
@@ -194,8 +196,19 @@ export async function updateExerciseAdmin(id: string, input: unknown): Promise<A
  * whatever else references the row (workout_plan_items, expert_claims,
  * limitation_rules, program_session_exercises, etc.). */
 export async function setExerciseStatus(id: string, status: ExerciseStatus): Promise<ActionResult> {
+  const { user } = await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("exercises").update({ status }).eq("id", id);
   if (error) return { ok: false, error: error.message };
+
+  await logAdminAction({
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "exercise_status_changed",
+    targetType: "exercise",
+    targetId: id,
+    detail: { status },
+  });
+
   return { ok: true, data: undefined };
 }

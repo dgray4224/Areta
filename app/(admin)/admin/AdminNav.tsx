@@ -10,13 +10,15 @@ import type { AdminRole } from "@/platform/auth/admin";
  * `is_admin()`, not role, so reviewers genuinely can act on all of
  * these. Ops (Phase D) is the first owner-only tab, gated below on
  * `ownerOnly` — matches `requireAdminOwner()` actually enforcing it
- * server-side too, so this isn't just cosmetic hiding. */
+ * server-side too, so this isn't just cosmetic hiding.
+ *
+ * Experts/Sources/Claims/Limitation-rules were four separate tabs until
+ * 2026-08-06, merged into one "Evidence" tab (/admin/evidence) — one
+ * unified list across all four types plus one combined add-flow, instead
+ * of four disconnected forms an admin had to wire together by hand. */
 const TABS = [
   { href: "/admin", label: "Overview", ownerOnly: false },
-  { href: "/admin/experts", label: "Experts", ownerOnly: false },
-  { href: "/admin/sources", label: "Sources", ownerOnly: false },
-  { href: "/admin/claims", label: "Claims", ownerOnly: false },
-  { href: "/admin/limitation-rules", label: "Limitation rules", ownerOnly: false },
+  { href: "/admin/evidence", label: "Evidence", ownerOnly: false },
   { href: "/admin/content/exercises", label: "Exercises", ownerOnly: false },
   { href: "/admin/content/recipes", label: "Recipes", ownerOnly: false },
   { href: "/admin/ops", label: "Ops", ownerOnly: true },
