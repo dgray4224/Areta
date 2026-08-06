@@ -1,16 +1,25 @@
 "use server";
 
 import { randomBytes } from "crypto";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
 import { createAdminClient } from "@/platform/supabase/admin";
 import { requireTrainer } from "@/platform/auth/trainer";
 import { requireUser } from "@/platform/auth/session";
 import { logAdminAction } from "@/platform/audit/log";
-import { getApprovedParameterValue } from "@/domains/parameters/service";
+import { getApprovedParameterValue, getGeneratedParameters, approveAllGeneratedParameters, type StoredParameter } from "@/domains/parameters/service";
 import { generateAndSaveMealPlan, getActiveMealPlan, type MealPlanView } from "@/domains/mealplan/service";
 import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
-import { generateAndSaveWorkoutPlan, getActiveWorkoutPlan, approveWorkoutPlan, type WorkoutPlanView } from "@/domains/workoutplan/service";
+import {
+  generateAndSaveWorkoutPlan,
+  getActiveWorkoutPlan,
+  approveWorkoutPlan,
+  customizeWorkoutPlanItemExercise,
+  addWorkoutPlanItemExercise,
+  type WorkoutPlanView,
+  type WorkoutPlanItemView,
+  type CustomizeExerciseInput,
+} from "@/domains/workoutplan/service";
 import type { ActionResult } from "@/platform/auth/actions";
 import type { Database } from "@/platform/db/types";
 import type {
@@ -43,6 +52,29 @@ async function requireActiveClient(
     .eq("status", "active")
     .maybeSingle();
   return !!data;
+}
+
+/** Thin wrapper over logAdminAction for the trainer-on-client-data
+ * actions below — same admin_actions table, so an owner can see trainer
+ * activity in the same Ops → Audit log as everything else, not a
+ * separate trail. targetType is always "trainer_client_data" with the
+ * clientId in detail rather than as targetId, since these actions don't
+ * touch trainer_clients itself (see trainer_invite_redeemed/
+ * trainer_relationship_ended above for the ones that do). */
+async function logTrainerAction(
+  trainer: User,
+  action: string,
+  clientId: string,
+  detail: Record<string, unknown>
+): Promise<void> {
+  await logAdminAction({
+    actorId: trainer.id,
+    actorEmail: trainer.email ?? null,
+    action,
+    targetType: "trainer_client_data",
+    targetId: null,
+    detail: { clientId, ...detail },
+  });
 }
 
 // Excludes visually ambiguous characters (0/O, 1/I/L) since a client has
@@ -265,6 +297,7 @@ export async function updateClientGoal(
     .eq("user_id", clientId);
   if (error) return { ok: false, error: error.message };
 
+  await logTrainerAction(user, "client_goal_updated", clientId, { goalId, ...input });
   return { ok: true, data: undefined };
 }
 
@@ -273,15 +306,17 @@ export async function updateClientGoal(
 // deterministic generate/approve pipeline the client uses on themselves
 // (domains/mealplan, domains/workoutplan, domains/parameters) rather than
 // hand-editing plan rows — a trainer regenerating/approving a plan runs
-// the same vetted engine, just on a client's behalf. Item-level exercise
-// swap/customize (domains/workoutplan/service.ts's
-// swapWorkoutPlanItemExercise/customizeWorkoutPlanItemExercise) isn't
-// wired up here yet — deliberate next step, same as goal editing above.
+// the same vetted engine, just on a client's behalf.
 // ---------------------------------------------------------------------------
 
 export type ClientNutritionOverview = {
   calorieTarget: number | null;
   proteinTarget: number | null;
+  /** Every generated_parameters row in the nutrition domain, approved or
+   * not — lets the trainer nutrition page show "3 targets awaiting
+   * approval" and offer to approve them, distinct from calorieTarget/
+   * proteinTarget above (which are null until approved). */
+  parameters: StoredParameter[];
   mealPlan: MealPlanView | null;
 };
 
@@ -295,19 +330,44 @@ export async function getClientNutritionOverview(
     return { ok: false, error: "This is not your client." };
   }
 
-  const [calorieTarget, proteinTarget, mealPlan] = await Promise.all([
+  const [calorieTarget, proteinTarget, parameters, mealPlan] = await Promise.all([
     getApprovedParameterValue(clientId, "nutrition", "calorie_target"),
     getApprovedParameterValue(clientId, "nutrition", "protein_target_g"),
+    getGeneratedParameters(clientId, "nutrition"),
     getActiveMealPlan(clientId, supabase),
   ]);
 
-  return { ok: true, data: { calorieTarget, proteinTarget, mealPlan } };
+  return { ok: true, data: { calorieTarget, proteinTarget, parameters, mealPlan } };
+}
+
+/** Approves every generated-but-unapproved nutrition parameter as-is (the
+ * calculated/rule-derived value LifeOS already produced from the
+ * client's onboarding answers) — not a per-value edit. A trainer wanting
+ * to override a specific number still needs the client to do that
+ * themselves on /plan/parameters; this only delegates the approval step,
+ * same values a client would otherwise approve unedited anyway. Requires
+ * parameters to already exist (generated during the client's own
+ * onboarding/plan setup) — a trainer can't generate them from scratch,
+ * since that needs onboarding data only the client has entered. */
+export async function approveClientNutritionParameters(clientId: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await approveAllGeneratedParameters(clientId, "nutrition");
+  if (!result.ok) return result;
+
+  await logTrainerAction(user, "client_nutrition_parameters_approved", clientId, {});
+  return { ok: true, data: undefined };
 }
 
 /** Requires calorie/protein targets already approved (by the client
- * themselves, in onboarding/plan setup — a trainer doesn't get a separate
- * path to approve those targets in this pass) — same precondition
- * generateAndSaveMealPlan enforces for anyone calling it. */
+ * themselves, or by the trainer via approveClientNutritionParameters
+ * above) — same precondition generateAndSaveMealPlan enforces for
+ * anyone calling it. */
 export async function generateClientMealPlan(clientId: string): Promise<ActionResult<{ warnings: string[] }>> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
@@ -316,7 +376,9 @@ export async function generateClientMealPlan(clientId: string): Promise<ActionRe
     return { ok: false, error: "This is not your client." };
   }
 
-  return generateAndSaveMealPlan(clientId);
+  const result = await generateAndSaveMealPlan(clientId);
+  if (result.ok) await logTrainerAction(user, "client_meal_plan_generated", clientId, {});
+  return result;
 }
 
 /** Cascades into the grocery list and Sunday prep plan too, same as when
@@ -329,7 +391,9 @@ export async function approveClientMealPlan(clientId: string): Promise<ActionRes
     return { ok: false, error: "This is not your client." };
   }
 
-  return approveMealPlanAndGenerateDownstream(clientId);
+  const result = await approveMealPlanAndGenerateDownstream(clientId);
+  if (result.ok) await logTrainerAction(user, "client_meal_plan_approved", clientId, {});
+  return result;
 }
 
 export async function getClientWorkoutOverview(
@@ -354,7 +418,9 @@ export async function generateClientWorkoutPlan(clientId: string): Promise<Actio
     return { ok: false, error: "This is not your client." };
   }
 
-  return generateAndSaveWorkoutPlan(clientId);
+  const result = await generateAndSaveWorkoutPlan(clientId);
+  if (result.ok) await logTrainerAction(user, "client_workout_plan_generated", clientId, {});
+  return result;
 }
 
 export async function approveClientWorkoutPlan(clientId: string): Promise<ActionResult> {
@@ -365,7 +431,54 @@ export async function approveClientWorkoutPlan(clientId: string): Promise<Action
     return { ok: false, error: "This is not your client." };
   }
 
-  return approveWorkoutPlan(clientId);
+  const result = await approveWorkoutPlan(clientId);
+  if (result.ok) await logTrainerAction(user, "client_workout_plan_approved", clientId, {});
+  return result;
+}
+
+/** Free-form replace — see CustomizeExerciseInput's own doc comment in
+ * domains/workoutplan/service.ts. Curated "alternates" swap
+ * (swapWorkoutPlanItemExercise, mobile-only today via app/api/exercise)
+ * isn't wired up here — that needs the same slot-options/equipment
+ * filtering app/api/exercise/route.ts's GET handler does, which is a
+ * bigger lift than a free-pick replace; deliberately out of scope for
+ * this pass. */
+export async function customizeClientWorkoutItem(
+  clientId: string,
+  itemId: string,
+  input: CustomizeExerciseInput
+): Promise<ActionResult<WorkoutPlanItemView>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await customizeWorkoutPlanItemExercise(clientId, itemId, input, supabase);
+  if (result.ok) {
+    await logTrainerAction(user, "client_workout_item_customized", clientId, { itemId, ...input });
+  }
+  return result;
+}
+
+export async function addClientWorkoutItem(
+  clientId: string,
+  dayOfWeek: number,
+  input: CustomizeExerciseInput
+): Promise<ActionResult<WorkoutPlanItemView>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await addWorkoutPlanItemExercise(clientId, dayOfWeek, input, supabase);
+  if (result.ok) {
+    await logTrainerAction(user, "client_workout_item_added", clientId, { dayOfWeek, ...input });
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

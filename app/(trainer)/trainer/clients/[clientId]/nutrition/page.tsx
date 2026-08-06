@@ -5,6 +5,7 @@ import { getRecipesByIds } from "@/domains/recipes/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { PlanActions } from "../PlanActions";
+import { ApproveNutritionButton } from "./ApproveNutritionButton";
 import type { MealPlanItemView } from "@/domains/mealplan/service";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -14,7 +15,8 @@ export default async function ClientNutritionPage({ params }: { params: Promise<
   const { clientId } = await params;
   const result = await getClientNutritionOverview(clientId);
   if (!result.ok) notFound();
-  const { calorieTarget, proteinTarget, mealPlan } = result.data;
+  const { calorieTarget, proteinTarget, parameters, mealPlan } = result.data;
+  const unapproved = parameters.filter((p) => !p.approved);
 
   return (
     <div className="space-y-6">
@@ -34,10 +36,30 @@ export default async function ClientNutritionPage({ params }: { params: Promise<
         </div>
       </Card>
 
+      {parameters.length === 0 ? (
+        <p className="text-sm text-neutral-500">
+          No nutrition parameters generated yet — that needs your client&apos;s onboarding answers, so it
+          has to happen on their end first (Plan → Nutrition targets).
+        </p>
+      ) : unapproved.length > 0 ? (
+        <Card className="space-y-2">
+          <p className="text-sm font-medium">{unapproved.length} target(s) awaiting approval</p>
+          <ul className="space-y-1 text-sm text-neutral-600 dark:text-neutral-400">
+            {unapproved.map((p) => (
+              <li key={p.dbId}>
+                {p.name.replace(/_/g, " ")}: {String(p.value)}
+                {p.unit ? ` ${p.unit}` : ""}
+              </li>
+            ))}
+          </ul>
+          <ApproveNutritionButton clientId={clientId} />
+        </Card>
+      ) : null}
+
       {!calorieTarget || !proteinTarget ? (
         <p className="text-sm text-neutral-500">
-          A meal plan can&apos;t be generated until your client approves their own nutrition targets
-          (Plan → Nutrition targets) — that approval step isn&apos;t delegated to trainers in this pass.
+          A meal plan can&apos;t be generated until calorie and protein targets are approved (above, or
+          by your client on their own Plan → Nutrition targets screen).
         </p>
       ) : (
         <PlanActions

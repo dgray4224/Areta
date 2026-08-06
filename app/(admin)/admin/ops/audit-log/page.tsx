@@ -15,6 +15,14 @@ const ACTION_LABELS: Record<string, string> = {
   evidence_bundle_created: "Evidence bundle created",
   trainer_invite_redeemed: "Trainer invite redeemed",
   trainer_relationship_ended: "Trainer relationship ended",
+  client_goal_updated: "Client goal updated",
+  client_nutrition_parameters_approved: "Client nutrition targets approved",
+  client_meal_plan_generated: "Client meal plan generated",
+  client_meal_plan_approved: "Client meal plan approved",
+  client_workout_plan_generated: "Client workout plan generated",
+  client_workout_plan_approved: "Client workout plan approved",
+  client_workout_item_customized: "Client workout item customized",
+  client_workout_item_added: "Client workout item added",
 };
 
 function shortId(id: string): string {

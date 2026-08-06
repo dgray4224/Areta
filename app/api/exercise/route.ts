@@ -14,6 +14,7 @@ import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { getSlotOptions, getSessionForPrescription, getAlternativeSessions } from "@/domains/trainingprogram/service";
 import type { ProgramSessionExercise } from "@/domains/trainingprogram/types";
 import { hasEquipment } from "@/domains/workoutplan/generate";
+import { buildWorkoutRationale } from "@/domains/workoutplan/rationale";
 import type { Exercise } from "@/domains/exerciselibrary/types";
 import type { ExerciseInput } from "@/domains/exercise/schema";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -119,12 +120,16 @@ export async function GET(request: NextRequest) {
 
   const plan = await getActiveWorkoutPlan(userId, supabase);
   const dow = todayDayOfWeek();
+  const tomorrowDow = (dow + 1) % 7;
   const todaysItems = plan?.items.filter((item) => item.dayOfWeek === dow) ?? [];
+  const tomorrowsItems = plan?.items.filter((item) => item.dayOfWeek === tomorrowDow) ?? [];
 
   const currentPrescriptionIds = todaysItems
     .map((item) => item.programSessionExerciseId)
     .filter((id): id is string => id !== null);
-  const [slotOptionsByCurrentId, equipmentAccess, todaysSession] = await Promise.all([
+  const tomorrowsFirstPrescriptionId = tomorrowsItems.find((item) => item.programSessionExerciseId !== null)
+    ?.programSessionExerciseId as string | undefined;
+  const [slotOptionsByCurrentId, equipmentAccess, todaysSession, tomorrowsSession] = await Promise.all([
     getSlotOptions(currentPrescriptionIds, supabase),
     getUserEquipmentAccess(userId, supabase),
     // Every item materialized for a given day shares one program_sessions
@@ -133,6 +138,10 @@ export async function GET(request: NextRequest) {
     // like deload/taper/cardio-only read as intentional instead of
     // broken) and its id/phaseId (to look up alternative sessions below).
     currentPrescriptionIds.length > 0 ? getSessionForPrescription(currentPrescriptionIds[0], supabase) : null,
+    // Same lookup for tomorrow -- purely to explain today's exercise-count/
+    // intensity choice against what's actually coming next for this user,
+    // not to display tomorrow's plan itself (see buildWorkoutRationale).
+    tomorrowsFirstPrescriptionId ? getSessionForPrescription(tomorrowsFirstPrescriptionId, supabase) : null,
   ]);
 
   const alternativeSessions = todaysSession
@@ -186,11 +195,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const rationale = buildWorkoutRationale({
+    today:
+      todaysSession?.name && todaysSession.sessionType
+        ? { name: todaysSession.name, sessionType: todaysSession.sessionType, exerciseCount: todaysItems.length }
+        : null,
+    tomorrow:
+      tomorrowsSession?.name && tomorrowsSession.sessionType
+        ? { name: tomorrowsSession.name, sessionType: tomorrowsSession.sessionType, exerciseCount: tomorrowsItems.length }
+        : null,
+    phaseFocus: plan?.phaseFocus ?? null,
+  });
+
   return NextResponse.json({
     plan: plannedExercises,
     todaysWorkoutLogs: workoutLogs ?? [],
     programContext: plan?.programContext ?? null,
     todaysSessionName: todaysSession?.name ?? null,
+    rationale,
     alternativeSessions: buildAlternativeSessionViews(alternativeSessions, exerciseMap),
   });
 }
