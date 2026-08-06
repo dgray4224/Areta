@@ -387,7 +387,14 @@ export async function getClientNutritionOverview(
  * same values a client would otherwise approve unedited anyway. Requires
  * parameters to already exist (generated during the client's own
  * onboarding/plan setup) — a trainer can't generate them from scratch,
- * since that needs onboarding data only the client has entered. */
+ * since that needs onboarding data only the client has entered.
+ *
+ * Flagged during the 2026-08-06 code-review pass as in tension with
+ * CLAUDE.md rule 24 ("require user approval before generated parameters
+ * become active") — raised with the user and confirmed to keep as-is:
+ * linking a trainer is itself the client's delegated consent, the same
+ * reasoning already applied to trainer-generated meal/workout plans.
+ * Not an oversight; a deliberate, confirmed exception. */
 export async function approveClientNutritionParameters(clientId: string): Promise<ActionResult> {
   const { user } = await requireTrainer();
   const supabase = await createClient();

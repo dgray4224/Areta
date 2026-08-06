@@ -124,7 +124,17 @@ export type LimitationRuleInput = z.infer<typeof limitationRuleSchema>;
  * doesn't; (2) createEvidenceBundle (service.ts) ignores any client-sent
  * expertId on the new source/rule and always threads through the
  * server-resolved one, so a newly-created source can never end up
- * attributed to the wrong expert. */
+ * attributed to the wrong expert.
+ *
+ * Known, confirmed capability gap (2026-08-06 code-review pass): unlike
+ * the deleted standalone SourceForm, expertMode is never optional here —
+ * every submission requires an expert, so a bare institutional-only
+ * source (e.g. citing an ACSM guideline with no individual expert) can't
+ * be added through this flow. Raised with the user and confirmed to
+ * leave as-is: expert_claims.expertId was already mandatory before this
+ * merge, so the practical loss is narrow, and it's an accepted
+ * consequence of the explicit "fully combined" choice this schema
+ * implements, not an oversight. */
 export const evidenceBundleSchema = z
   .object({
     expertMode: z.enum(["existing", "new"]),
