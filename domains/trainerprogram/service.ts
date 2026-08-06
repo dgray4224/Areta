@@ -188,12 +188,36 @@ export async function updateProgram(programId: string, input: unknown): Promise<
  * exercises: 'archived' takes a program out of the assignable list
  * without orphaning any assignment or materialized workout_plan_items
  * that already reference it. */
+/** Leaving 'published' (to 'draft' or 'archived') is refused while any
+ * client has an active assignment on this program -- found in code
+ * review, 2026-08-06: assignProgramToClient's own published-only guard
+ * only applies at assignment time, and neither the weekly cron nor
+ * generateAndSaveFromTrainerProgram ever re-check program status, so a
+ * program a trainer reopens for editing and moves back to 'draft' mid-
+ * assignment would keep silently materializing into a client's live
+ * plan regardless -- exactly the "not ready yet" signal 'draft' is
+ * supposed to prevent. */
 export async function setProgramStatus(
   programId: string,
   status: "draft" | "published" | "archived"
 ): Promise<ActionResult> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
+
+  if (status !== "published") {
+    const { count } = await supabase
+      .from("trainer_program_assignments")
+      .select("id", { count: "exact", head: true })
+      .eq("program_id", programId)
+      .eq("status", "active");
+    if (count && count > 0) {
+      return {
+        ok: false,
+        error: "A client is actively assigned to this program -- reassign or end that first.",
+      };
+    }
+  }
+
   const { error } = await supabase.from("trainer_programs").update({ status }).eq("id", programId);
   if (error) return { ok: false, error: error.message };
 
@@ -263,24 +287,57 @@ export async function updatePhase(phaseId: string, input: unknown): Promise<Acti
   return { ok: true, data: undefined };
 }
 
-/** Refuses to delete a phase any already-materialized workout_plans row
- * still points to (trainer_program_phase_id) -- the FK has no on-delete
- * behavior specified (defaults to restrict), so this would fail at the
- * database anyway; checking first gives a readable error instead of a
- * raw constraint-violation message. Progression is computed fresh from
- * starts_on + phase list each time now (calendar-projection.ts), not a
- * stored pointer, so there's no "a client is currently on this phase"
- * state to check independent of what's already been generated. */
+/** Whether any already-materialized workout_plan_items still point at
+ * one of these trainer_program_session_exercises ids -- the shared check
+ * behind deletePhase/deleteSession/deleteSessionExercise below. None of
+ * the FKs from workout_plan_items back to this content have an
+ * ON DELETE clause (defaults to RESTRICT), so an unguarded delete would
+ * fail at the database anyway; checking first turns that into a
+ * readable error instead of a raw constraint-violation message. */
+async function hasMaterializedReferences(
+  sessionExerciseIds: string[],
+  supabase: SupabaseClient<Database>
+): Promise<boolean> {
+  if (sessionExerciseIds.length === 0) return false;
+  const { count } = await supabase
+    .from("workout_plan_items")
+    .select("id", { count: "exact", head: true })
+    .in("trainer_program_session_exercise_id", sessionExerciseIds);
+  return (count ?? 0) > 0;
+}
+
+/** Found in code review (2026-08-06): the original version of this guard
+ * checked workout_plans.trainer_program_phase_id, but a materialized
+ * week is tagged with only *one* phase (whichever applies to "today")
+ * even when its actual day-of-week items straddle a phase boundary --
+ * which happens whenever a program's starts_on isn't Sunday-aligned,
+ * since phase lengths advance in exact 7-day increments from starts_on,
+ * not from the nearest Sunday. That let the guard pass while
+ * workout_plan_items still referenced the phase being deleted, via
+ * items sourced from a differently-labeled straddling week. This walks
+ * the real reference chain (phase -> sessions -> session_exercises ->
+ * items) instead of trusting the plan-level label. */
 export async function deletePhase(phaseId: string): Promise<ActionResult> {
   await requireTrainer();
   const supabase = await createClient();
 
-  const { count } = await supabase
-    .from("workout_plans")
-    .select("id", { count: "exact", head: true })
-    .eq("trainer_program_phase_id", phaseId);
-  if (count && count > 0) {
-    return { ok: false, error: "A client already has a generated plan from this phase -- delete won't proceed." };
+  const { data: sessionRows } = await supabase.from("trainer_program_sessions").select("id").eq("phase_id", phaseId);
+  const sessionIds = (sessionRows ?? []).map((s) => s.id);
+
+  let sessionExerciseIds: string[] = [];
+  if (sessionIds.length > 0) {
+    const { data: exerciseRows } = await supabase
+      .from("trainer_program_session_exercises")
+      .select("id")
+      .in("session_id", sessionIds);
+    sessionExerciseIds = (exerciseRows ?? []).map((e) => e.id);
+  }
+
+  if (await hasMaterializedReferences(sessionExerciseIds, supabase)) {
+    return {
+      ok: false,
+      error: "A client already has a generated plan using content from this phase -- delete won't proceed.",
+    };
   }
 
   const { error } = await supabase.from("trainer_program_phases").delete().eq("id", phaseId);
@@ -336,9 +393,28 @@ export async function updateSession(sessionId: string, input: unknown): Promise<
   return { ok: true, data: undefined };
 }
 
+/** Same materialized-reference guard as deletePhase -- found missing
+ * entirely here in code review, 2026-08-06 (only deletePhase had one,
+ * and even that checked the wrong column). Without it, deleting a
+ * session a client already has a generated week from surfaces a raw
+ * Postgres FK-violation instead of a readable error. */
 export async function deleteSession(sessionId: string): Promise<ActionResult> {
   await requireTrainer();
   const supabase = await createClient();
+
+  const { data: exerciseRows } = await supabase
+    .from("trainer_program_session_exercises")
+    .select("id")
+    .eq("session_id", sessionId);
+  const sessionExerciseIds = (exerciseRows ?? []).map((e) => e.id);
+
+  if (await hasMaterializedReferences(sessionExerciseIds, supabase)) {
+    return {
+      ok: false,
+      error: "A client already has a generated plan using this session -- delete won't proceed.",
+    };
+  }
+
   const { error } = await supabase.from("trainer_program_sessions").delete().eq("id", sessionId);
   if (error) return { ok: false, error: error.message };
   return { ok: true, data: undefined };
@@ -411,9 +487,19 @@ export async function updateSessionExercise(id: string, input: unknown): Promise
   return { ok: true, data: undefined };
 }
 
+/** Same materialized-reference guard as deletePhase/deleteSession --
+ * found missing entirely here in code review, 2026-08-06. */
 export async function deleteSessionExercise(id: string): Promise<ActionResult> {
   await requireTrainer();
   const supabase = await createClient();
+
+  if (await hasMaterializedReferences([id], supabase)) {
+    return {
+      ok: false,
+      error: "A client already has a generated plan using this exercise -- delete won't proceed.",
+    };
+  }
+
   const { error } = await supabase.from("trainer_program_session_exercises").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
   return { ok: true, data: undefined };

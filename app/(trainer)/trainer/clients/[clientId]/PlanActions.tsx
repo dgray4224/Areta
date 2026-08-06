@@ -15,6 +15,8 @@ export function PlanActions({
   onApprove,
   generateLabel = "Generate plan",
   approveLabel = "Approve plan",
+  disableGenerate = false,
+  disabledReason,
 }: {
   clientId: string;
   hasDraft: boolean;
@@ -22,6 +24,14 @@ export function PlanActions({
   onApprove: (clientId: string) => Promise<{ ok: boolean; error?: string }>;
   generateLabel?: string;
   approveLabel?: string;
+  /** Grays out (rather than just erroring after the fact) the generate
+   * button when the caller already knows the underlying action will
+   * refuse to run — e.g. a trainer-authored program is assigned, which
+   * blocks the library generator server-side (found in code review,
+   * 2026-08-06: the page's own copy claimed this was "blocked
+   * automatically" while the button stayed fully clickable). */
+  disableGenerate?: boolean;
+  disabledReason?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -42,7 +52,13 @@ export function PlanActions({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="secondary" disabled={isPending} onClick={() => run(onGenerate)}>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={isPending || disableGenerate}
+          title={disableGenerate ? disabledReason : undefined}
+          onClick={() => run(onGenerate)}
+        >
           {isPending ? "Working…" : generateLabel}
         </Button>
         {hasDraft ? (

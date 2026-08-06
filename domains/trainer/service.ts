@@ -608,7 +608,7 @@ export async function assignProgramToClient(
   programId: string,
   onComplete: "repeat" | "freeze" = "repeat",
   startsOn?: string
-): Promise<ActionResult> {
+): Promise<ActionResult<{ warnings: string[] }>> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
 
@@ -641,12 +641,25 @@ export async function assignProgramToClient(
   // partial unique index (one active assignment per client, migration
   // 0075) would otherwise reject the new insert. Switching programs
   // deliberately doesn't require a separate "unassign" step first.
-  const { error: endError } = await supabase
+  // Recorded by id (not just "ended") so a failed insert below can
+  // reactivate exactly this row rather than leaving the client with no
+  // active assignment at all — found in code review, 2026-08-06: two
+  // sequential writes with no real transaction at this layer means a
+  // failure between them previously stranded the client program-less.
+  const { data: previousActive } = await supabase
     .from("trainer_program_assignments")
-    .update({ status: "ended", ended_at: new Date().toISOString() })
+    .select("id")
     .eq("client_id", clientId)
-    .eq("status", "active");
-  if (endError) return { ok: false, error: endError.message };
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (previousActive) {
+    const { error: endError } = await supabase
+      .from("trainer_program_assignments")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", previousActive.id);
+    if (endError) return { ok: false, error: endError.message };
+  }
 
   const { error: insertError } = await supabase.from("trainer_program_assignments").insert({
     program_id: programId,
@@ -655,15 +668,26 @@ export async function assignProgramToClient(
     on_complete: onComplete,
     starts_on: startsOn || new Date().toISOString().slice(0, 10),
   });
-  if (insertError) return { ok: false, error: insertError.message };
+  if (insertError) {
+    if (previousActive) {
+      await supabase
+        .from("trainer_program_assignments")
+        .update({ status: "active", ended_at: null })
+        .eq("id", previousActive.id);
+    }
+    return { ok: false, error: insertError.message };
+  }
 
   // A no-op (with an explanatory warning, not an error) if startsOn is in
   // the future — generateAndSaveFromTrainerProgram itself checks that.
+  // Its warnings are surfaced here rather than discarded (found in code
+  // review, 2026-08-06) — a future-dated assignment previously reported
+  // bare success with no indication nothing was actually generated yet.
   const generated = await generateAndSaveFromTrainerProgram(clientId, supabase);
   if (!generated.ok) return generated;
 
   await logTrainerAction(user, "client_program_assigned", clientId, { programId, onComplete, startsOn });
-  return { ok: true, data: undefined };
+  return { ok: true, data: { warnings: generated.data.warnings } };
 }
 
 export async function unassignProgram(clientId: string): Promise<ActionResult> {
@@ -834,7 +858,15 @@ export async function clearClientDateOverride(clientId: string, date: string): P
  * new override, and fromDate itself becomes a rest-day override — a
  * move, not a copy, matching normal calendar drag UX. Both dates go
  * through the same past/not-started validation as any other override
- * write (setDateOverride), so this refuses to touch history either. */
+ * write (setDateOverride), so this refuses to touch history either.
+ *
+ * Two sequential writes, no real database transaction available at this
+ * layer — if the second (fromDate) write fails after the first (toDate)
+ * succeeded, the naive version would leave the session duplicated on
+ * both dates rather than moved. Snapshots toDate's pre-move state first
+ * and restores it (found in code review, 2026-08-06) if the fromDate
+ * write fails, so a failure always leaves the calendar exactly as it was
+ * before the drag, never duplicated. */
 export async function moveClientSessionToDate(
   clientId: string,
   fromDate: string,
@@ -856,16 +888,29 @@ export async function moveClientSessionToDate(
   if (!assignment) return { ok: false, error: "No active program assigned." };
 
   const phases = await getHydratedPhasesForProgram(assignment.program_id, supabase);
-  const overridesByDate = await getOverridesForRange(assignment.id, fromDate, fromDate, supabase);
+  const overridesByDate = await getOverridesForRange(assignment.id, fromDate, toDate, supabase);
+  const onComplete = assignment.on_complete as TrainerProgramAssignment["onComplete"];
+
   const [fromProjection] = projectProgramRange({
     startsOn: assignment.starts_on,
     phases,
-    onComplete: assignment.on_complete as TrainerProgramAssignment["onComplete"],
+    onComplete,
     rangeStart: fromDate,
     rangeEnd: fromDate,
     overridesByDate,
   });
   if (!fromProjection) return { ok: false, error: "Couldn't read that date." };
+
+  // Snapshot toDate's pre-move state so a failed second write can be
+  // rolled back to exactly this, not just cleared to template.
+  const [toProjectionBefore] = projectProgramRange({
+    startsOn: assignment.starts_on,
+    phases,
+    onComplete,
+    rangeStart: toDate,
+    rangeEnd: toDate,
+    overridesByDate,
+  });
 
   const toResult = await setDateOverride(
     clientId,
@@ -876,7 +921,19 @@ export async function moveClientSessionToDate(
   if (!toResult.ok) return toResult;
 
   const fromResult = await setDateOverride(clientId, fromDate, { isRestDay: true, exercises: [] }, supabase);
-  if (!fromResult.ok) return fromResult;
+  if (!fromResult.ok) {
+    if (toProjectionBefore?.source === "override") {
+      await setDateOverride(
+        clientId,
+        toDate,
+        { isRestDay: toProjectionBefore.exercises.length === 0, exercises: toProjectionBefore.exercises },
+        supabase
+      );
+    } else {
+      await clearDateOverride(clientId, toDate, supabase);
+    }
+    return fromResult;
+  }
 
   await logTrainerAction(user, "client_session_moved", clientId, { fromDate, toDate });
   return { ok: true, data: undefined };

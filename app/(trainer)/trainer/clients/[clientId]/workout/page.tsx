@@ -44,8 +44,15 @@ function formatPrescription(item: WorkoutPlanItemView): string {
   return `${item.sets ?? "?"} × ${repsLabel}${intensitySuffix}`;
 }
 
-export default async function ClientWorkoutPage({ params }: { params: Promise<{ clientId: string }> }) {
+export default async function ClientWorkoutPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ clientId: string }>;
+  searchParams: Promise<{ assignWarnings?: string }>;
+}) {
   const { clientId } = await params;
+  const { assignWarnings } = await searchParams;
   const [result, assignment, allPrograms] = await Promise.all([
     getClientWorkoutOverview(clientId),
     getClientProgramAssignment(clientId),
@@ -55,12 +62,29 @@ export default async function ClientWorkoutPage({ params }: { params: Promise<{ 
   const { workoutPlan } = result.data;
   const publishedPrograms = allPrograms.filter((p) => p.status === "published");
 
+  let warnings: string[] = [];
+  if (assignWarnings) {
+    try {
+      warnings = JSON.parse(assignWarnings);
+    } catch {
+      // Malformed query param -- ignore rather than error the page.
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Link href={`/trainer/clients/${clientId}`} className="text-sm text-neutral-500 hover:underline">
         ← Back
       </Link>
       <h2 className="text-lg font-semibold">Workout program</h2>
+
+      {warnings.length > 0 ? (
+        <div className="space-y-1 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          {warnings.map((w, i) => (
+            <p key={i}>{w}</p>
+          ))}
+        </div>
+      ) : null}
 
       {assignment ? (
         <AssignedProgramPanel clientId={clientId} assignment={assignment} programs={publishedPrograms} />
@@ -86,8 +110,9 @@ export default async function ClientWorkoutPage({ params }: { params: Promise<{ 
         <div className="mt-3 space-y-3">
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
             Pulls from the same training-program library your client&apos;s own onboarding-driven plan would use.
-            Blocked automatically while a program is assigned above (unassign it first) — the two would otherwise
-            silently overwrite each other&apos;s draft for the same week.
+            {assignment
+              ? " Blocked automatically while a program is assigned above (unassign it first) — the two would otherwise silently overwrite each other's draft for the same week."
+              : ""}
           </p>
           <PlanActions
             clientId={clientId}
@@ -96,6 +121,8 @@ export default async function ClientWorkoutPage({ params }: { params: Promise<{ 
             onApprove={approveClientWorkoutPlan}
             generateLabel={workoutPlan ? "Regenerate plan" : "Generate workout plan"}
             approveLabel="Approve plan"
+            disableGenerate={assignment !== null}
+            disabledReason="Unassign the trainer-authored program above first."
           />
         </div>
       </details>

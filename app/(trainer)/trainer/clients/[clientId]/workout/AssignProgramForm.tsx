@@ -44,7 +44,17 @@ export function AssignProgramForm({ clientId, programs }: { clientId: string; pr
         setError(result.error);
         return;
       }
-      router.refresh();
+      // A plain router.refresh() wouldn't carry these warnings anywhere
+      // to display -- this form unmounts once an assignment exists
+      // (replaced by AssignedProgramPanel), so any local state here
+      // would vanish with it. Routing through a query param (same
+      // pattern as the program builder's importWarnings) survives that
+      // swap.
+      if (result.data.warnings.length > 0) {
+        router.push(`/trainer/clients/${clientId}/workout?assignWarnings=${encodeURIComponent(JSON.stringify(result.data.warnings))}`);
+      } else {
+        router.refresh();
+      }
     });
   };
 

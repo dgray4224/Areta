@@ -22,15 +22,18 @@ export function AssignedProgramPanel({
   const [changing, setChanging] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   const onRegenerate = () => {
     setError(null);
+    setWarnings([]);
     startTransition(async () => {
       const result = await generateClientWorkoutPlanFromProgram(clientId);
       if (!result.ok) {
         setError(result.error);
         return;
       }
+      setWarnings(result.data.warnings);
       router.refresh();
     });
   };
@@ -68,6 +71,11 @@ export function AssignedProgramPanel({
         </div>
       </div>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      {warnings.map((w, i) => (
+        <p key={i} className="mt-2 text-sm text-amber-700 dark:text-amber-400">
+          {w}
+        </p>
+      ))}
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           href={`/trainer/clients/${clientId}/workout/calendar`}
