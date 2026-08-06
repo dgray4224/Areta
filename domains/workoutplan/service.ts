@@ -788,13 +788,28 @@ export async function addWorkoutPlanItemExercise(
  * of guard as swapWorkoutPlanItemExercise's sibling-slot check, since a
  * plan's phase is what scopes which sessions are legitimate "alternatives"
  * for it.
+ *
+ * Rebalances the rest of the week rather than overwriting today in
+ * isolation: materializeWorkoutPlan only ever uses as many of a phase's
+ * authored sessions as there are training days that week (e.g. 5 of 6 for
+ * a 5-day week), so swapping today to a session that's already scheduled
+ * on another day would otherwise silently duplicate it and drop whatever
+ * that other day was going to be. Instead, if the target session is
+ * already scheduled on a day that's today or still ahead this week, that
+ * day trades places with today (today's old session moves there) --
+ * a minimal-diff pairwise swap, not a full week regeneration. A day that
+ * already happened is never touched (explicit product decision -- a
+ * completed/logged day shouldn't visually change after the fact); if the
+ * target session isn't scheduled anywhere this week (or only on a day
+ * that's already passed), it's the "leftover" session materializeWorkoutPlan
+ * didn't use, and today just takes it directly with no swap partner needed.
  */
 export async function selectAlternativeSessionForToday(
   userId: string,
   dayOfWeek: number,
   sessionId: string,
   client?: SupabaseClient<Database>
-): Promise<ActionResult> {
+): Promise<ActionResult<{ rebalancedDayOfWeek: number | null }>> {
   const supabase = client ?? (await createClient());
 
   const { data: plan, error: planError } = await supabase
@@ -832,34 +847,107 @@ export async function selectAlternativeSessionForToday(
     return { ok: false, error: "That session has no exercises to switch to." };
   }
 
-  const { error: deleteError } = await supabase
+  // This week's current day -> session mapping, to find a same-session
+  // swap partner (today-or-later only). Every item materialized for a
+  // given day shares one session_id (materializeWorkoutPlan's own
+  // invariant -- see its module comment), so the first prescription seen
+  // per day is enough to identify that day's session.
+  const { data: weekItems, error: weekItemsError } = await supabase
+    .from("workout_plan_items")
+    .select("day_of_week, program_session_exercise_id")
+    .eq("workout_plan_id", plan.id)
+    .not("program_session_exercise_id", "is", null);
+  if (weekItemsError) return { ok: false, error: weekItemsError.message };
+
+  const prescriptionIds = Array.from(
+    new Set(
+      (weekItems ?? [])
+        .map((item) => item.program_session_exercise_id)
+        .filter((id): id is string => id !== null)
+    )
+  );
+  const { data: prescriptionRows, error: prescriptionError } =
+    prescriptionIds.length > 0
+      ? await supabase.from("program_session_exercises").select("id, session_id").in("id", prescriptionIds)
+      : { data: [] as { id: string; session_id: string }[], error: null };
+  if (prescriptionError) return { ok: false, error: prescriptionError.message };
+  const sessionIdByPrescriptionId = new Map((prescriptionRows ?? []).map((row) => [row.id, row.session_id]));
+
+  const sessionIdByDay = new Map<number, string>();
+  for (const item of weekItems ?? []) {
+    if (!item.program_session_exercise_id) continue;
+    const sid = sessionIdByPrescriptionId.get(item.program_session_exercise_id);
+    if (sid) sessionIdByDay.set(item.day_of_week, sid);
+  }
+
+  const todaysCurrentSessionId = sessionIdByDay.get(dayOfWeek) ?? null;
+
+  let swapPartnerDay: number | null = null;
+  for (const [day, sid] of sessionIdByDay) {
+    if (day === dayOfWeek || day < dayOfWeek) continue;
+    if (sid === sessionId) {
+      swapPartnerDay = day;
+      break;
+    }
+  }
+
+  const buildItems = (rows: NonNullable<typeof exerciseRows>, forDayOfWeek: number) =>
+    rows.map((rx, index) => ({
+      workout_plan_id: plan.id,
+      user_id: userId,
+      day_of_week: forDayOfWeek,
+      session_order: index,
+      exercise_id: rx.exercise_id,
+      sets: rx.sets,
+      reps: rx.reps_max ?? rx.reps_min,
+      duration_minutes: rx.duration_minutes,
+      program_session_exercise_id: rx.id,
+      reps_min: rx.reps_min,
+      reps_max: rx.reps_max,
+      intensity_type: rx.intensity_type,
+      intensity_value: rx.intensity_value,
+      cardio_intensity: rx.cardio_intensity,
+      coaching_notes: rx.coaching_notes,
+      substituted: false,
+    }));
+
+  const { error: deleteTodayError } = await supabase
     .from("workout_plan_items")
     .delete()
     .eq("workout_plan_id", plan.id)
     .eq("day_of_week", dayOfWeek);
-  if (deleteError) return { ok: false, error: `Failed to clear today's plan: ${deleteError.message}` };
+  if (deleteTodayError) return { ok: false, error: `Failed to clear today's plan: ${deleteTodayError.message}` };
 
-  const items = exerciseRows.map((rx, index) => ({
-    workout_plan_id: plan.id,
-    user_id: userId,
-    day_of_week: dayOfWeek,
-    session_order: index,
-    exercise_id: rx.exercise_id,
-    sets: rx.sets,
-    reps: rx.reps_max ?? rx.reps_min,
-    duration_minutes: rx.duration_minutes,
-    program_session_exercise_id: rx.id,
-    reps_min: rx.reps_min,
-    reps_max: rx.reps_max,
-    intensity_type: rx.intensity_type,
-    intensity_value: rx.intensity_value,
-    cardio_intensity: rx.cardio_intensity,
-    coaching_notes: rx.coaching_notes,
-    substituted: false,
-  }));
+  const { error: insertTodayError } = await supabase.from("workout_plan_items").insert(buildItems(exerciseRows, dayOfWeek));
+  if (insertTodayError) return { ok: false, error: `Failed to save the new session: ${insertTodayError.message}` };
 
-  const { error: insertError } = await supabase.from("workout_plan_items").insert(items);
-  if (insertError) return { ok: false, error: `Failed to save the new session: ${insertError.message}` };
+  let rebalancedDayOfWeek: number | null = null;
 
-  return { ok: true, data: undefined };
+  if (swapPartnerDay !== null && todaysCurrentSessionId) {
+    const { data: partnerExerciseRows, error: partnerExercisesError } = await supabase
+      .from("program_session_exercises")
+      .select("*")
+      .eq("session_id", todaysCurrentSessionId)
+      .is("primary_exercise_id", null)
+      .order("exercise_order", { ascending: true });
+    if (partnerExercisesError) return { ok: false, error: partnerExercisesError.message };
+
+    if (partnerExerciseRows && partnerExerciseRows.length > 0) {
+      const { error: deletePartnerError } = await supabase
+        .from("workout_plan_items")
+        .delete()
+        .eq("workout_plan_id", plan.id)
+        .eq("day_of_week", swapPartnerDay);
+      if (deletePartnerError) return { ok: false, error: `Failed to rebalance the swapped day: ${deletePartnerError.message}` };
+
+      const { error: insertPartnerError } = await supabase
+        .from("workout_plan_items")
+        .insert(buildItems(partnerExerciseRows, swapPartnerDay));
+      if (insertPartnerError) return { ok: false, error: `Failed to rebalance the swapped day: ${insertPartnerError.message}` };
+
+      rebalancedDayOfWeek = swapPartnerDay;
+    }
+  }
+
+  return { ok: true, data: { rebalancedDayOfWeek } };
 }
