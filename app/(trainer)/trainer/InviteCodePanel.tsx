@@ -16,9 +16,18 @@ function codeStatus(code: InviteCode): { label: string; tone: string } {
   return { label: "Active — not yet redeemed", tone: "text-green-700 dark:text-green-400" };
 }
 
+/** Renders `initialCodes` directly rather than mirroring it into local
+ * state — this list has no local-only edit state of its own, it's pure
+ * server truth, so there's nothing a `codes` useState would hold that
+ * the prop doesn't already have. Found via manual browser testing
+ * (2026-08-06): an earlier version held its own `useState(initialCodes)`
+ * that only ever seeded once on mount, so generating a code showed the
+ * "New code: X" card correctly but the list below kept saying "No
+ * invite codes yet" until a full page reload — router.refresh() alone
+ * never reaches state that already exists independent of props. Same
+ * gap, same fix, in TrainerSettingsPanel.tsx (settings/trainer). */
 export function InviteCodePanel({ initialCodes }: { initialCodes: InviteCode[] }) {
   const router = useRouter();
-  const [codes, setCodes] = useState(initialCodes);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [justCreated, setJustCreated] = useState<string | null>(null);
@@ -45,7 +54,6 @@ export function InviteCodePanel({ initialCodes }: { initialCodes: InviteCode[] }
         setError(result.error);
         return;
       }
-      setCodes((prev) => prev.map((c) => (c.id === id ? { ...c, revokedAt: new Date().toISOString() } : c)));
       router.refresh();
     });
   };
@@ -72,11 +80,11 @@ export function InviteCodePanel({ initialCodes }: { initialCodes: InviteCode[] }
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-      {codes.length === 0 ? (
+      {initialCodes.length === 0 ? (
         <p className="text-sm text-neutral-500">No invite codes yet.</p>
       ) : (
         <div className="space-y-1.5">
-          {codes.map((code) => {
+          {initialCodes.map((code) => {
             const status = codeStatus(code);
             const canRevoke = !code.usedAt && !code.revokedAt;
             return (

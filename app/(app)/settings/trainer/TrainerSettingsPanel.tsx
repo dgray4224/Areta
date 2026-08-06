@@ -8,9 +8,15 @@ import { Button } from "@/platform/ui/Button";
 import { Card } from "@/platform/ui/Card";
 import type { MyTrainerInfo } from "@/domains/trainer/types";
 
+/** Branches on `initialTrainer` directly rather than mirroring it into
+ * local state — same fix, same reasoning, as InviteCodePanel.tsx. Found
+ * via manual browser testing (2026-08-06): an earlier version held its
+ * own `useState(initialTrainer)` that only ever seeded once on mount, so
+ * redeeming a code correctly linked the trainer server-side (and
+ * cleared the input) but this panel kept showing the "enter a code"
+ * form until a full reload. */
 export function TrainerSettingsPanel({ initialTrainer }: { initialTrainer: MyTrainerInfo | null }) {
   const router = useRouter();
-  const [trainer, setTrainer] = useState(initialTrainer);
   const [code, setCode] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -36,19 +42,18 @@ export function TrainerSettingsPanel({ initialTrainer }: { initialTrainer: MyTra
         setError(result.error);
         return;
       }
-      setTrainer(null);
       router.refresh();
     });
   };
 
-  if (trainer) {
+  if (initialTrainer) {
     return (
       <Card className="space-y-3">
         <div>
           <p className="text-xs font-medium text-neutral-500">Your trainer</p>
-          <p className="text-sm font-medium">{trainer.trainerName || "Unnamed trainer"}</p>
+          <p className="text-sm font-medium">{initialTrainer.trainerName || "Unnamed trainer"}</p>
           <p className="text-xs text-neutral-500">
-            Since {new Date(trainer.startedAt).toLocaleDateString()}
+            Since {new Date(initialTrainer.startedAt).toLocaleDateString()}
           </p>
         </div>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
