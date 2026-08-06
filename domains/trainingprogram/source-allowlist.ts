@@ -122,6 +122,24 @@ export const CREDIBLE_SOURCE_ALLOWLIST: AllowlistedSource[] = [
     category: "individual_specialist",
     specialty: "functional fitness / CrossFit -- coach of 6 CrossFit Games/World Champions, verified 2026-08-05",
   },
+  {
+    domain: "trainingpeaks.com",
+    organization: "TrainingPeaks",
+    category: "individual_specialist",
+    specialty: "endurance coaching platform used by professional coaches across running/cycling/triathlon -- cited here for its published strength-training-for-runners guidance, verified 2026-08-06",
+  },
+  {
+    domain: "boxrox.com",
+    organization: "BOXROX",
+    category: "individual_specialist",
+    specialty: "hybrid/functional athlete training editorial -- cited for real sample hybrid-athlete lifting session structures, verified 2026-08-06",
+  },
+  {
+    domain: "tailoredcoachingmethod.com",
+    organization: "Tailored Coaching Method",
+    category: "individual_specialist",
+    specialty: "hybrid athlete strength + running programming -- cited for real sample hybrid-athlete lifting session structures, verified 2026-08-06",
+  },
 
   // Discovery source -- Huberman is a neuroscientist who interviews
   // strength/conditioning/endurance specialists, not a coach himself.
