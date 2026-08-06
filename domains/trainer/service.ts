@@ -11,7 +11,6 @@ import { getApprovedParameterValue, getGeneratedParameters, approveAllGeneratedP
 import { generateAndSaveMealPlan, getMealPlanForWeek, type MealPlanView } from "@/domains/mealplan/service";
 import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
 import {
-  generateAndSaveWorkoutPlan,
   getWorkoutPlanForWeek,
   approveWorkoutPlan,
   customizeWorkoutPlanItemExercise,
@@ -42,7 +41,7 @@ import type {
   MyTrainerRequest,
   IncomingTrainerRequest,
 } from "@/domains/trainer/types";
-import type { TrainerProgramAssignment } from "@/domains/trainerprogram/types";
+import type { TrainerProgramAssignment, PastAssignment } from "@/domains/trainerprogram/types";
 
 /** Shared guard for every trainer action that touches a specific client's
  * data — re-verifies the trainer_clients relationship server-side before
@@ -473,19 +472,17 @@ export async function getClientWorkoutOverview(
   return { ok: true, data: { workoutPlan } };
 }
 
-export async function generateClientWorkoutPlan(clientId: string): Promise<ActionResult<{ warnings: string[] }>> {
-  const { user } = await requireTrainer();
-  const supabase = await createClient();
-
-  if (!(await requireActiveClient(user.id, clientId, supabase))) {
-    return { ok: false, error: "This is not your client." };
-  }
-
-  const result = await generateAndSaveWorkoutPlan(clientId);
-  if (result.ok) await logTrainerAction(user, "client_workout_plan_generated", clientId, {});
-  return result;
-}
-
+/** Deliberately no generateClientWorkoutPlan wrapper (removed 2026-08-06)
+ * — a trainer can no longer generate a client's workout plan from the
+ * shared library. The client would be paying for a program that's just
+ * the same free generation their own account already does; a trainer's
+ * value is the program they actually author and customize
+ * (domains/trainerprogram), not clicking the same button the client
+ * could click themselves. generateAndSaveWorkoutPlan's own guard already
+ * refuses to run for a trainer-assigned client either way; this is the
+ * other half — no UI or Server Action path exists for a trainer to
+ * trigger it for anyone. Approval stays (below): a trainer-program-
+ * sourced draft still needs one, same as any generated plan. */
 export async function approveClientWorkoutPlan(clientId: string): Promise<ActionResult> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
@@ -603,11 +600,21 @@ export async function addClientWorkoutItem(
 // functions that need requireActiveClient.
 // ---------------------------------------------------------------------------
 
+/** end_date and goalOutcome are both required (2026-08-06: "every time a
+ * trainer sets a program, they need to specify the start and end date,
+ * the tangible goals") — enforced here, not the database (migration
+ * 0078's own comment explains why the columns themselves stay nullable).
+ * goalOutcome becomes a real goals-table row (domain=exercise, so it
+ * shows up alongside the client's own goals, filtered to the same
+ * fitness-relevant/active view a trainer already sees — migration 0077),
+ * not just a label on the assignment. */
 export async function assignProgramToClient(
   clientId: string,
   programId: string,
-  onComplete: "repeat" | "freeze" = "repeat",
-  startsOn?: string
+  onComplete: "repeat" | "freeze",
+  startsOn: string,
+  endDate: string,
+  goalOutcome: string
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
@@ -615,6 +622,12 @@ export async function assignProgramToClient(
   if (!(await requireActiveClient(user.id, clientId, supabase))) {
     return { ok: false, error: "This is not your client." };
   }
+
+  const resolvedStartsOn = startsOn || new Date().toISOString().slice(0, 10);
+  const trimmedGoal = goalOutcome.trim();
+  if (!trimmedGoal) return { ok: false, error: "State a tangible goal for this program." };
+  if (!endDate) return { ok: false, error: "Set an end date for this program." };
+  if (endDate <= resolvedStartsOn) return { ok: false, error: "End date must be after the start date." };
 
   const { data: programRow } = await supabase
     .from("trainer_programs")
@@ -635,6 +648,40 @@ export async function assignProgramToClient(
   const firstPhase = await getFirstPhase(programId, supabase);
   if (!firstPhase) {
     return { ok: false, error: "Add at least one phase to this program before assigning it." };
+  }
+
+  // Find or create the client's "exercise" domain to hang the goal off
+  // of -- not every onboarding path is guaranteed to have created one in
+  // advance. A plain select-then-insert rather than an upsert so an
+  // already-existing domain's label/is_active never gets silently
+  // overwritten by this unrelated flow.
+  const { data: existingDomain } = await supabase
+    .from("domains")
+    .select("id")
+    .eq("user_id", clientId)
+    .eq("key", "exercise")
+    .maybeSingle();
+
+  let domainId = existingDomain?.id;
+  if (!domainId) {
+    const { data: newDomain, error: domainError } = await supabase
+      .from("domains")
+      .insert({ user_id: clientId, key: "exercise", label: "Exercise" })
+      .select("id")
+      .single();
+    if (domainError || !newDomain) {
+      return { ok: false, error: `Couldn't set up the client's exercise goals: ${domainError?.message}` };
+    }
+    domainId = newDomain.id;
+  }
+
+  const { data: goalRow, error: goalError } = await supabase
+    .from("goals")
+    .insert({ user_id: clientId, domain_id: domainId, outcome: trimmedGoal, target_date: endDate, status: "active" })
+    .select("id")
+    .single();
+  if (goalError || !goalRow) {
+    return { ok: false, error: `Couldn't create the linked goal: ${goalError?.message}` };
   }
 
   // End any existing active assignment for this client first — the
@@ -666,7 +713,10 @@ export async function assignProgramToClient(
     trainer_id: user.id,
     client_id: clientId,
     on_complete: onComplete,
-    starts_on: startsOn || new Date().toISOString().slice(0, 10),
+    starts_on: resolvedStartsOn,
+    end_date: endDate,
+    goal_outcome: trimmedGoal,
+    linked_goal_id: goalRow.id,
   });
   if (insertError) {
     if (previousActive) {
@@ -675,6 +725,10 @@ export async function assignProgramToClient(
         .update({ status: "active", ended_at: null })
         .eq("id", previousActive.id);
     }
+    // Can't delete a client's goal (trainers never get that permission,
+    // by design), so soft-clean the orphan instead of leaving it looking
+    // like a real active goal with nothing behind it.
+    await supabase.from("goals").update({ status: "abandoned" }).eq("id", goalRow.id);
     return { ok: false, error: insertError.message };
   }
 
@@ -686,7 +740,7 @@ export async function assignProgramToClient(
   const generated = await generateAndSaveFromTrainerProgram(clientId, supabase);
   if (!generated.ok) return generated;
 
-  await logTrainerAction(user, "client_program_assigned", clientId, { programId, onComplete, startsOn });
+  await logTrainerAction(user, "client_program_assigned", clientId, { programId, onComplete, startsOn, endDate });
   return { ok: true, data: { warnings: generated.data.warnings } };
 }
 
@@ -731,6 +785,7 @@ async function loadAssignmentView(
     phases.length > 0 && row.starts_on <= today
       ? projectProgramRange({
           startsOn: row.starts_on,
+          endDate: row.end_date,
           phases,
           onComplete: row.on_complete as TrainerProgramAssignment["onComplete"],
           rangeStart: today,
@@ -748,6 +803,8 @@ async function loadAssignmentView(
     status: row.status as TrainerProgramAssignment["status"],
     onComplete: row.on_complete as TrainerProgramAssignment["onComplete"],
     startsOn: row.starts_on,
+    endDate: row.end_date,
+    goalOutcome: row.goal_outcome,
     currentPhaseName: todayProjection?.phaseName ?? null,
     currentWeekInPhase: todayProjection?.weekInPhase ?? null,
     startedAt: row.started_at,
@@ -760,6 +817,47 @@ export async function getClientProgramAssignment(clientId: string): Promise<Trai
   const supabase = await createClient();
   if (!(await requireActiveClient(user.id, clientId, supabase))) return null;
   return loadAssignmentView(clientId, supabase);
+}
+
+/** Ended assignments are never deleted (2026-08-06: "programs should stay
+ * in archive with the trainer having the ability to recycle it again") --
+ * this is that archive. Reassigning is just AssignProgramForm again,
+ * pre-filled from one of these entries; no separate "recycle" action or
+ * schema needed, since editing the program itself (before reassigning)
+ * is how "with modifications" happens. */
+export async function listClientAssignmentHistory(clientId: string): Promise<ActionResult<PastAssignment[]>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { data: rows, error } = await supabase
+    .from("trainer_program_assignments")
+    .select("id, program_id, starts_on, end_date, goal_outcome, status, started_at, ended_at")
+    .eq("client_id", clientId)
+    .eq("status", "ended")
+    .order("started_at", { ascending: false });
+  if (error) return { ok: false, error: error.message };
+  if (!rows || rows.length === 0) return { ok: true, data: [] };
+
+  const programIds = Array.from(new Set(rows.map((r) => r.program_id)));
+  const { data: programRows } = await supabase.from("trainer_programs").select("id, name").in("id", programIds);
+  const nameById = new Map((programRows ?? []).map((p) => [p.id, p.name]));
+
+  return {
+    ok: true,
+    data: rows.map((r) => ({
+      id: r.id,
+      programId: r.program_id,
+      programName: nameById.get(r.program_id) ?? "Untitled program",
+      startsOn: r.starts_on,
+      endDate: r.end_date,
+      goalOutcome: r.goal_outcome,
+      startedAt: r.started_at,
+      endedAt: r.ended_at,
+    })),
+  };
 }
 
 /** Manual "(re)generate this week" for a trainer-assigned program — same
@@ -813,6 +911,7 @@ export async function getClientMonthCalendar(
 
   const days = projectProgramRange({
     startsOn: assignment.starts_on,
+    endDate: assignment.end_date,
     phases,
     onComplete: assignment.on_complete as TrainerProgramAssignment["onComplete"],
     rangeStart: monthStart,
@@ -893,6 +992,7 @@ export async function moveClientSessionToDate(
 
   const [fromProjection] = projectProgramRange({
     startsOn: assignment.starts_on,
+    endDate: assignment.end_date,
     phases,
     onComplete,
     rangeStart: fromDate,
@@ -905,6 +1005,7 @@ export async function moveClientSessionToDate(
   // rolled back to exactly this, not just cleared to template.
   const [toProjectionBefore] = projectProgramRange({
     startsOn: assignment.starts_on,
+    endDate: assignment.end_date,
     phases,
     onComplete,
     rangeStart: toDate,

@@ -11,6 +11,7 @@ const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const SOURCE_STYLE: Record<ProjectedDay["source"], string> = {
   not_started: "text-neutral-300 dark:text-neutral-700",
+  ended: "text-neutral-300 dark:text-neutral-700",
   rest: "text-neutral-400 dark:text-neutral-600",
   template: "border-brand/30 bg-brand-fill/10",
   override: "border-amber-400/60 bg-amber-50 dark:bg-amber-950/40",
@@ -37,7 +38,8 @@ export function CalendarMonthView({
   const today = todayIso();
   const currentMonthKey = monthStart.slice(0, 7);
 
-  const isEditable = (day: ProjectedDay) => day.source !== "not_started" && day.date >= today;
+  const isEditable = (day: ProjectedDay) =>
+    day.source !== "not_started" && day.source !== "ended" && day.date >= today;
 
   const onDrop = (toDate: string, e: React.DragEvent) => {
     e.preventDefault();
@@ -85,7 +87,9 @@ export function CalendarMonthView({
               }`}
             >
               <div className="font-medium">{dayNumber}</div>
-              {day.source === "not_started" ? null : day.exercises.length > 0 ? (
+              {day.source === "ended" ? (
+                <p className="mt-1 text-neutral-400">Ended</p>
+              ) : day.source === "not_started" ? null : day.exercises.length > 0 ? (
                 <div className="mt-1 space-y-0.5">
                   <p className="truncate font-medium">{day.sessionName ?? "Session"}</p>
                   <p className="text-neutral-500">

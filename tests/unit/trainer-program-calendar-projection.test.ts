@@ -167,4 +167,21 @@ describe("projectProgramRange", () => {
     expect(days[0].exercises).toHaveLength(1);
     expect(days[0].exercises[0].exerciseId).toBe("ex9");
   });
+
+  it("marks dates after endDate as ended, taking precedence over any override", () => {
+    const phases = [phase({ sessions: [session(1)] })];
+    const override: DateOverrideInput = { isRestDay: false, exercises: [] };
+    const days = projectProgramRange({
+      startsOn: "2026-08-10",
+      endDate: "2026-08-11",
+      phases,
+      onComplete: "repeat",
+      rangeStart: "2026-08-10",
+      rangeEnd: "2026-08-17",
+      overridesByDate: new Map([["2026-08-17", override]]),
+    });
+    expect(days.find((d) => d.date === "2026-08-10")?.source).toBe("template");
+    expect(days.find((d) => d.date === "2026-08-12")?.source).toBe("ended");
+    expect(days.find((d) => d.date === "2026-08-17")?.source).toBe("ended");
+  });
 });

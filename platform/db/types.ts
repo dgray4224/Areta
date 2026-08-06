@@ -2409,8 +2409,11 @@ export type Database = {
       trainer_program_assignments: {
         Row: {
           client_id: string
+          end_date: string | null
           ended_at: string | null
+          goal_outcome: string | null
           id: string
+          linked_goal_id: string | null
           on_complete: string
           program_id: string
           started_at: string
@@ -2421,8 +2424,11 @@ export type Database = {
         }
         Insert: {
           client_id: string
+          end_date?: string | null
           ended_at?: string | null
+          goal_outcome?: string | null
           id?: string
+          linked_goal_id?: string | null
           on_complete?: string
           program_id: string
           started_at?: string
@@ -2433,8 +2439,11 @@ export type Database = {
         }
         Update: {
           client_id?: string
+          end_date?: string | null
           ended_at?: string | null
+          goal_outcome?: string | null
           id?: string
+          linked_goal_id?: string | null
           on_complete?: string
           program_id?: string
           started_at?: string
@@ -2444,6 +2453,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "trainer_program_assignments_linked_goal_id_fkey"
+            columns: ["linked_goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "trainer_program_assignments_program_id_fkey"
             columns: ["program_id"]

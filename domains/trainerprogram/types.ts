@@ -80,11 +80,35 @@ export type TrainerProgramAssignment = {
    * domains/trainerprogram/calendar-projection.ts, which computes them
    * fresh from this plus the program's phases for any given date. */
   startsOn: string;
+  /** Hard cutoff (migration 0078) -- generateAndSaveFromTrainerProgram
+   * auto-ends the assignment once today passes this instead of
+   * generating further weeks. Required for every new assignment
+   * (enforced in assignProgramToClient, not the database). */
+  endDate: string | null;
+  /** The tangible outcome the trainer stated when assigning -- also
+   * created as a real goals-table row (linked_goal_id) so it shows up
+   * on the client's own Goals list, not just here. */
+  goalOutcome: string | null;
   /** Computed for "today" at load time, purely for display -- null if
    * startsOn is in the future (program hasn't started) or the program
    * has no phases. */
   currentPhaseName: string | null;
   currentWeekInPhase: number | null;
+  startedAt: string;
+  endedAt: string | null;
+};
+
+/** One row in a client's assignment archive (migration 0078's "programs
+ * should stay in archive with the ability to recycle") -- always
+ * status='ended', listed newest-first by domains/trainer/service.ts's
+ * listClientAssignmentHistory. */
+export type PastAssignment = {
+  id: string;
+  programId: string;
+  programName: string;
+  startsOn: string;
+  endDate: string | null;
+  goalOutcome: string | null;
   startedAt: string;
   endedAt: string | null;
 };

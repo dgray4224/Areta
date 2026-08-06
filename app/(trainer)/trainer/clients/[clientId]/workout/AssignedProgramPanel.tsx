@@ -67,7 +67,11 @@ export function AssignedProgramPanel({
               : assignment.currentPhaseName
                 ? `${assignment.currentPhaseName}, week ${assignment.currentWeekInPhase}`
                 : "Not started"}
+            {assignment.endDate ? ` · ends ${assignment.endDate}` : ""}
           </p>
+          {assignment.goalOutcome ? (
+            <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">Goal: {assignment.goalOutcome}</p>
+          ) : null}
         </div>
       </div>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
@@ -79,17 +83,36 @@ export function AssignedProgramPanel({
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           href={`/trainer/clients/${clientId}/workout/calendar`}
+          title="See the exact date-by-date schedule, edit or move individual days."
           className="inline-flex items-center justify-center rounded-full border border-neutral-300 px-5 py-2.5 text-sm font-semibold text-foreground hover:bg-black/5 dark:border-neutral-700 dark:hover:bg-white/5"
         >
           Calendar
         </Link>
-        <Button type="button" variant="secondary" disabled={isPending} onClick={onRegenerate}>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={isPending}
+          onClick={onRegenerate}
+          title="Re-materializes this week's draft from the program (and any calendar edits) — use after changing the program's content."
+        >
           {isPending ? "Working…" : "Regenerate this week"}
         </Button>
-        <Button type="button" variant="secondary" disabled={isPending} onClick={() => setChanging((v) => !v)}>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={isPending}
+          onClick={() => setChanging((v) => !v)}
+          title="Swap this client to a different one of your programs. The current assignment ends and a new one starts immediately — the old one stays in this client's history, not deleted."
+        >
           {changing ? "Cancel" : "Change program"}
         </Button>
-        <button type="button" disabled={isPending} onClick={onUnassign} className="text-sm text-red-600 hover:underline">
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={onUnassign}
+          title="Ends this assignment with no replacement — the client goes back to having no assigned program at all. Unlike Change program, nothing new starts."
+          className="text-sm text-red-600 hover:underline"
+        >
           Unassign
         </button>
       </div>

@@ -78,30 +78,32 @@ export async function getOverridesForRange(
 async function getActiveAssignmentFor(
   clientId: string,
   supabase: SupabaseClient<Database>
-): Promise<{ id: string; trainerId: string; startsOn: string } | null> {
+): Promise<{ id: string; trainerId: string; startsOn: string; endDate: string | null } | null> {
   const { data } = await supabase
     .from("trainer_program_assignments")
-    .select("id, trainer_id, starts_on")
+    .select("id, trainer_id, starts_on, end_date")
     .eq("client_id", clientId)
     .eq("status", "active")
     .maybeSingle();
   if (!data) return null;
-  return { id: data.id, trainerId: data.trainer_id, startsOn: data.starts_on };
+  return { id: data.id, trainerId: data.trainer_id, startsOn: data.starts_on, endDate: data.end_date };
 }
 
-/** A date before today (already lived) or before the program's own
- * starts_on can't be overridden -- the calendar UI also disables this
- * client-side, but the real gate is here since Server Actions are
- * reachable independent of which page renders them. "Today" is resolved
- * in the *client's* own profile time zone (domains/activity-summary's
- * localDateString, same DST-safe helper the activity-summary work
- * already established), not the server's UTC clock -- a naive
- * `new Date().toISOString().slice(0,10)` rolls over to tomorrow hours
- * before local midnight for anyone west of UTC, which would reject
- * edits to a day that, for the client, hasn't ended yet. */
+/** A date before today (already lived), before the program's own
+ * starts_on, or after its end_date (migration 0078's hard cutoff) can't
+ * be overridden -- the calendar UI also disables this client-side, but
+ * the real gate is here since Server Actions are reachable independent
+ * of which page renders them. "Today" is resolved in the *client's* own
+ * profile time zone (domains/activity-summary's localDateString, same
+ * DST-safe helper the activity-summary work already established), not
+ * the server's UTC clock -- a naive `new Date().toISOString().slice(0,10)`
+ * rolls over to tomorrow hours before local midnight for anyone west of
+ * UTC, which would reject edits to a day that, for the client, hasn't
+ * ended yet. */
 async function validateEditableDate(
   date: string,
   startsOn: string,
+  endDate: string | null,
   clientId: string,
   supabase: SupabaseClient<Database>
 ): Promise<string | null> {
@@ -109,6 +111,7 @@ async function validateEditableDate(
   const today = localDateString(new Date(), timezone);
   if (date < today) return "Can't edit a date that's already passed.";
   if (date < startsOn) return "This program hasn't started yet on that date.";
+  if (endDate && date > endDate) return "This program ends before that date.";
   return null;
 }
 
@@ -124,7 +127,7 @@ export async function setDateOverride(
 
   const assignment = await getActiveAssignmentFor(clientId, supabase);
   if (!assignment) return { ok: false, error: "No active program assigned." };
-  const dateError = await validateEditableDate(date, assignment.startsOn, clientId, supabase);
+  const dateError = await validateEditableDate(date, assignment.startsOn, assignment.endDate, clientId, supabase);
   if (dateError) return { ok: false, error: dateError };
 
   const { data: overrideRow, error: upsertError } = await supabase
@@ -183,7 +186,7 @@ export async function clearDateOverride(
 
   const assignment = await getActiveAssignmentFor(clientId, supabase);
   if (!assignment) return { ok: false, error: "No active program assigned." };
-  const dateError = await validateEditableDate(date, assignment.startsOn, clientId, supabase);
+  const dateError = await validateEditableDate(date, assignment.startsOn, assignment.endDate, clientId, supabase);
   if (dateError) return { ok: false, error: dateError };
 
   const { error } = await supabase

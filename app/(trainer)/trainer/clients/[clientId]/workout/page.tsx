@@ -2,19 +2,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   getClientWorkoutOverview,
-  generateClientWorkoutPlan,
-  approveClientWorkoutPlan,
   getClientProgramAssignment,
+  listClientAssignmentHistory,
 } from "@/domains/trainer/service";
 import { listMyPrograms } from "@/domains/trainerprogram/service";
 import { getExercisesByIds, getAllExercises } from "@/domains/exerciselibrary/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
-import { PlanActions } from "../PlanActions";
 import { WorkoutItemCustomizer } from "./WorkoutItemCustomizer";
 import { AddWorkoutItem } from "./AddWorkoutItem";
 import { AssignedProgramPanel } from "./AssignedProgramPanel";
 import { AssignProgramForm } from "./AssignProgramForm";
+import { ApproveWorkoutPlanButton } from "./ApproveWorkoutPlanButton";
+import { PastProgramsList } from "./PastProgramsList";
 import type { WorkoutPlanItemView } from "@/domains/workoutplan/service";
 import type { Exercise } from "@/domains/exerciselibrary/types";
 
@@ -53,14 +53,16 @@ export default async function ClientWorkoutPage({
 }) {
   const { clientId } = await params;
   const { assignWarnings } = await searchParams;
-  const [result, assignment, allPrograms] = await Promise.all([
+  const [result, assignment, allPrograms, historyResult] = await Promise.all([
     getClientWorkoutOverview(clientId),
     getClientProgramAssignment(clientId),
     listMyPrograms(),
+    listClientAssignmentHistory(clientId),
   ]);
   if (!result.ok) notFound();
   const { workoutPlan } = result.data;
   const publishedPrograms = allPrograms.filter((p) => p.status === "published");
+  const history = historyResult.ok ? historyResult.data : [];
 
   let warnings: string[] = [];
   if (assignWarnings) {
@@ -96,42 +98,21 @@ export default async function ClientWorkoutPage({
             <Link href="/trainer/programs" className="underline">
               Your programs
             </Link>
-            . Once assigned, this client&apos;s weekly plan is generated straight from it — no need to fall back to
-            the library generator below.
+            , then assign one here. There&apos;s no library-generated fallback for a trainer-managed client — a
+            program you&apos;ve actually built and customized is the whole point of paying for a trainer.
           </p>
           <AssignProgramForm clientId={clientId} programs={publishedPrograms} />
         </Card>
       )}
 
-      <details className="text-sm text-neutral-500">
-        <summary className="cursor-pointer select-none">
-          {workoutPlan ? "Library-generated plan options" : "Or generate from the shared library instead"}
-        </summary>
-        <div className="mt-3 space-y-3">
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Pulls from the same training-program library your client&apos;s own onboarding-driven plan would use.
-            {assignment
-              ? " Blocked automatically while a program is assigned above (unassign it first) — the two would otherwise silently overwrite each other's draft for the same week."
-              : ""}
-          </p>
-          <PlanActions
-            clientId={clientId}
-            hasDraft={workoutPlan?.status === "draft"}
-            onGenerate={generateClientWorkoutPlan}
-            onApprove={approveClientWorkoutPlan}
-            generateLabel={workoutPlan ? "Regenerate plan" : "Generate workout plan"}
-            approveLabel="Approve plan"
-            disableGenerate={assignment !== null}
-            disabledReason="Unassign the trainer-authored program above first."
-          />
-        </div>
-      </details>
+      {workoutPlan?.status === "draft" ? <ApproveWorkoutPlanButton clientId={clientId} /> : null}
+
+      {history.length > 0 ? (
+        <PastProgramsList clientId={clientId} history={history} programs={publishedPrograms} />
+      ) : null}
 
       {!workoutPlan || workoutPlan.items.length === 0 ? (
-        <EmptyState
-          title="No workout plan yet"
-          description="Assign a program above, or generate one from the library."
-        />
+        <EmptyState title="No workout plan yet" description="Assign a program above to get started." />
       ) : (
         <WorkoutPlanBody clientId={clientId} items={workoutPlan.items} status={workoutPlan.status} />
       )}

@@ -3,64 +3,32 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { setClientDateOverride, clearClientDateOverride } from "@/domains/trainer/service";
-import { SelectInput, TextInput, TextArea } from "@/platform/ui/FormField";
 import { Button } from "@/platform/ui/Button";
 import { Card } from "@/platform/ui/Card";
-import type { ProjectedDay, ProjectedExercise } from "@/domains/trainerprogram/calendar-projection";
+import {
+  ExercisePicker,
+  EMPTY_PRESCRIPTION_FIELDS,
+  prescriptionFieldsFrom,
+  type PrescriptionFields,
+} from "../../../../ExercisePicker";
+import type { ProjectedDay } from "@/domains/trainerprogram/calendar-projection";
 import type { OverrideExerciseInput } from "@/domains/trainerprogram/overrides";
 import type { Exercise } from "@/domains/exerciselibrary/types";
 
-type Row = {
-  exerciseId: string;
-  sets: string;
-  repsMin: string;
-  repsMax: string;
-  intensityType: string;
-  intensityValue: string;
-  durationMinutes: string;
-  cardioIntensity: string;
-  coachingNotes: string;
-};
-
-function toRow(ex: ProjectedExercise): Row {
+function toOverrideInput(f: PrescriptionFields): OverrideExerciseInput {
+  const reps = f.reps ? Number(f.reps) : null;
   return {
-    exerciseId: ex.exerciseId,
-    sets: ex.sets?.toString() ?? "",
-    repsMin: ex.repsMin?.toString() ?? "",
-    repsMax: ex.repsMax?.toString() ?? "",
-    intensityType: ex.intensityType ?? "",
-    intensityValue: ex.intensityValue ?? "",
-    durationMinutes: ex.durationMinutes?.toString() ?? "",
-    cardioIntensity: ex.cardioIntensity ?? "",
-    coachingNotes: ex.coachingNotes ?? "",
+    exerciseId: f.exerciseId,
+    sets: f.sets ? Number(f.sets) : null,
+    repsMin: reps,
+    repsMax: reps,
+    intensityType: f.intensityType ? (f.intensityType as "percent_1rm" | "rpe" | "none") : null,
+    intensityValue: f.intensityValue || null,
+    durationMinutes: f.durationMinutes ? Number(f.durationMinutes) : null,
+    cardioIntensity: f.cardioIntensity || null,
+    coachingNotes: f.coachingNotes || null,
   };
 }
-
-function toOverrideInput(r: Row): OverrideExerciseInput {
-  return {
-    exerciseId: r.exerciseId,
-    sets: r.sets ? Number(r.sets) : null,
-    repsMin: r.repsMin ? Number(r.repsMin) : null,
-    repsMax: r.repsMax ? Number(r.repsMax) : null,
-    intensityType: r.intensityType ? (r.intensityType as "percent_1rm" | "rpe" | "none") : null,
-    intensityValue: r.intensityValue || null,
-    durationMinutes: r.durationMinutes ? Number(r.durationMinutes) : null,
-    cardioIntensity: r.cardioIntensity || null,
-    coachingNotes: r.coachingNotes || null,
-  };
-}
-
-const EMPTY_ROW: Row = {
-  exerciseId: "",
-  sets: "",
-  repsMin: "",
-  repsMax: "",
-  intensityType: "",
-  intensityValue: "",
-  durationMinutes: "",
-  cardioIntensity: "",
-  coachingNotes: "",
-};
 
 export function DayEditorPanel({
   clientId,
@@ -75,11 +43,14 @@ export function DayEditorPanel({
 }) {
   const router = useRouter();
   const [isRestDay, setIsRestDay] = useState(day.exercises.length === 0);
-  const [rows, setRows] = useState<Row[]>(day.exercises.length > 0 ? day.exercises.map(toRow) : []);
+  const [rows, setRows] = useState<PrescriptionFields[]>(
+    day.exercises.length > 0 ? day.exercises.map(prescriptionFieldsFrom) : []
+  );
+  const [exerciseList, setExerciseList] = useState(exercises);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const updateRow = (index: number, next: Row) => {
+  const updateRow = (index: number, next: PrescriptionFields) => {
     setRows((prev) => prev.map((r, i) => (i === index ? next : r)));
   };
 
@@ -127,7 +98,7 @@ export function DayEditorPanel({
             </button>
           </div>
 
-          <label className="mb-3 flex items-center gap-2 text-sm">
+          <label className="mb-3 flex items-center gap-2 text-sm" title="Marks this date as a rest day, replacing whatever the recurring schedule or a previous edit had.">
             <input
               type="checkbox"
               checked={isRestDay}
@@ -143,19 +114,15 @@ export function DayEditorPanel({
             <div className="space-y-3">
               {rows.map((row, index) => (
                 <div key={index} className="space-y-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
-                  <div className="flex items-center justify-between gap-2">
-                    <SelectInput
-                      value={row.exerciseId}
-                      onChange={(e) => updateRow(index, { ...row, exerciseId: e.target.value })}
-                      aria-label="Exercise"
-                    >
-                      <option value="">Pick an exercise…</option>
-                      {exercises.map((ex) => (
-                        <option key={ex.id} value={ex.id}>
-                          {ex.name}
-                        </option>
-                      ))}
-                    </SelectInput>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <ExercisePicker
+                        fields={row}
+                        setFields={(next) => updateRow(index, next)}
+                        exercises={exerciseList}
+                        onExerciseCreated={(ex) => setExerciseList((prev) => [...prev, ex])}
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={() => setRows((prev) => prev.filter((_, i) => i !== index))}
@@ -164,64 +131,11 @@ export function DayEditorPanel({
                       Remove
                     </button>
                   </div>
-                  <div className="grid grid-cols-4 gap-2">
-                    <TextInput
-                      type="number"
-                      placeholder="Sets"
-                      value={row.sets}
-                      onChange={(e) => updateRow(index, { ...row, sets: e.target.value })}
-                    />
-                    <TextInput
-                      type="number"
-                      placeholder="Reps min"
-                      value={row.repsMin}
-                      onChange={(e) => updateRow(index, { ...row, repsMin: e.target.value })}
-                    />
-                    <TextInput
-                      type="number"
-                      placeholder="Reps max"
-                      value={row.repsMax}
-                      onChange={(e) => updateRow(index, { ...row, repsMax: e.target.value })}
-                    />
-                    <TextInput
-                      type="number"
-                      placeholder="Minutes"
-                      value={row.durationMinutes}
-                      onChange={(e) => updateRow(index, { ...row, durationMinutes: e.target.value })}
-                    />
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <SelectInput
-                      value={row.intensityType}
-                      onChange={(e) => updateRow(index, { ...row, intensityType: e.target.value })}
-                      aria-label="Intensity type"
-                    >
-                      <option value="">No intensity target</option>
-                      <option value="rpe">RPE</option>
-                      <option value="percent_1rm">% of 1RM</option>
-                    </SelectInput>
-                    <TextInput
-                      placeholder="Intensity value"
-                      value={row.intensityValue}
-                      onChange={(e) => updateRow(index, { ...row, intensityValue: e.target.value })}
-                    />
-                    <TextInput
-                      placeholder="Cardio intensity"
-                      value={row.cardioIntensity}
-                      onChange={(e) => updateRow(index, { ...row, cardioIntensity: e.target.value })}
-                    />
-                  </div>
-                  <TextArea
-                    placeholder="Coaching notes (optional)"
-                    rows={2}
-                    value={row.coachingNotes}
-                    onChange={(e) => updateRow(index, { ...row, coachingNotes: e.target.value })}
-                  />
                 </div>
               ))}
               <button
                 type="button"
-                onClick={() => setRows((prev) => [...prev, EMPTY_ROW])}
+                onClick={() => setRows((prev) => [...prev, EMPTY_PRESCRIPTION_FIELDS])}
                 className="text-sm text-neutral-500 hover:underline"
               >
                 + Add exercise
@@ -232,7 +146,12 @@ export function DayEditorPanel({
           {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button type="button" disabled={isPending} onClick={onSave}>
+            <Button
+              type="button"
+              disabled={isPending}
+              onClick={onSave}
+              title="Saves this date only -- doesn't change the recurring template."
+            >
               {isPending ? "Saving…" : "Save"}
             </Button>
             {day.source === "override" ? (
@@ -240,6 +159,7 @@ export function DayEditorPanel({
                 type="button"
                 disabled={isPending}
                 onClick={onResetToTemplate}
+                title="Discards this date's custom content and goes back to whatever the recurring schedule says."
                 className="text-sm text-neutral-500 hover:underline"
               >
                 Reset to template

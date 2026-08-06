@@ -20,12 +20,13 @@ export type ProjectedExercise = {
 export type ProjectedDay = {
   date: string;
   dayOfWeek: number;
-  /** "not_started": before the assignment's starts_on. "override": a
+  /** "not_started": before the assignment's starts_on. "ended": after
+   * its end_date (hard cutoff -- see migration 0078). "override": a
    * trainer_program_date_overrides row exists for this date (may itself
    * be a rest day). "template": the recurring day-of-week session for
    * whatever phase/week this date falls in. "rest": no override, and no
    * session is authored for this day-of-week in the resolved phase. */
-  source: "not_started" | "override" | "template" | "rest";
+  source: "not_started" | "ended" | "override" | "template" | "rest";
   phaseId: string | null;
   phaseName: string | null;
   /** 1-indexed week within phaseId. */
@@ -117,6 +118,13 @@ function resolvePhaseForDate(
  */
 export function projectProgramRange(input: {
   startsOn: string;
+  /** Hard cutoff (migration 0078) -- dates after this render as "ended"
+   * regardless of any override, and materialize.ts stops generating new
+   * weeks once today passes it. Optional only so existing callers/tests
+   * that predate end_date keep working; every real assignment has one
+   * going forward (enforced in the assign form, not the database --
+   * see migration 0078's own comment for why). */
+  endDate?: string | null;
   /** Sorted by phaseOrder ascending. */
   phases: HydratedTrainerProgramPhase[];
   onComplete: OnProgramComplete;
@@ -124,13 +132,28 @@ export function projectProgramRange(input: {
   rangeEnd: string;
   overridesByDate: Map<string, DateOverrideInput>;
 }): ProjectedDay[] {
-  const { startsOn, phases, onComplete, rangeStart, rangeEnd, overridesByDate } = input;
+  const { startsOn, endDate, phases, onComplete, rangeStart, rangeEnd, overridesByDate } = input;
   const days: ProjectedDay[] = [];
 
   const dayCount = daysBetween(rangeStart, rangeEnd) + 1;
   for (let i = 0; i < dayCount; i++) {
     const date = addDays(rangeStart, i);
     const dayOfWeek = dayOfWeekOf(date);
+
+    if (endDate && date > endDate) {
+      days.push({
+        date,
+        dayOfWeek,
+        source: "ended",
+        phaseId: null,
+        phaseName: null,
+        weekInPhase: null,
+        sessionName: null,
+        exercises: [],
+      });
+      continue;
+    }
+
     const override = overridesByDate.get(date);
     const resolved = resolvePhaseForDate(date, startsOn, phases, onComplete);
 

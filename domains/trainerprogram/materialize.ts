@@ -62,6 +62,24 @@ export async function generateAndSaveFromTrainerProgram(
   if (assignmentError) return { ok: false, error: assignmentError.message };
   if (!assignmentRow) return { ok: false, error: "No active trainer program assigned." };
 
+  // Hard cutoff (migration 0078): once the stated end date has passed,
+  // the assignment ends itself rather than generating further weeks --
+  // "every program needs a start and end date" means the end date is a
+  // real boundary, not just a display label. The row is never deleted
+  // (status: 'ended', same as a manual unassign) -- it's exactly what
+  // the trainer's "past programs" list reads to offer reassigning it,
+  // possibly with modifications, later.
+  if (assignmentRow.end_date && today > assignmentRow.end_date) {
+    await supabase
+      .from("trainer_program_assignments")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", assignmentRow.id);
+    return {
+      ok: true,
+      data: { warnings: [`This program ended on ${assignmentRow.end_date}.`] },
+    };
+  }
+
   if (assignmentRow.starts_on > weekEnd) {
     return {
       ok: true,
@@ -76,6 +94,7 @@ export async function generateAndSaveFromTrainerProgram(
 
   const projectedDays = projectProgramRange({
     startsOn: assignmentRow.starts_on,
+    endDate: assignmentRow.end_date,
     phases,
     onComplete: assignmentRow.on_complete as OnProgramComplete,
     rangeStart: weekStart,
