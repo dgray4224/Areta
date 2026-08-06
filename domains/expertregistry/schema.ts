@@ -109,3 +109,149 @@ export const limitationRuleSchema = z
     path: ["movementPattern"],
   });
 export type LimitationRuleInput = z.infer<typeof limitationRuleSchema>;
+
+/** The combined "Evidence" intake form (admin portal Evidence tab, merged
+ * 2026-08-06 from four separate Experts/Sources/Claims/Limitation-rules
+ * forms into one coherent submission): expert + source + claim, with an
+ * optional limitation rule, in a single flat shape react-hook-form can
+ * register() directly against. Deliberately flat (expertName/sourceTitle/
+ * etc. prefixed rather than nested objects) rather than nested — nested
+ * shapes fight react-hook-form's dot-path field registration for no real
+ * benefit here.
+ *
+ * "Coherent" is enforced two ways: (1) superRefine below requires exactly
+ * the fields the chosen expert/source/rule mode needs and nothing it
+ * doesn't; (2) createEvidenceBundle (service.ts) ignores any client-sent
+ * expertId on the new source/rule and always threads through the
+ * server-resolved one, so a newly-created source can never end up
+ * attributed to the wrong expert.
+ *
+ * Known, confirmed capability gap (2026-08-06 code-review pass): unlike
+ * the deleted standalone SourceForm, expertMode is never optional here —
+ * every submission requires an expert, so a bare institutional-only
+ * source (e.g. citing an ACSM guideline with no individual expert) can't
+ * be added through this flow. Raised with the user and confirmed to
+ * leave as-is: expert_claims.expertId was already mandatory before this
+ * merge, so the practical loss is narrow, and it's an accepted
+ * consequence of the explicit "fully combined" choice this schema
+ * implements, not an oversight. */
+export const evidenceBundleSchema = z
+  .object({
+    expertMode: z.enum(["existing", "new"]),
+    expertId: z.string().uuid().optional(),
+    expertName: z.string().optional(),
+    expertSlug: z.string().optional(),
+    expertEntityType: z.enum(["person", "institution"]).optional(),
+    expertRoles: stringArray,
+    expertSpecialties: stringArray,
+    expertInclusionReason: z.string().optional(),
+
+    sourceMode: z.enum(["existing", "new"]),
+    sourceId: z.string().uuid().optional(),
+    sourceTitle: z.string().optional(),
+    sourceCanonicalUrl: z.string().optional(),
+    sourceOrganization: z.string().optional(),
+    sourceType: z
+      .enum([
+        "peer_reviewed",
+        "official_expert_content",
+        "long_form_official_video",
+        "official_short_form",
+        "reputable_interview",
+        "third_party_summary",
+        "social_post",
+        "certifying_body",
+        "governing_body",
+      ])
+      .optional(),
+    sourcePublishedAt: z.string().optional(),
+    sourceAccessedAt: z.string().optional(),
+
+    claimType: z.enum([
+      "explicit_recommendation",
+      "programming_rule",
+      "technique_cue",
+      "progression_rule",
+      "regression",
+      "caution",
+      "demonstration_only",
+      "inference",
+    ]),
+    topic: z.string().min(1, "Topic is required"),
+    exerciseId: z.string().uuid().optional(),
+    movementPattern: z.string().optional(),
+    applicableGoals: stringArray,
+    applicableLevels: stringArray,
+    requiredEquipment: stringArray,
+    excludedConditions: stringArray,
+    normalizedClaim: z.string().min(1, "Normalized claim is required"),
+    shortRationale: z.string().min(1, "Short rationale is required"),
+    timestampSeconds: z.number().int().min(0).optional(),
+    pageNumber: z.number().int().min(1).optional(),
+    verbatimExcerpt: z.string().optional(),
+    confidence: z.enum(["low", "medium", "high"]),
+
+    includeLimitationRule: z.boolean(),
+    ruleLimitationTag: z.string().optional(),
+    ruleAction: z.enum(["exclude", "substitute", "manual_review"]).optional(),
+    ruleMovementPattern: z.string().optional(),
+    ruleExerciseId: z.string().uuid().optional(),
+    ruleSubstituteMovementPattern: z.string().optional(),
+    ruleRationale: z.string().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.expertMode === "existing" && !v.expertId) {
+      ctx.addIssue({ code: "custom", path: ["expertId"], message: "Select an expert" });
+    }
+    if (v.expertMode === "new") {
+      if (!v.expertName) ctx.addIssue({ code: "custom", path: ["expertName"], message: "Name is required" });
+      if (!v.expertSlug) ctx.addIssue({ code: "custom", path: ["expertSlug"], message: "Slug is required" });
+      if (!v.expertEntityType)
+        ctx.addIssue({ code: "custom", path: ["expertEntityType"], message: "Entity type is required" });
+    }
+    if (v.sourceMode === "existing" && !v.sourceId) {
+      ctx.addIssue({ code: "custom", path: ["sourceId"], message: "Select a source" });
+    }
+    if (v.sourceMode === "new") {
+      if (!v.sourceTitle)
+        ctx.addIssue({ code: "custom", path: ["sourceTitle"], message: "Title is required" });
+      if (!v.sourceCanonicalUrl || !z.string().url().safeParse(v.sourceCanonicalUrl).success)
+        ctx.addIssue({
+          code: "custom",
+          path: ["sourceCanonicalUrl"],
+          message: "Must be a valid URL",
+        });
+      if (!v.sourceOrganization)
+        ctx.addIssue({ code: "custom", path: ["sourceOrganization"], message: "Organization is required" });
+      if (!v.sourceType)
+        ctx.addIssue({ code: "custom", path: ["sourceType"], message: "Source type is required" });
+      if (!v.sourceAccessedAt)
+        ctx.addIssue({ code: "custom", path: ["sourceAccessedAt"], message: "Accessed date is required" });
+    }
+    if (v.movementPattern && v.exerciseId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["movementPattern"],
+        message: "Target either a movement pattern or a specific exercise, not both",
+      });
+    }
+    if (v.includeLimitationRule) {
+      if (!v.ruleLimitationTag)
+        ctx.addIssue({
+          code: "custom",
+          path: ["ruleLimitationTag"],
+          message: "Limitation tag is required",
+        });
+      if (!v.ruleAction) ctx.addIssue({ code: "custom", path: ["ruleAction"], message: "Action is required" });
+      if (!v.ruleRationale)
+        ctx.addIssue({ code: "custom", path: ["ruleRationale"], message: "Rationale is required" });
+      if (v.ruleMovementPattern && v.ruleExerciseId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["ruleMovementPattern"],
+          message: "Target either a movement pattern or a specific exercise, not both",
+        });
+      }
+    }
+  });
+export type EvidenceBundleInput = z.infer<typeof evidenceBundleSchema>;

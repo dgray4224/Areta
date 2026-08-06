@@ -30,7 +30,7 @@ export function RoleForm({
     setError(null);
     setSaved(false);
     startTransition(async () => {
-      const result = await setUserAdminStatus(targetUserId, currentUserId, {
+      const result = await setUserAdminStatus(targetUserId, {
         isAdmin,
         adminRole: isAdmin ? adminRole : null,
       });

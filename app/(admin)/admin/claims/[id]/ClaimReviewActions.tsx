@@ -9,18 +9,16 @@ import { Button } from "@/platform/ui/Button";
 export function ClaimReviewActions({
   claimId,
   currentStatus,
-  reviewerId,
 }: {
   claimId: string;
   currentStatus: ReviewStatus;
-  reviewerId: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const review = (status: "approved" | "rejected") => {
     startTransition(async () => {
-      await reviewExpertClaim(claimId, status, reviewerId);
+      await reviewExpertClaim(claimId, status);
       router.refresh();
     });
   };

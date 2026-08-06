@@ -7,14 +7,14 @@ import { ClaimReviewActions } from "./ClaimReviewActions";
 
 export default async function ClaimDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { user } = await requireAdmin();
+  await requireAdmin();
   const claim = await getExpertClaim(id);
   if (!claim) notFound();
 
   return (
     <div className="space-y-4">
-      <Link href="/admin/claims" className="text-sm text-neutral-500 hover:underline">
-        ← Claims
+      <Link href="/admin/evidence" className="text-sm text-neutral-500 hover:underline">
+        ← Evidence
       </Link>
 
       <div className="flex items-start justify-between">
@@ -82,7 +82,7 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
         </div>
       </Card>
 
-      <ClaimReviewActions claimId={claim.id} currentStatus={claim.reviewStatus} reviewerId={user.id} />
+      <ClaimReviewActions claimId={claim.id} currentStatus={claim.reviewStatus} />
     </div>
   );
 }

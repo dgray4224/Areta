@@ -35,7 +35,7 @@ export function DeleteUserSection({
   function onDelete() {
     setError(null);
     startTransition(async () => {
-      const result = await deleteUserAdmin(targetUserId, currentUserId);
+      const result = await deleteUserAdmin(targetUserId);
       if (!result.ok) {
         setError(result.error);
         return;

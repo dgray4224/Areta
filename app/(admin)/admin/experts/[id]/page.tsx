@@ -7,14 +7,14 @@ import { ExpertStatusActions } from "./ExpertStatusActions";
 
 export default async function ExpertDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { user } = await requireAdmin();
+  await requireAdmin();
   const expert = await getExpert(id);
   if (!expert) notFound();
 
   return (
     <div className="space-y-4">
-      <Link href="/admin/experts" className="text-sm text-neutral-500 hover:underline">
-        ← Experts
+      <Link href="/admin/evidence" className="text-sm text-neutral-500 hover:underline">
+        ← Evidence
       </Link>
 
       <div className="flex items-start justify-between">
@@ -50,7 +50,7 @@ export default async function ExpertDetailPage({ params }: { params: Promise<{ i
         ) : null}
       </Card>
 
-      <ExpertStatusActions expertId={expert.id} currentStatus={expert.status} reviewerId={user.id} />
+      <ExpertStatusActions expertId={expert.id} currentStatus={expert.status} />
     </div>
   );
 }

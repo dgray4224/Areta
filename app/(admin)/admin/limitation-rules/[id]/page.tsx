@@ -11,14 +11,14 @@ export default async function LimitationRuleDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { user } = await requireAdmin();
+  await requireAdmin();
   const rule = await getLimitationRule(id);
   if (!rule) notFound();
 
   return (
     <div className="space-y-4">
-      <Link href="/admin/limitation-rules" className="text-sm text-neutral-500 hover:underline">
-        ← Limitation rules
+      <Link href="/admin/evidence" className="text-sm text-neutral-500 hover:underline">
+        ← Evidence
       </Link>
 
       <div className="flex items-start justify-between">
@@ -53,7 +53,7 @@ export default async function LimitationRuleDetailPage({
         </div>
       </Card>
 
-      <LimitationRuleReviewActions ruleId={rule.id} currentStatus={rule.status} reviewerId={user.id} />
+      <LimitationRuleReviewActions ruleId={rule.id} currentStatus={rule.status} />
     </div>
   );
 }

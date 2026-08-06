@@ -110,3 +110,26 @@ export type AdminDashboardCounts = {
   unreviewedClaims: number;
   unreviewedLimitationRules: number;
 };
+
+/** Unified row shape for the merged Evidence tab (2026-08-06) — experts,
+ * sources, claims, and limitation rules normalized into one list. Each
+ * type's own status vocabulary collapses into one shared three-way
+ * bucket so a single filter row works across all four:
+ *   - needs_review: expert candidate / claim or rule unreviewed
+ *   - approved: expert approved / source active / claim or rule approved
+ *   - other: expert inactive|excluded / source archived / claim or rule rejected
+ * Sources never populate needs_review — they have no review workflow,
+ * just active/archived (see setSourceStatus's comment). */
+export type EvidenceKind = "expert" | "source" | "claim" | "limitation_rule";
+export type EvidenceBucket = "needs_review" | "approved" | "other";
+
+export type EvidenceItem = {
+  kind: EvidenceKind;
+  id: string;
+  title: string;
+  subtitle: string;
+  status: string;
+  bucket: EvidenceBucket;
+  createdAt: string;
+  href: string;
+};

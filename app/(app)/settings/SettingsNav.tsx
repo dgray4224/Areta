@@ -7,6 +7,7 @@ import { navTabClass } from "../nav-links";
 const TABS = [
   { href: "/settings/profile", label: "Profile" },
   { href: "/settings/personalization", label: "Personalization" },
+  { href: "/settings/trainer", label: "Trainer" },
   { href: "/settings/calendar", label: "Calendar" },
   { href: "/settings/appearance", label: "Appearance" },
   { href: "/settings/health-data", label: "Health Data" },
@@ -20,20 +21,29 @@ const TABS = [
  * reviewers reach it this way rather than needing to know the URL. */
 const ADMIN_TAB = { href: "/admin", label: "Admin" } as const;
 
-export function SettingsNav({ isAdmin }: { isAdmin: boolean }) {
+/** Same jump-out pattern as ADMIN_TAB, for a trainer account reaching
+ * their own client roster at /trainer — distinct from the plain
+ * "Trainer" tab above, which is every user's own "manage who's coaching
+ * me" settings page, not the trainer-facing tool. */
+const COACHING_TAB = { href: "/trainer", label: "Coaching" } as const;
+
+const JUMP_OUT_HREFS = new Set<string>([ADMIN_TAB.href, COACHING_TAB.href]);
+
+export function SettingsNav({ isAdmin, isTrainer }: { isAdmin: boolean; isTrainer: boolean }) {
   const pathname = usePathname();
-  const tabs = isAdmin ? [ADMIN_TAB, ...TABS] : TABS;
+  const tabs = [...(isAdmin ? [ADMIN_TAB] : []), ...(isTrainer ? [COACHING_TAB] : []), ...TABS];
 
   return (
     <nav className="flex items-center gap-1 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
       {tabs.map((tab) => {
-        const active = tab.href === "/admin" ? pathname.startsWith("/admin") : pathname === tab.href;
+        const isJumpOut = JUMP_OUT_HREFS.has(tab.href);
+        const active = isJumpOut ? pathname.startsWith(tab.href) : pathname === tab.href;
         return (
           <Link
             key={tab.href}
             href={tab.href}
             className={
-              tab.href === "/admin"
+              isJumpOut
                 ? "whitespace-nowrap rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-ink hover:opacity-90"
                 : `whitespace-nowrap border-b-2 px-3 py-2 text-sm ${navTabClass(active)}`
             }

@@ -15,18 +15,16 @@ const ACTIONS: { status: ExpertStatus; label: string }[] = [
 export function ExpertStatusActions({
   expertId,
   currentStatus,
-  reviewerId,
 }: {
   expertId: string;
   currentStatus: ExpertStatus;
-  reviewerId: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const setStatus = (status: ExpertStatus) => {
     startTransition(async () => {
-      await setExpertStatus(expertId, status, reviewerId);
+      await setExpertStatus(expertId, status);
       router.refresh();
     });
   };

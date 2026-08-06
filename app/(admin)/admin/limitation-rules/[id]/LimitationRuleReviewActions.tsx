@@ -9,18 +9,16 @@ import { Button } from "@/platform/ui/Button";
 export function LimitationRuleReviewActions({
   ruleId,
   currentStatus,
-  reviewerId,
 }: {
   ruleId: string;
   currentStatus: ReviewStatus;
-  reviewerId: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const review = (status: "approved" | "rejected") => {
     startTransition(async () => {
-      await reviewLimitationRule(ruleId, status, reviewerId);
+      await reviewLimitationRule(ruleId, status);
       router.refresh();
     });
   };
