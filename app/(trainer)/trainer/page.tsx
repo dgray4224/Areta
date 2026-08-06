@@ -1,19 +1,33 @@
 import Link from "next/link";
-import { listMyClients, listMyInviteCodes } from "@/domains/trainer/service";
+import { listMyClients, listMyInviteCodes, listIncomingTrainerRequests } from "@/domains/trainer/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
+import { LinkButton } from "@/platform/ui/Button";
 import { InviteCodePanel } from "./InviteCodePanel";
+import { IncomingRequests } from "./IncomingRequests";
 
 export default async function TrainerDashboardPage() {
-  const [clients, codes] = await Promise.all([listMyClients(), listMyInviteCodes()]);
+  const [clients, codes, incomingRequests] = await Promise.all([
+    listMyClients(),
+    listMyInviteCodes(),
+    listIncomingTrainerRequests(),
+  ]);
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-end">
+        <LinkButton href="/trainer/profile" variant="secondary">
+          Edit public profile
+        </LinkButton>
+      </div>
+
+      <IncomingRequests initialRequests={incomingRequests} />
+
       <section className="space-y-3">
         {clients.length === 0 ? (
           <EmptyState
             title="No clients yet"
-            description="Generate an invite code below and share it with a client to get started."
+            description="Generate an invite code below and share it with a client, or list your public profile so clients can find and request you."
           />
         ) : (
           <div className="space-y-2">

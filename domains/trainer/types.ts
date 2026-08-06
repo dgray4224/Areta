@@ -46,3 +46,45 @@ export type MyTrainerInfo = {
   trainerName: string | null;
   startedAt: string;
 };
+
+// ---------------------------------------------------------------------------
+// Marketplace/discovery (migration 0071)
+// ---------------------------------------------------------------------------
+
+export type TrainerProfile = {
+  trainerId: string;
+  bio: string | null;
+  yearsExperience: number | null;
+  specialties: string[];
+  locationCity: string | null;
+  locationRegion: string | null;
+  isDiscoverable: boolean;
+};
+
+/** A browse-list row — the profile plus the trainer's display name
+ * (profiles.full_name), which trainer_profiles doesn't itself carry. */
+export type DiscoverableTrainer = TrainerProfile & {
+  fullName: string | null;
+};
+
+export type TrainerRequestStatus = "pending" | "accepted" | "declined" | "cancelled";
+
+/** Client-side view of a request they sent. */
+export type MyTrainerRequest = {
+  id: string;
+  trainerId: string;
+  trainerName: string | null;
+  message: string | null;
+  status: TrainerRequestStatus;
+  createdAt: string;
+};
+
+/** Trainer-side view of a request they received. */
+export type IncomingTrainerRequest = {
+  id: string;
+  clientId: string;
+  clientName: string | null;
+  message: string | null;
+  status: TrainerRequestStatus;
+  createdAt: string;
+};

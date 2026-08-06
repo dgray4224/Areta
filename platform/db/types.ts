@@ -2367,6 +2367,72 @@ export type Database = {
         }
         Relationships: []
       }
+      trainer_profiles: {
+        Row: {
+          bio: string | null
+          created_at: string
+          is_discoverable: boolean
+          location_city: string | null
+          location_region: string | null
+          specialties: string[]
+          trainer_id: string
+          updated_at: string
+          years_experience: number | null
+        }
+        Insert: {
+          bio?: string | null
+          created_at?: string
+          is_discoverable?: boolean
+          location_city?: string | null
+          location_region?: string | null
+          specialties?: string[]
+          trainer_id: string
+          updated_at?: string
+          years_experience?: number | null
+        }
+        Update: {
+          bio?: string | null
+          created_at?: string
+          is_discoverable?: boolean
+          location_city?: string | null
+          location_region?: string | null
+          specialties?: string[]
+          trainer_id?: string
+          updated_at?: string
+          years_experience?: number | null
+        }
+        Relationships: []
+      }
+      trainer_requests: {
+        Row: {
+          client_id: string
+          created_at: string
+          id: string
+          message: string | null
+          responded_at: string | null
+          status: string
+          trainer_id: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          id?: string
+          message?: string | null
+          responded_at?: string | null
+          status?: string
+          trainer_id: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          id?: string
+          message?: string | null
+          responded_at?: string | null
+          status?: string
+          trainer_id?: string
+        }
+        Relationships: []
+      }
       training_program_phases: {
         Row: {
           focus: string | null

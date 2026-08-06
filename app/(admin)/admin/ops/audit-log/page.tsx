@@ -25,6 +25,7 @@ const ACTION_LABELS: Record<string, string> = {
   client_workout_item_added: "Client workout item added",
   trainer_invite_code_generated: "Trainer invite code generated",
   trainer_invite_code_revoked: "Trainer invite code revoked",
+  trainer_request_accepted: "Trainer request accepted",
 };
 
 function shortId(id: string): string {

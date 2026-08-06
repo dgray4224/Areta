@@ -28,6 +28,10 @@ import type {
   ClientHistorySummary,
   ClientGoal,
   MyTrainerInfo,
+  TrainerProfile,
+  DiscoverableTrainer,
+  MyTrainerRequest,
+  IncomingTrainerRequest,
 } from "@/domains/trainer/types";
 
 /** Shared guard for every trainer action that touches a specific client's
@@ -688,6 +692,273 @@ export async function removeClient(clientId: string): Promise<ActionResult> {
     targetType: "trainer_client",
     targetId: relationship.id,
     detail: { trainerId: user.id, clientId, endedBy: user.id },
+  });
+
+  return { ok: true, data: undefined };
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace/discovery (migration 0071) — deferred when the trainer role
+// was first scoped, built on explicit confirmation. Client-initiated
+// counterpart to the trainer-issued invite code: a client browses
+// discoverable trainers and sends a request instead of waiting for a code.
+// ---------------------------------------------------------------------------
+
+function toTrainerProfile(row: {
+  trainer_id: string;
+  bio: string | null;
+  years_experience: number | null;
+  specialties: string[];
+  location_city: string | null;
+  location_region: string | null;
+  is_discoverable: boolean;
+}): TrainerProfile {
+  return {
+    trainerId: row.trainer_id,
+    bio: row.bio,
+    yearsExperience: row.years_experience,
+    specialties: row.specialties,
+    locationCity: row.location_city,
+    locationRegion: row.location_region,
+    isDiscoverable: row.is_discoverable,
+  };
+}
+
+export async function getMyTrainerProfile(): Promise<TrainerProfile | null> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  const { data } = await supabase.from("trainer_profiles").select("*").eq("trainer_id", user.id).maybeSingle();
+  return data ? toTrainerProfile(data) : null;
+}
+
+export async function upsertMyTrainerProfile(input: {
+  bio: string | null;
+  yearsExperience: number | null;
+  specialties: string[];
+  locationCity: string | null;
+  locationRegion: string | null;
+  isDiscoverable: boolean;
+}): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("trainer_profiles").upsert({
+    trainer_id: user.id,
+    bio: input.bio,
+    years_experience: input.yearsExperience,
+    specialties: input.specialties,
+    location_city: input.locationCity,
+    location_region: input.locationRegion,
+    is_discoverable: input.isDiscoverable,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  return { ok: true, data: undefined };
+}
+
+/** Authenticated browsing only — see migration 0071's comment on why
+ * this doesn't open to unauthenticated visitors in this pass. */
+export async function listDiscoverableTrainers(filters?: {
+  city?: string;
+  specialty?: string;
+}): Promise<DiscoverableTrainer[]> {
+  await requireUser();
+  const supabase = await createClient();
+
+  let query = supabase.from("trainer_profiles").select("*").eq("is_discoverable", true);
+  if (filters?.city) query = query.ilike("location_city", `%${filters.city}%`);
+  if (filters?.specialty) query = query.contains("specialties", [filters.specialty]);
+
+  const { data, error } = await query.order("created_at", { ascending: false });
+  if (error) throw new Error(`Failed to load trainers: ${error.message}`);
+  if (!data || data.length === 0) return [];
+
+  const trainerIds = data.map((row) => row.trainer_id);
+  const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", trainerIds);
+  const nameById = new Map(profiles?.map((p) => [p.id, p.full_name]) ?? []);
+
+  return data.map((row) => ({ ...toTrainerProfile(row), fullName: nameById.get(row.trainer_id) ?? null }));
+}
+
+/** Null both when no such trainer exists and when they exist but aren't
+ * discoverable (RLS returns nothing either way to a non-owner caller) —
+ * the page renders a 404 for both, same as any other "not found". */
+export async function getTrainerPublicProfile(trainerId: string): Promise<DiscoverableTrainer | null> {
+  await requireUser();
+  const supabase = await createClient();
+
+  const { data } = await supabase.from("trainer_profiles").select("*").eq("trainer_id", trainerId).maybeSingle();
+  if (!data) return null;
+
+  const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", trainerId).maybeSingle();
+  return { ...toTrainerProfile(data), fullName: profile?.full_name ?? null };
+}
+
+export async function requestTrainer(trainerId: string, message: string): Promise<ActionResult> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  if (trainerId === user.id) {
+    return { ok: false, error: "You can't request yourself as a trainer." };
+  }
+
+  const { data: existingRelationship } = await supabase
+    .from("trainer_clients")
+    .select("id")
+    .eq("client_id", user.id)
+    .eq("status", "active")
+    .maybeSingle();
+  if (existingRelationship) {
+    return { ok: false, error: "You already have an active trainer — end that relationship first." };
+  }
+
+  const { data: existingRequest } = await supabase
+    .from("trainer_requests")
+    .select("id")
+    .eq("client_id", user.id)
+    .eq("trainer_id", trainerId)
+    .eq("status", "pending")
+    .maybeSingle();
+  if (existingRequest) {
+    return { ok: false, error: "You already have a pending request to this trainer." };
+  }
+
+  const { error } = await supabase.from("trainer_requests").insert({
+    client_id: user.id,
+    trainer_id: trainerId,
+    message: message || null,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  return { ok: true, data: undefined };
+}
+
+export async function listMyTrainerRequests(): Promise<MyTrainerRequest[]> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("trainer_requests")
+    .select("id, trainer_id, message, status, created_at")
+    .eq("client_id", user.id)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`Failed to load requests: ${error.message}`);
+  if (!data || data.length === 0) return [];
+
+  const trainerIds = [...new Set(data.map((r) => r.trainer_id))];
+  const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", trainerIds);
+  const nameById = new Map(profiles?.map((p) => [p.id, p.full_name]) ?? []);
+
+  return data.map((r) => ({
+    id: r.id,
+    trainerId: r.trainer_id,
+    trainerName: nameById.get(r.trainer_id) ?? null,
+    message: r.message,
+    status: r.status as MyTrainerRequest["status"],
+    createdAt: r.created_at,
+  }));
+}
+
+export async function cancelTrainerRequest(requestId: string): Promise<ActionResult> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("trainer_requests")
+    .update({ status: "cancelled" })
+    .eq("id", requestId)
+    .eq("client_id", user.id)
+    .eq("status", "pending");
+  if (error) return { ok: false, error: error.message };
+
+  return { ok: true, data: undefined };
+}
+
+export async function listIncomingTrainerRequests(): Promise<IncomingTrainerRequest[]> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("trainer_requests")
+    .select("id, client_id, message, status, created_at")
+    .eq("trainer_id", user.id)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`Failed to load requests: ${error.message}`);
+  if (!data || data.length === 0) return [];
+
+  const clientIds = [...new Set(data.map((r) => r.client_id))];
+  const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", clientIds);
+  const nameById = new Map(profiles?.map((p) => [p.id, p.full_name]) ?? []);
+
+  return data.map((r) => ({
+    id: r.id,
+    clientId: r.client_id,
+    clientName: nameById.get(r.client_id) ?? null,
+    message: r.message,
+    status: r.status as IncomingTrainerRequest["status"],
+    createdAt: r.created_at,
+  }));
+}
+
+/** Accepting has the same cross-user side effect as redeeming an invite
+ * code (creates a trainer_clients row), so this goes through the
+ * service-role client with its own explicit checks, same reasoning as
+ * redeemTrainerInviteCode — not a raw RLS update. */
+export async function respondToTrainerRequest(requestId: string, accept: boolean): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const admin = createAdminClient();
+
+  const { data: request } = await admin
+    .from("trainer_requests")
+    .select("id, client_id, trainer_id, status")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (!request || request.trainer_id !== user.id) {
+    return { ok: false, error: "Request not found." };
+  }
+  if (request.status !== "pending") {
+    return { ok: false, error: "This request has already been responded to." };
+  }
+
+  if (!accept) {
+    await admin
+      .from("trainer_requests")
+      .update({ status: "declined", responded_at: new Date().toISOString() })
+      .eq("id", requestId);
+    return { ok: true, data: undefined };
+  }
+
+  const { data: existing } = await admin
+    .from("trainer_clients")
+    .select("id")
+    .eq("client_id", request.client_id)
+    .eq("status", "active")
+    .maybeSingle();
+  if (existing) {
+    return { ok: false, error: "This client already has an active trainer." };
+  }
+
+  const { error: insertError } = await admin.from("trainer_clients").insert({
+    trainer_id: user.id,
+    client_id: request.client_id,
+  });
+  if (insertError) {
+    return { ok: false, error: "Could not accept — this client may already have an active trainer." };
+  }
+
+  await admin
+    .from("trainer_requests")
+    .update({ status: "accepted", responded_at: new Date().toISOString() })
+    .eq("id", requestId);
+
+  await logAdminAction({
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "trainer_request_accepted",
+    targetType: "trainer_client",
+    targetId: request.client_id,
+    detail: { trainerId: user.id, clientId: request.client_id, requestId },
   });
 
   return { ok: true, data: undefined };
