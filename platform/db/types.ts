@@ -2412,6 +2412,8 @@ export type Database = {
           goal_outcome: string | null
           id: string
           linked_goal_id: string | null
+          nutrition_override: Json | null
+          nutrition_override_updated_at: string | null
           program_id: string
           started_at: string
           starts_on: string
@@ -2426,6 +2428,8 @@ export type Database = {
           goal_outcome?: string | null
           id?: string
           linked_goal_id?: string | null
+          nutrition_override?: Json | null
+          nutrition_override_updated_at?: string | null
           program_id: string
           started_at?: string
           starts_on?: string
@@ -2440,6 +2444,8 @@ export type Database = {
           goal_outcome?: string | null
           id?: string
           linked_goal_id?: string | null
+          nutrition_override?: Json | null
+          nutrition_override_updated_at?: string | null
           program_id?: string
           started_at?: string
           starts_on?: string

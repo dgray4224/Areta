@@ -2,7 +2,10 @@
 
 import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
-import { calculateNutritionParameters } from "@/domains/parameters/nutrition-calc";
+import {
+  calculateNutritionParameters,
+  type NutritionParameterInputs,
+} from "@/domains/parameters/nutrition-calc";
 import { calculateExerciseParameters } from "@/domains/parameters/exercise-calc";
 import type { NutritionInput } from "@/domains/nutrition/schema";
 import { isLegacyExerciseShape } from "@/domains/exercise/legacy";
@@ -87,6 +90,57 @@ async function writeGeneratedParameters(
   return { ok: true, data: undefined };
 }
 
+export type NutritionCalculationBaseInputs = Omit<NutritionParameterInputs, "targetDate" | "today">;
+
+/**
+ * Gathers the client-profile inputs calculateNutritionParameters needs --
+ * onboarding nutrition answers, profile units, and the most recent logged
+ * weight in preference over the static onboarding value (same
+ * observed-outcomes-over-static-estimate reasoning as
+ * generateNutritionParameters below) -- without deciding targetDate/today.
+ * Factored out so a caller can supply its own date scoping:
+ * generateNutritionParameters uses the client's own goal's target_date;
+ * domains/trainer/service.ts#previewEngagementNutritionTargets uses a
+ * trainer assignment's own starts_on/end_date instead (2026-08-07, a
+ * trainer's engagement window often doesn't match the client's own
+ * long-range goal timeline).
+ */
+export async function getNutritionCalculationBaseInputs(
+  userId: string
+): Promise<NutritionCalculationBaseInputs> {
+  const supabase = await createClient();
+
+  const [{ data: profile }, { data: responses }, { data: latestWeightLog }] = await Promise.all([
+    supabase.from("profiles").select("units").eq("id", userId).single(),
+    supabase.from("onboarding_responses").select("nutrition").eq("user_id", userId).single(),
+    supabase
+      .from("weight_logs")
+      .select("weight, unit, logged_at")
+      .eq("user_id", userId)
+      .order("logged_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const nutrition = (responses?.nutrition ?? {}) as NutritionInput;
+  const units = (profile?.units as "metric" | "imperial") ?? "imperial";
+  const currentWeight = latestWeightLog
+    ? convertLoggedWeight(latestWeightLog.weight, latestWeightLog.unit as "lb" | "kg", units)
+    : nutrition.currentWeight;
+
+  return {
+    units,
+    height: nutrition.height,
+    currentWeight,
+    targetWeight: nutrition.targetWeight,
+    age: nutrition.age,
+    sex: nutrition.sex,
+    activityLevel: nutrition.activityLevel,
+    trackingPreference: nutrition.trackingPreference,
+    proteinTargetGramsOverride: nutrition.proteinTargetGrams,
+  };
+}
+
 /**
  * Recomputes nutrition parameters from the user's most recent logged
  * weight (falling back to the onboarding-entered value if nothing has been
@@ -97,26 +151,14 @@ async function writeGeneratedParameters(
  */
 export async function generateNutritionParameters(userId: string): Promise<ActionResult> {
   const supabase = await createClient();
+  const baseInputs = await getNutritionCalculationBaseInputs(userId);
 
-  const [{ data: profile }, { data: responses }, { data: domain }, { data: latestWeightLog }] =
-    await Promise.all([
-      supabase.from("profiles").select("units").eq("id", userId).single(),
-      supabase.from("onboarding_responses").select("nutrition").eq("user_id", userId).single(),
-      supabase.from("domains").select("id").eq("user_id", userId).eq("key", "nutrition").single(),
-      supabase
-        .from("weight_logs")
-        .select("weight, unit, logged_at")
-        .eq("user_id", userId)
-        .order("logged_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
-
-  const nutrition = (responses?.nutrition ?? {}) as NutritionInput;
-  const units = (profile?.units as "metric" | "imperial") ?? "imperial";
-  const currentWeight = latestWeightLog
-    ? convertLoggedWeight(latestWeightLog.weight, latestWeightLog.unit as "lb" | "kg", units)
-    : nutrition.currentWeight;
+  const { data: domain } = await supabase
+    .from("domains")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("key", "nutrition")
+    .single();
 
   let targetDate: string | undefined;
   if (domain?.id) {
@@ -131,18 +173,7 @@ export async function generateNutritionParameters(userId: string): Promise<Actio
     targetDate = goal?.target_date ?? undefined;
   }
 
-  const { parameters, missingInputs } = calculateNutritionParameters({
-    units,
-    height: nutrition.height,
-    currentWeight,
-    targetWeight: nutrition.targetWeight,
-    age: nutrition.age,
-    sex: nutrition.sex,
-    activityLevel: nutrition.activityLevel,
-    targetDate,
-    trackingPreference: nutrition.trackingPreference,
-    proteinTargetGramsOverride: nutrition.proteinTargetGrams,
-  });
+  const { parameters, missingInputs } = calculateNutritionParameters({ ...baseInputs, targetDate });
 
   if (parameters.length === 0) {
     return {

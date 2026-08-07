@@ -24,6 +24,9 @@ export function MealPortionsEditor({ clientId, phaseId }: { clientId: string; ph
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [calorieTarget, setCalorieTarget] = useState<number | null>(null);
+  const [calorieTargetSource, setCalorieTargetSource] = useState<
+    "engagement" | "client_approved" | "fallback"
+  >("fallback");
   const [rows, setRows] = useState<MealPortionRow[]>([]);
   const [servingsById, setServingsById] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
@@ -46,6 +49,7 @@ export function MealPortionsEditor({ clientId, phaseId }: { clientId: string; ph
         return;
       }
       setCalorieTarget(result.data.calorieTarget);
+      setCalorieTargetSource(result.data.calorieTargetSource);
       setRows(result.data.rows);
       const initial: Record<string, string> = {};
       for (const row of result.data.rows) {
@@ -96,9 +100,11 @@ export function MealPortionsEditor({ clientId, phaseId }: { clientId: string; ph
   return (
     <div className="space-y-3">
       <p className="text-sm text-neutral-600 dark:text-neutral-400">
-        {calorieTarget
-          ? `Recommended servings are based on this client's approved ${calorieTarget}-calorie target, split across each day's meals. Adjust any number, then save.`
-          : "This client doesn't have an approved calorie target yet, so the recommendations below use a generic 2,000-calorie placeholder — adjust freely, or have them approve their real target first for a better starting point."}
+        {calorieTargetSource === "engagement"
+          ? `Recommended servings are based on the ${calorieTarget}-calorie target set for this engagement, split across each day's meals. Adjust any number, then save.`
+          : calorieTargetSource === "client_approved"
+            ? `Recommended servings are based on this client's approved ${calorieTarget}-calorie target, split across each day's meals. Adjust any number, then save.`
+            : "This client doesn't have an approved calorie target yet, so the recommendations below use a generic 2,000-calorie placeholder — adjust freely, or set an engagement target above (or have the client approve their real target) for a better starting point."}
       </p>
       {days.map((day) => {
         const dayRows = (byDay.get(day) ?? [])

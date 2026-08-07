@@ -8,6 +8,7 @@ import { Button } from "@/platform/ui/Button";
 import { Card } from "@/platform/ui/Card";
 import { MealPortionsEditor } from "./MealPortionsEditor";
 import { AssignMealProgramForm } from "./AssignMealProgramForm";
+import { EngagementNutritionTargets } from "./EngagementNutritionTargets";
 import type { TrainerMealProgramAssignment } from "@/domains/trainermealprogram/types";
 import type { TrainerMealProgram } from "@/domains/trainermealprogram/types";
 
@@ -23,6 +24,7 @@ export function AssignedMealProgramPanel({
   const router = useRouter();
   const [changing, setChanging] = useState(false);
   const [editingPortions, setEditingPortions] = useState(false);
+  const [editingTargets, setEditingTargets] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const today = new Date().toISOString().slice(0, 10);
@@ -91,6 +93,15 @@ export function AssignedMealProgramPanel({
           type="button"
           variant="secondary"
           disabled={isPending}
+          onClick={() => setEditingTargets((v) => !v)}
+          title="Recalculate calorie/protein targets scoped to this engagement's own dates, instead of the client's long-range goal."
+        >
+          {editingTargets ? "Cancel" : assignment.nutritionOverride ? "Edit engagement target" : "Engagement target"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={isPending}
           onClick={() => setChanging((v) => !v)}
           title="Switch this client to a different program. Their old one is saved, not deleted."
         >
@@ -116,6 +127,17 @@ export function AssignedMealProgramPanel({
            * assignment's stale fetched rows instead of refetching for the
            * new one. */}
           <MealPortionsEditor key={assignment.id} clientId={clientId} phaseId={assignment.currentPhaseId} />
+        </div>
+      ) : null}
+      {editingTargets ? (
+        <div className="mt-3 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          <EngagementNutritionTargets
+            key={assignment.id}
+            clientId={clientId}
+            startsOn={assignment.startsOn}
+            endDate={assignment.endDate}
+            nutritionOverride={assignment.nutritionOverride}
+          />
         </div>
       ) : null}
       {changing ? (

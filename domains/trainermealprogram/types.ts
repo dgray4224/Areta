@@ -6,6 +6,8 @@
  * comment for the full reasoning, including why portion size lives
  * per-client (domains/trainer/service.ts) rather than on the program. */
 
+import type { GeneratedParameter } from "@/domains/parameters/types";
+
 export type TrainerMealProgramStatus = "draft" | "published" | "archived";
 
 export type TrainerMealProgram = {
@@ -53,6 +55,26 @@ export type TrainerMealProgramWithPhases = TrainerMealProgram & {
 
 export type TrainerMealProgramAssignmentStatus = "active" | "ended";
 
+/** Engagement-scoped daily calorie/protein targets a trainer computed
+ * for this specific assignment (2026-08-07 -- see migration 0084's own
+ * comment for the full reasoning: a trainer's engagement window often
+ * doesn't match the client's own long-range goal timeline, so the flat
+ * generated_parameters calorie_target/protein_target_g isn't necessarily
+ * the right pace for just this block). calorieTarget/proteinTarget are
+ * the values actually in effect (may differ from the computed
+ * parameters' own .value if the trainer edited the suggestion before
+ * saving); computedCalorieParameter/computedProteinParameter carry the
+ * full rationale/assumptions/safetyBounds for display. Never written into
+ * generated_parameters -- the client's own long-range target is
+ * untouched by this. */
+export type NutritionOverride = {
+  calorieTarget: number;
+  proteinTarget: number;
+  computedCalorieParameter: GeneratedParameter;
+  computedProteinParameter: GeneratedParameter;
+  computedAt: string;
+};
+
 /** Mirrors domains/trainerprogram/types.ts#TrainerProgramAssignment,
  * minus 'paused' (dropped, see migration 0083's comment) and with no
  * currentPhaseName/currentWeekInPhase-computing calendar-projection
@@ -72,6 +94,7 @@ export type TrainerMealProgramAssignment = {
   currentPhaseId: string | null;
   currentPhaseName: string | null;
   currentWeekInPhase: number | null;
+  nutritionOverride: NutritionOverride | null;
   startedAt: string;
   endedAt: string | null;
 };

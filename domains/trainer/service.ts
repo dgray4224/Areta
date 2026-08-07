@@ -7,7 +7,15 @@ import { createAdminClient } from "@/platform/supabase/admin";
 import { requireTrainer } from "@/platform/auth/trainer";
 import { requireUser } from "@/platform/auth/session";
 import { logAdminAction } from "@/platform/audit/log";
-import { getApprovedParameterValue, getGeneratedParameters, approveAllGeneratedParameters, type StoredParameter } from "@/domains/parameters/service";
+import {
+  getApprovedParameterValue,
+  getGeneratedParameters,
+  approveAllGeneratedParameters,
+  getNutritionCalculationBaseInputs,
+  type StoredParameter,
+} from "@/domains/parameters/service";
+import { calculateNutritionParameters } from "@/domains/parameters/nutrition-calc";
+import type { GeneratedParameter } from "@/domains/parameters/types";
 import { getMealPlanForWeek, type MealPlanView } from "@/domains/mealplan/service";
 import {
   getCurrentWorkoutPlan,
@@ -50,6 +58,7 @@ import type {
   TrainerMealProgramAssignment,
   PastMealAssignment,
   MealPortionRow,
+  NutritionOverride,
 } from "@/domains/trainermealprogram/types";
 
 /** Shared guard for every trainer action that touches a specific client's
@@ -1343,6 +1352,7 @@ async function loadMealAssignmentView(
     currentPhaseId: resolved?.phaseId ?? null,
     currentPhaseName: resolved?.phaseName ?? null,
     currentWeekInPhase: resolved?.weekInPhase ?? null,
+    nutritionOverride: (row.nutrition_override as unknown as NutritionOverride | null) ?? null,
     startedAt: row.started_at,
     endedAt: row.ended_at,
   };
@@ -1391,32 +1401,173 @@ export async function listClientMealAssignmentHistory(clientId: string): Promise
   };
 }
 
-/** Recommendations plus whatever the trainer has already saved, for
- * every meal in one phase -- the portion-review screen's data source.
- * The recommendation itself is never stored (migration 0083's own
- * comment) -- recomputed live from the client's *current* approved
- * calorie target every call, so it can't go stale the way a
- * stored-at-assignment-time number would if the target changes later.
- * calorieTarget is returned alongside the rows (not just baked into the
- * math) so the UI can show an honest caveat when it's null -- the
- * recommendation still has to produce *something* in that case
- * (falls back to a generic 2000, same ballpark default used elsewhere
- * in this app for a not-yet-known target) rather than blocking the
- * whole screen on a target the client hasn't approved yet. */
-export async function getMealPortionRecommendations(
-  clientId: string,
-  phaseId: string
-): Promise<ActionResult<{ calorieTarget: number | null; rows: MealPortionRow[] }>> {
+/** Computes (does not persist) daily calorie/protein targets scoped to
+ * the client's currently active assignment's own starts_on/end_date, as
+ * opposed to their long-range generated_parameters calorie_target -- see
+ * migration 0084's comment for the full "trainer's engagement window
+ * often doesn't match the client's own goal timeline" reasoning. Reuses
+ * the same deterministic calculateNutritionParameters function and the
+ * same profile inputs generateNutritionParameters draws on for the
+ * client's own target, just with different date scoping, so the trainer
+ * gets the same rationale/assumptions/safety-bounds transparency CLAUDE.md
+ * requires anywhere a value gets derived on someone's behalf -- even
+ * though this number never touches generated_parameters itself. */
+export async function previewEngagementNutritionTargets(
+  clientId: string
+): Promise<ActionResult<{ calorieParameter: GeneratedParameter; proteinParameter: GeneratedParameter }>> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
   if (!(await requireActiveClient(user.id, clientId, supabase))) {
     return { ok: false, error: "This is not your client." };
   }
 
-  const [{ data: assignment }, { data: mealRows }, calorieTarget] = await Promise.all([
+  const { data: assignment } = await supabase
+    .from("trainer_meal_program_assignments")
+    .select("starts_on, end_date")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!assignment) return { ok: false, error: "No active nutrition program assigned." };
+  if (!assignment.end_date) return { ok: false, error: "This assignment has no end date to scope to." };
+
+  const baseInputs = await getNutritionCalculationBaseInputs(clientId);
+  const { parameters, missingInputs } = calculateNutritionParameters({
+    ...baseInputs,
+    today: assignment.starts_on,
+    targetDate: assignment.end_date,
+  });
+
+  const calorieParameter = parameters.find((p) => p.id === "calorie_target");
+  const proteinParameter = parameters.find((p) => p.id === "protein_target_g");
+  if (!calorieParameter || !proteinParameter) {
+    return {
+      ok: false,
+      error: `Add ${missingInputs.join(" and ")} on the client's own onboarding before Areta can calculate engagement targets.`,
+    };
+  }
+
+  return { ok: true, data: { calorieParameter, proteinParameter } };
+}
+
+/** Persists an engagement-scoped nutrition target on the active
+ * assignment. calorieTarget/proteinTarget are whatever the trainer wants
+ * in effect -- normally the preview's computed values verbatim, but the
+ * trainer may edit them first (same suggest-then-edit pattern as
+ * portions). Recomputes the full breakdown server-side rather than
+ * trusting client-supplied rationale, so the stored record always traces
+ * back to a real calculation even if the final number was hand-adjusted. */
+export async function saveEngagementNutritionTargets(
+  clientId: string,
+  calorieTarget: number,
+  proteinTarget: number
+): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+  if (!(calorieTarget > 0) || !(proteinTarget > 0)) {
+    return { ok: false, error: "Targets must be positive numbers." };
+  }
+
+  const { data: assignment } = await supabase
+    .from("trainer_meal_program_assignments")
+    .select("id, starts_on, end_date")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!assignment) return { ok: false, error: "No active nutrition program assigned." };
+  if (!assignment.end_date) return { ok: false, error: "This assignment has no end date to scope to." };
+
+  const baseInputs = await getNutritionCalculationBaseInputs(clientId);
+  const { parameters } = calculateNutritionParameters({
+    ...baseInputs,
+    today: assignment.starts_on,
+    targetDate: assignment.end_date,
+  });
+  const computedCalorieParameter = parameters.find((p) => p.id === "calorie_target");
+  const computedProteinParameter = parameters.find((p) => p.id === "protein_target_g");
+  if (!computedCalorieParameter || !computedProteinParameter) {
+    return { ok: false, error: "Couldn't recompute this engagement's targets — try recalculating again." };
+  }
+
+  const nutritionOverride: NutritionOverride = {
+    calorieTarget,
+    proteinTarget,
+    computedCalorieParameter,
+    computedProteinParameter,
+    computedAt: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from("trainer_meal_program_assignments")
+    .update({
+      nutrition_override: nutritionOverride,
+      nutrition_override_updated_at: nutritionOverride.computedAt,
+    })
+    .eq("id", assignment.id);
+  if (error) return { ok: false, error: error.message };
+
+  await logTrainerAction(user, "client_engagement_nutrition_targets_saved", clientId, {
+    calorieTarget,
+    proteinTarget,
+  });
+  return { ok: true, data: undefined };
+}
+
+/** Reverts to the client's own approved calorie_target (today's default
+ * behavior) by clearing the engagement override. */
+export async function clearEngagementNutritionOverride(clientId: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { error } = await supabase
+    .from("trainer_meal_program_assignments")
+    .update({ nutrition_override: null, nutrition_override_updated_at: null })
+    .eq("client_id", clientId)
+    .eq("status", "active");
+  if (error) return { ok: false, error: error.message };
+
+  await logTrainerAction(user, "client_engagement_nutrition_targets_cleared", clientId, {});
+  return { ok: true, data: undefined };
+}
+
+/** Recommendations plus whatever the trainer has already saved, for
+ * every meal in one phase -- the portion-review screen's data source.
+ * The recommendation itself is never stored (migration 0083's own
+ * comment) -- recomputed live every call, so it can't go stale the way a
+ * stored-at-assignment-time number would if the underlying target
+ * changes later. calorieTarget/calorieTargetSource are returned alongside
+ * the rows (not just baked into the math) so the UI can show an honest,
+ * source-specific caveat: an engagement override (this assignment's own
+ * scoped calculation, migration 0084) takes priority over the client's
+ * own long-range approved calorie_target, which takes priority over a
+ * generic 2000 placeholder when neither exists yet -- the recommendation
+ * still has to produce *something* in that last case rather than
+ * blocking the whole screen on a target nobody's computed yet. */
+export async function getMealPortionRecommendations(
+  clientId: string,
+  phaseId: string
+): Promise<
+  ActionResult<{
+    calorieTarget: number | null;
+    calorieTargetSource: "engagement" | "client_approved" | "fallback";
+    rows: MealPortionRow[];
+  }>
+> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const [{ data: assignment }, { data: mealRows }, approvedCalorieTarget] = await Promise.all([
     supabase
       .from("trainer_meal_program_assignments")
-      .select("id")
+      .select("id, nutrition_override")
       .eq("client_id", clientId)
       .eq("status", "active")
       .maybeSingle(),
@@ -1424,7 +1575,17 @@ export async function getMealPortionRecommendations(
     getApprovedParameterValue(clientId, "nutrition", "calorie_target"),
   ]);
 
-  if (!mealRows || mealRows.length === 0) return { ok: true, data: { calorieTarget, rows: [] } };
+  const engagementOverride = (assignment?.nutrition_override as unknown as NutritionOverride | null) ?? null;
+  const calorieTarget = engagementOverride?.calorieTarget ?? approvedCalorieTarget;
+  const calorieTargetSource: "engagement" | "client_approved" | "fallback" = engagementOverride
+    ? "engagement"
+    : approvedCalorieTarget
+      ? "client_approved"
+      : "fallback";
+
+  if (!mealRows || mealRows.length === 0) {
+    return { ok: true, data: { calorieTarget, calorieTargetSource, rows: [] } };
+  }
 
   const recipeIds = Array.from(new Set(mealRows.map((m) => m.recipe_id)));
   const { data: recipeRows } = await supabase
@@ -1456,6 +1617,7 @@ export async function getMealPortionRecommendations(
     ok: true,
     data: {
       calorieTarget,
+      calorieTargetSource,
       rows: mealRows.map((m) => {
         const recipe = recipeById.get(m.recipe_id);
         return {

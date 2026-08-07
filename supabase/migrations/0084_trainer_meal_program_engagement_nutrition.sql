@@ -1,0 +1,39 @@
+-- Trainer-engagement-scoped nutrition targets (2026-08-07).
+--
+-- calorie_target/protein_target_g in generated_parameters are computed
+-- against the *client's own* goal timeline (their target weight/date from
+-- onboarding) -- a single flat daily number paced evenly across however
+-- long the client's own goal takes. A trainer's engagement window
+-- (trainer_meal_program_assignments.starts_on/end_date) often doesn't
+-- match that timeline at all -- e.g. a client's overall goal runs to
+-- next year, but a given trainer is only hired for a 13-week block.
+-- Pacing the client's flat long-range number is not necessarily what's
+-- appropriate for that shorter window.
+--
+-- nutrition_override lets a trainer recompute calorie/protein targets
+-- scoped to their own assignment's dates (same deterministic
+-- domains/parameters/nutrition-calc.ts#calculateNutritionParameters
+-- function, just fed the assignment's starts_on/end_date as
+-- today/targetDate instead of the client's own goal date -- see
+-- domains/trainer/service.ts#previewEngagementNutritionTargets). It is
+-- deliberately NOT written into generated_parameters: the client's own
+-- long-range target stays untouched and keeps driving their own
+-- self-service dashboard/plan. This is purely an assignment-scoped
+-- override, used only by getMealPortionRecommendations as its preferred
+-- calorie source when present, falling back to the client's own approved
+-- calorie_target otherwise (today's behavior, unchanged).
+--
+-- Shape: {calorieTarget: number, proteinTarget: number,
+-- computedCalorieParameter: GeneratedParameter, computedProteinParameter:
+-- GeneratedParameter, computedAt: string}. The two "computed*Parameter"
+-- values are full GeneratedParameter objects (rationale/assumptions/
+-- safetyBounds/confidence included) so the trainer can see the same
+-- transparency CLAUDE.md requires elsewhere, even though this value never
+-- passes through generated_parameters itself. calorieTarget/proteinTarget
+-- can differ from the computed parameters' own .value if the trainer
+-- edited the suggested number before saving (same "suggest, then let the
+-- user edit" pattern as domains/trainermealprogram/portion-
+-- recommendation.ts).
+alter table public.trainer_meal_program_assignments
+  add column nutrition_override jsonb,
+  add column nutrition_override_updated_at timestamptz;
