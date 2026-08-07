@@ -78,6 +78,13 @@ export function AssignedMealProgramPanel({
       </div>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
+        <Link
+          href={`/trainer/clients/${clientId}/nutrition/calendar`}
+          title="See and edit each day's meals."
+          className="inline-flex items-center justify-center rounded-full border border-neutral-300 px-5 py-2.5 text-sm font-semibold text-foreground hover:bg-black/5 dark:border-neutral-700 dark:hover:bg-white/5"
+        >
+          Calendar
+        </Link>
         {assignment.currentPhaseId ? (
           <Button
             type="button"

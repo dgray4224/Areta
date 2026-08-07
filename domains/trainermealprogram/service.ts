@@ -426,6 +426,47 @@ export async function getPhaseHydrated(
   return { ...toPhase(phaseRow), meals: (mealRows ?? []).map(toMeal) };
 }
 
+/** Every phase of a program, fully hydrated, sorted by phase_order --
+ * mirrors domains/trainerprogram/service.ts#getHydratedPhasesForProgram
+ * (one level simpler here, since meals have no session-grouping level to
+ * hydrate through). What calendar-projection.ts needs -- it walks phases
+ * in order to resolve which one a given date falls into. Two batched
+ * queries regardless of phase count, not N calls to getPhaseHydrated --
+ * this runs on every weekly materialization and every calendar month
+ * load. */
+export async function getHydratedPhasesForMealProgram(
+  programId: string,
+  client?: SupabaseClient<Database>
+): Promise<HydratedTrainerMealProgramPhase[]> {
+  const supabase = client ?? (await createClient());
+
+  const { data: phaseRows, error: phaseError } = await supabase
+    .from("trainer_meal_program_phases")
+    .select("*")
+    .eq("program_id", programId)
+    .order("phase_order", { ascending: true });
+  if (phaseError) throw new Error(`Failed to load phases: ${phaseError.message}`);
+  if (!phaseRows || phaseRows.length === 0) return [];
+
+  const phaseIds = phaseRows.map((p) => p.id);
+  const { data: mealRows, error: mealsError } = await supabase
+    .from("trainer_meal_program_meals")
+    .select("*")
+    .in("phase_id", phaseIds)
+    .order("day_of_week", { ascending: true })
+    .order("meal_order", { ascending: true });
+  if (mealsError) throw new Error(`Failed to load meals: ${mealsError.message}`);
+
+  const mealsByPhase = new Map<string, TrainerMealProgramMeal[]>();
+  for (const row of mealRows ?? []) {
+    const list = mealsByPhase.get(row.phase_id) ?? [];
+    list.push(toMeal(row));
+    mealsByPhase.set(row.phase_id, list);
+  }
+
+  return phaseRows.map((row) => ({ ...toPhase(row), meals: mealsByPhase.get(row.id) ?? [] }));
+}
+
 // ---------------------------------------------------------------------------
 // Recipes -- browse/create, scoped to what a trainer is allowed to use
 // ---------------------------------------------------------------------------
