@@ -181,19 +181,33 @@ export async function GET(request: NextRequest) {
   });
 
   const { start, end } = todayUtcRange();
-  const { data: workoutLogs, error } = await supabase
-    .from("workout_logs")
-    .select(
-      "id, start_date, end_date, activity_type, duration_minutes, total_energy_burned_kcal, total_distance_meters"
-    )
+  const { data: workoutRows, error } = await supabase
+    .from("health_metrics")
+    .select("id, started_at, ended_at, activity_type, total_energy_burned_kcal, total_distance_meters")
     .eq("user_id", userId)
-    .gte("start_date", start)
-    .lt("start_date", end)
-    .order("start_date", { ascending: true });
+    .eq("metric_type", "workout")
+    .gte("started_at", start)
+    .lt("started_at", end)
+    .order("started_at", { ascending: true });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Mobile client contract is start_date/end_date/duration_minutes (the
+  // pre-migration workout_logs shape) — preserved here even though storage
+  // moved to health_metrics' started_at/ended_at.
+  const workoutLogs = (workoutRows ?? []).map((r) => ({
+    id: r.id,
+    start_date: r.started_at,
+    end_date: r.ended_at,
+    activity_type: r.activity_type,
+    duration_minutes: r.ended_at
+      ? Math.round((new Date(r.ended_at).getTime() - new Date(r.started_at).getTime()) / 60000)
+      : 0,
+    total_energy_burned_kcal: r.total_energy_burned_kcal,
+    total_distance_meters: r.total_distance_meters,
+  }));
 
   const rationale = buildWorkoutRationale({
     today:

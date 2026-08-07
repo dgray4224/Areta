@@ -22,8 +22,6 @@ export async function exportUserData(userId: string): Promise<Record<string, unk
     "weekly_outcomes",
     "personalization_profiles",
     "onboarding_responses",
-    "weight_logs",
-    "sleep_logs",
     "nutrition_logs",
     "recovery_logs",
     "study_sessions",
@@ -64,6 +62,20 @@ export async function exportUserData(userId: string): Promise<Record<string, unk
     const { data, error } = results[i];
     exportData[table] = error ? { error: error.message } : (data ?? []);
   });
+
+  // weight_logs/sleep_logs used to be their own tables, now they're
+  // metric_type-filtered slices of health_metrics — kept as two separate
+  // export keys (same names as before the migration) rather than adding a
+  // third generic "health_metrics" key, so an existing export's shape
+  // doesn't change. steps/heart_rate/workout/vitals were never included in
+  // this export before the migration and stay excluded now (scope
+  // unchanged, not expanded as a side effect of this refactor).
+  const [{ data: weightRows, error: weightError }, { data: sleepRows, error: sleepError }] = await Promise.all([
+    supabase.from("health_metrics").select("*").eq("user_id", userId).eq("metric_type", "weight"),
+    supabase.from("health_metrics").select("*").eq("user_id", userId).eq("metric_type", "sleep"),
+  ]);
+  exportData.weight_logs = weightError ? { error: weightError.message } : (weightRows ?? []);
+  exportData.sleep_logs = sleepError ? { error: sleepError.message } : (sleepRows ?? []);
 
   return exportData;
 }

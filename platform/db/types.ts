@@ -948,7 +948,112 @@ export type Database = {
           },
         ]
       }
-      heart_rate_logs: {
+      health_metrics: {
+        Row: {
+          activity_type: string | null
+          created_at: string
+          dedup_key: string | null
+          device: string | null
+          ended_at: string | null
+          id: string
+          imported_at: string | null
+          metric_type: string
+          notes: string | null
+          sleep_interruptions: number | null
+          sleep_quality: number | null
+          source: string
+          started_at: string
+          total_distance_meters: number | null
+          total_energy_burned_kcal: number | null
+          unit: string | null
+          user_id: string
+          user_override: boolean
+          value: number | null
+        }
+        Insert: {
+          activity_type?: string | null
+          created_at?: string
+          dedup_key?: string | null
+          device?: string | null
+          ended_at?: string | null
+          id?: string
+          imported_at?: string | null
+          metric_type: string
+          notes?: string | null
+          sleep_interruptions?: number | null
+          sleep_quality?: number | null
+          source?: string
+          started_at: string
+          total_distance_meters?: number | null
+          total_energy_burned_kcal?: number | null
+          unit?: string | null
+          user_id: string
+          user_override?: boolean
+          value?: number | null
+        }
+        Update: {
+          activity_type?: string | null
+          created_at?: string
+          dedup_key?: string | null
+          device?: string | null
+          ended_at?: string | null
+          id?: string
+          imported_at?: string | null
+          metric_type?: string
+          notes?: string | null
+          sleep_interruptions?: number | null
+          sleep_quality?: number | null
+          source?: string
+          started_at?: string
+          total_distance_meters?: number | null
+          total_energy_burned_kcal?: number | null
+          unit?: string | null
+          user_id?: string
+          user_override?: boolean
+          value?: number | null
+        }
+        Relationships: []
+      }
+      heart_rate_logs_backup_pre_health_metrics: {
+        Row: {
+          bpm: number | null
+          created_at: string | null
+          dedup_key: string | null
+          device: string | null
+          id: string | null
+          imported_at: string | null
+          logged_at: string | null
+          source: string | null
+          user_id: string | null
+          user_override: boolean | null
+        }
+        Insert: {
+          bpm?: number | null
+          created_at?: string | null
+          dedup_key?: string | null
+          device?: string | null
+          id?: string | null
+          imported_at?: string | null
+          logged_at?: string | null
+          source?: string | null
+          user_id?: string | null
+          user_override?: boolean | null
+        }
+        Update: {
+          bpm?: number | null
+          created_at?: string | null
+          dedup_key?: string | null
+          device?: string | null
+          id?: string | null
+          imported_at?: string | null
+          logged_at?: string | null
+          source?: string | null
+          user_id?: string | null
+          user_override?: boolean | null
+        }
+        Relationships: []
+      }
+      heart_rate_logs_deprecated_migrated: {
         Row: {
           bpm: number
           created_at: string
@@ -2018,7 +2123,61 @@ export type Database = {
         }
         Relationships: []
       }
-      sleep_logs: {
+      sleep_logs_backup_pre_health_metrics: {
+        Row: {
+          bedtime: string | null
+          created_at: string | null
+          date: string | null
+          dedup_key: string | null
+          device: string | null
+          id: string | null
+          imported_at: string | null
+          interruptions: number | null
+          notes: string | null
+          quality: number | null
+          source: string | null
+          total_duration_minutes: number | null
+          user_id: string | null
+          user_override: boolean | null
+          wake_time: string | null
+        }
+        Insert: {
+          bedtime?: string | null
+          created_at?: string | null
+          date?: string | null
+          dedup_key?: string | null
+          device?: string | null
+          id?: string | null
+          imported_at?: string | null
+          interruptions?: number | null
+          notes?: string | null
+          quality?: number | null
+          source?: string | null
+          total_duration_minutes?: number | null
+          user_id?: string | null
+          user_override?: boolean | null
+          wake_time?: string | null
+        }
+        Update: {
+          bedtime?: string | null
+          created_at?: string | null
+          date?: string | null
+          dedup_key?: string | null
+          device?: string | null
+          id?: string | null
+          imported_at?: string | null
+          interruptions?: number | null
+          notes?: string | null
+          quality?: number | null
+          source?: string | null
+          total_duration_minutes?: number | null
+          user_id?: string | null
+          user_override?: boolean | null
+          wake_time?: string | null
+        }
+        Relationships: []
+      }
+      sleep_logs_deprecated_migrated: {
         Row: {
           bedtime: string | null
           created_at: string
@@ -2122,7 +2281,46 @@ export type Database = {
           },
         ]
       }
-      step_logs: {
+      step_logs_backup_pre_health_metrics: {
+        Row: {
+          count: number | null
+          created_at: string | null
+          dedup_key: string | null
+          device: string | null
+          id: string | null
+          imported_at: string | null
+          logged_at: string | null
+          source: string | null
+          user_id: string | null
+          user_override: boolean | null
+        }
+        Insert: {
+          count?: number | null
+          created_at?: string | null
+          dedup_key?: string | null
+          device?: string | null
+          id?: string | null
+          imported_at?: string | null
+          logged_at?: string | null
+          source?: string | null
+          user_id?: string | null
+          user_override?: boolean | null
+        }
+        Update: {
+          count?: number | null
+          created_at?: string | null
+          dedup_key?: string | null
+          device?: string | null
+          id?: string | null
+          imported_at?: string | null
+          logged_at?: string | null
+          source?: string | null
+          user_id?: string | null
+          user_override?: boolean | null
+        }
+        Relationships: []
+      }
+      step_logs_deprecated_migrated: {
         Row: {
           count: number
           created_at: string
@@ -2466,6 +2664,92 @@ export type Database = {
             columns: ["program_id"]
             isOneToOne: false
             referencedRelation: "trainer_meal_programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trainer_meal_program_date_override_meals: {
+        Row: {
+          id: string
+          meal_order: number
+          meal_type: string
+          override_id: string
+          recipe_id: string
+          servings: number
+        }
+        Insert: {
+          id?: string
+          meal_order?: number
+          meal_type: string
+          override_id: string
+          recipe_id: string
+          servings?: number
+        }
+        Update: {
+          id?: string
+          meal_order?: number
+          meal_type?: string
+          override_id?: string
+          recipe_id?: string
+          servings?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trainer_meal_program_date_override_meals_override_id_fkey"
+            columns: ["override_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_meal_program_date_overrides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trainer_meal_program_date_override_meals_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "recipes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trainer_meal_program_date_overrides: {
+        Row: {
+          assignment_id: string
+          client_id: string
+          created_at: string
+          id: string
+          is_no_program_day: boolean
+          notes: string | null
+          override_date: string
+          trainer_id: string
+          updated_at: string
+        }
+        Insert: {
+          assignment_id: string
+          client_id: string
+          created_at?: string
+          id?: string
+          is_no_program_day?: boolean
+          notes?: string | null
+          override_date: string
+          trainer_id: string
+          updated_at?: string
+        }
+        Update: {
+          assignment_id?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          is_no_program_day?: boolean
+          notes?: string | null
+          override_date?: string
+          trainer_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trainer_meal_program_date_overrides_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_meal_program_assignments"
             referencedColumns: ["id"]
           },
         ]
@@ -3240,7 +3524,52 @@ export type Database = {
         }
         Relationships: []
       }
-      weight_logs: {
+      weight_logs_backup_pre_health_metrics: {
+        Row: {
+          created_at: string | null
+          dedup_key: string | null
+          device: string | null
+          id: string | null
+          imported_at: string | null
+          logged_at: string | null
+          notes: string | null
+          source: string | null
+          unit: string | null
+          user_id: string | null
+          user_override: boolean | null
+          weight: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          dedup_key?: string | null
+          device?: string | null
+          id?: string | null
+          imported_at?: string | null
+          logged_at?: string | null
+          notes?: string | null
+          source?: string | null
+          unit?: string | null
+          user_id?: string | null
+          user_override?: boolean | null
+          weight?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          dedup_key?: string | null
+          device?: string | null
+          id?: string | null
+          imported_at?: string | null
+          logged_at?: string | null
+          notes?: string | null
+          source?: string | null
+          unit?: string | null
+          user_id?: string | null
+          user_override?: boolean | null
+          weight?: number | null
+        }
+        Relationships: []
+      }
+      weight_logs_deprecated_migrated: {
         Row: {
           created_at: string
           dedup_key: string | null
@@ -3285,7 +3614,58 @@ export type Database = {
         }
         Relationships: []
       }
-      workout_logs: {
+      workout_logs_backup_pre_health_metrics: {
+        Row: {
+          activity_type: string | null
+          created_at: string | null
+          dedup_key: string | null
+          device: string | null
+          duration_minutes: number | null
+          end_date: string | null
+          id: string | null
+          imported_at: string | null
+          source: string | null
+          start_date: string | null
+          total_distance_meters: number | null
+          total_energy_burned_kcal: number | null
+          user_id: string | null
+          user_override: boolean | null
+        }
+        Insert: {
+          activity_type?: string | null
+          created_at?: string | null
+          dedup_key?: string | null
+          device?: string | null
+          duration_minutes?: number | null
+          end_date?: string | null
+          id?: string | null
+          imported_at?: string | null
+          source?: string | null
+          start_date?: string | null
+          total_distance_meters?: number | null
+          total_energy_burned_kcal?: number | null
+          user_id?: string | null
+          user_override?: boolean | null
+        }
+        Update: {
+          activity_type?: string | null
+          created_at?: string | null
+          dedup_key?: string | null
+          device?: string | null
+          duration_minutes?: number | null
+          end_date?: string | null
+          id?: string | null
+          imported_at?: string | null
+          source?: string | null
+          start_date?: string | null
+          total_distance_meters?: number | null
+          total_energy_burned_kcal?: number | null
+          user_id?: string | null
+          user_override?: boolean | null
+        }
+        Relationships: []
+      }
+      workout_logs_deprecated_migrated: {
         Row: {
           activity_type: string
           created_at: string

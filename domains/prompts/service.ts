@@ -49,11 +49,12 @@ export async function getActivePrompt(userId: string): Promise<ActivePrompt | nu
       .gte("date", lookbackStart)
       .limit(1),
     supabase
-      .from("sleep_logs")
-      .select("total_duration_minutes")
+      .from("health_metrics")
+      .select("value")
       .eq("user_id", userId)
-      .gte("date", sleepLookbackStart)
-      .order("date", { ascending: false }),
+      .eq("metric_type", "sleep")
+      .gte("started_at", sleepLookbackStart)
+      .order("started_at", { ascending: false }),
     supabase
       .from("daily_actions")
       .select("domains(key)")
@@ -84,7 +85,7 @@ export async function getActivePrompt(userId: string): Promise<ActivePrompt | nu
     activeDomains: (domains ?? []).map((d) => d.key),
     hasRecentExerciseLog: (exerciseLogs ?? []).length > 0,
     recentSleepDurationsMinutes: (sleepLogs ?? [])
-      .map((s) => s.total_duration_minutes)
+      .map((s) => (s.value != null ? Number(s.value) : null))
       .filter((m): m is number => m !== null),
     skippedRequiredTaskCountByDomain,
   };

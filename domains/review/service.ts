@@ -51,17 +51,19 @@ async function fetchMetrics(
     proteinTarget,
   ] = await Promise.all([
     supabase
-      .from("weight_logs")
-      .select("logged_at, weight, unit")
+      .from("health_metrics")
+      .select("started_at, value, unit")
       .eq("user_id", userId)
-      .gte("logged_at", `${weekStart}T00:00:00.000Z`)
-      .lte("logged_at", `${weekEnd}T23:59:59.999Z`),
+      .eq("metric_type", "weight")
+      .gte("started_at", `${weekStart}T00:00:00.000Z`)
+      .lte("started_at", `${weekEnd}T23:59:59.999Z`),
     supabase
-      .from("sleep_logs")
-      .select("total_duration_minutes")
+      .from("health_metrics")
+      .select("value")
       .eq("user_id", userId)
-      .gte("date", weekStart)
-      .lte("date", weekEnd),
+      .eq("metric_type", "sleep")
+      .gte("started_at", `${weekStart}T00:00:00.000Z`)
+      .lte("started_at", `${weekEnd}T23:59:59.999Z`),
     supabase
       .from("nutrition_logs")
       .select("date, calories, protein")
@@ -92,14 +94,14 @@ async function fetchMetrics(
   ]);
 
   const weightLogs = (weightLogsRaw ?? []).map((w) => ({
-    loggedAt: w.logged_at,
-    weight: w.unit === "kg" ? w.weight * LB_PER_KG : w.weight,
+    loggedAt: w.started_at,
+    weight: w.unit === "kg" ? Number(w.value) * LB_PER_KG : Number(w.value),
   }));
 
   return computeWeeklyMetrics({
     weekStart,
     weightLogs,
-    sleepLogs: (sleepLogs ?? []).map((s) => ({ totalDurationMinutes: s.total_duration_minutes })),
+    sleepLogs: (sleepLogs ?? []).map((s) => ({ totalDurationMinutes: s.value != null ? Number(s.value) : null })),
     nutritionLogs: (nutritionLogs ?? []).map((n) => ({
       date: n.date,
       calories: n.calories,

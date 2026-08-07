@@ -3,7 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { weightLogSchema, importedWeightLogSchema } from "@/domains/weight/schema";
 import { createClient } from "@/platform/supabase/server";
-import { isOlderThanHealthImportRetentionWindow } from "@/platform/health/retention";
+import { insertManualHealthMetric, insertImportedHealthMetric } from "@/platform/health/metrics";
 import { recomputeActivityDailySummaryForInstant } from "@/domains/activity-summary/service";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
@@ -15,16 +15,15 @@ export async function logWeight(userId: string, input: unknown): Promise<ActionR
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.from("weight_logs").insert({
-    user_id: userId,
-    logged_at: new Date(parsed.data.loggedAt).toISOString(),
-    weight: parsed.data.weight,
+  const result = await insertManualHealthMetric(supabase, userId, "weight", {
+    startedAt: new Date(parsed.data.loggedAt).toISOString(),
+    value: parsed.data.weight,
     unit: parsed.data.unit,
     notes: parsed.data.notes || null,
   });
 
-  if (error) {
-    return { ok: false, error: error.message };
+  if (!result.ok) {
+    return result;
   }
   await recomputeActivityDailySummaryForInstant(supabase, userId, new Date(parsed.data.loggedAt));
   return { ok: true, data: undefined };
@@ -32,10 +31,11 @@ export async function logWeight(userId: string, input: unknown): Promise<ActionR
 
 /**
  * Insert path for imported data (CLAUDE.md §14) — a HealthKit companion app
- * or similar posting to /api/health-sync. Upserts on (user_id, dedup_key)
- * so a retried sync can't double-insert the same sample, and skips
- * overwriting a row the user already hand-corrected (user_override), so a
- * manual correction always wins over a re-import of the original value.
+ * or similar posting to /api/health-sync. Upserts on (user_id, metric_type,
+ * dedup_key) so a retried sync can't double-insert the same sample, and
+ * skips overwriting a row the user already hand-corrected (user_override),
+ * so a manual correction always wins over a re-import of the original value.
+ * See platform/health/metrics.ts for the shared retention/dedup/upsert logic.
  *
  * Takes an explicit client rather than constructing one internally like
  * every other function in this file — the cookie-bound createClient() only
@@ -53,53 +53,47 @@ export async function insertImportedWeightLog(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  if (isOlderThanHealthImportRetentionWindow(parsed.data.loggedAt)) {
-    return { ok: true, data: { skipped: true } };
-  }
+  const result = await insertImportedHealthMetric(supabase, userId, "weight", {
+    startedAt: new Date(parsed.data.loggedAt).toISOString(),
+    value: parsed.data.value,
+    unit: parsed.data.unit,
+    source: parsed.data.source,
+    device: parsed.data.device ?? null,
+    dedupKey: parsed.data.dedupKey,
+  });
 
-  const { data: existing } = await supabase
-    .from("weight_logs")
-    .select("user_override")
-    .eq("user_id", userId)
-    .eq("dedup_key", parsed.data.dedupKey)
-    .maybeSingle();
-
-  if (existing?.user_override) {
-    return { ok: true, data: { skipped: true } };
-  }
-
-  const { error } = await supabase.from("weight_logs").upsert(
-    {
-      user_id: userId,
-      logged_at: new Date(parsed.data.loggedAt).toISOString(),
-      weight: parsed.data.weight,
-      unit: parsed.data.unit,
-      source: parsed.data.source,
-      device: parsed.data.device ?? null,
-      imported_at: new Date().toISOString(),
-      dedup_key: parsed.data.dedupKey,
-    },
-    { onConflict: "user_id,dedup_key" }
-  );
-
-  if (error) {
-    return { ok: false, error: error.message };
+  if (!result.ok || result.data.skipped) {
+    return result;
   }
   await recomputeActivityDailySummaryForInstant(supabase, userId, new Date(parsed.data.loggedAt));
-  return { ok: true, data: { skipped: false } };
+  return result;
 }
 
 export async function getRecentWeightLogs(userId: string, limit = 14) {
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("weight_logs")
-    .select("id, logged_at, weight, unit, notes")
+    .from("health_metrics")
+    .select("id, started_at, value, unit, notes")
     .eq("user_id", userId)
-    .order("logged_at", { ascending: false })
+    .eq("metric_type", "weight")
+    .order("started_at", { ascending: false })
     .limit(limit);
 
   if (error) {
     throw new Error(`Failed to load weight logs: ${error.message}`);
   }
-  return data ?? [];
+  // Preserve the pre-migration column names (logged_at, weight) for every
+  // caller of this function — only this file and insertImportedWeightLog
+  // know health_metrics' generic column names.
+  // value/unit are nullable at the health_metrics schema level (most of its
+  // 23 metric types don't use them), but every weight row always has both
+  // set — insertManualHealthMetric/insertImportedHealthMetric are never
+  // called for metric_type "weight" without them.
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    logged_at: row.started_at,
+    weight: Number(row.value),
+    unit: row.unit as "lb" | "kg",
+    notes: row.notes,
+  }));
 }

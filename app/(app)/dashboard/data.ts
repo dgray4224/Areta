@@ -119,12 +119,19 @@ export async function getDashboardData(userId: string, viewDate?: string): Promi
       .order("priority", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true }),
     supabase
-      .from("weight_logs")
+      .from("health_metrics")
       .select("id")
       .eq("user_id", userId)
-      .gte("logged_at", `${selectedDate}T00:00:00.000Z`)
-      .lte("logged_at", `${selectedDate}T23:59:59.999Z`),
-    supabase.from("sleep_logs").select("id").eq("user_id", userId).eq("date", selectedDate),
+      .eq("metric_type", "weight")
+      .gte("started_at", `${selectedDate}T00:00:00.000Z`)
+      .lte("started_at", `${selectedDate}T23:59:59.999Z`),
+    supabase
+      .from("health_metrics")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("metric_type", "sleep")
+      .gte("started_at", `${selectedDate}T00:00:00.000Z`)
+      .lte("started_at", `${selectedDate}T23:59:59.999Z`),
     supabase.from("nutrition_logs").select("id").eq("user_id", userId).eq("date", selectedDate),
     supabase.from("recovery_logs").select("id").eq("user_id", userId).eq("date", selectedDate),
     supabase.from("study_sessions").select("duration_minutes").eq("user_id", userId).eq("date", selectedDate),

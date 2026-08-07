@@ -5,7 +5,7 @@ import { importedSleepLogSchema } from "@/domains/sleep/schema";
 describe("importedWeightLogSchema", () => {
   const valid = {
     loggedAt: "2026-01-05T08:00:00.000Z",
-    weight: 198.4,
+    value: 198.4,
     unit: "lb" as const,
     source: "healthkit",
     device: "Apple Watch",
@@ -29,7 +29,7 @@ describe("importedWeightLogSchema", () => {
   });
 
   it("rejects a non-positive weight", () => {
-    expect(importedWeightLogSchema.safeParse({ ...valid, weight: 0 }).success).toBe(false);
+    expect(importedWeightLogSchema.safeParse({ ...valid, value: 0 }).success).toBe(false);
   });
 
   it("rejects an invalid unit", () => {

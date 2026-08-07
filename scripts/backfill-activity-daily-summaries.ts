@@ -36,19 +36,19 @@ async function main() {
 
     const [{ data: workoutLogs }, { data: weightLogs }, { data: stepLogs }, { data: sleepLogs }, { data: heartRateLogs }] =
       await Promise.all([
-        supabase.from("workout_logs").select("start_date").eq("user_id", userId),
-        supabase.from("weight_logs").select("logged_at").eq("user_id", userId),
-        supabase.from("step_logs").select("logged_at").eq("user_id", userId),
-        supabase.from("sleep_logs").select("date").eq("user_id", userId),
-        supabase.from("heart_rate_logs").select("logged_at").eq("user_id", userId),
+        supabase.from("health_metrics").select("started_at").eq("user_id", userId).eq("metric_type", "workout"),
+        supabase.from("health_metrics").select("started_at").eq("user_id", userId).eq("metric_type", "weight"),
+        supabase.from("health_metrics").select("started_at").eq("user_id", userId).eq("metric_type", "steps"),
+        supabase.from("health_metrics").select("started_at").eq("user_id", userId).eq("metric_type", "sleep"),
+        supabase.from("health_metrics").select("started_at").eq("user_id", userId).eq("metric_type", "heart_rate"),
       ]);
 
     const days = new Set<string>();
-    for (const row of workoutLogs ?? []) days.add(localDateString(new Date(row.start_date), timezone));
-    for (const row of weightLogs ?? []) days.add(localDateString(new Date(row.logged_at), timezone));
-    for (const row of stepLogs ?? []) days.add(localDateString(new Date(row.logged_at), timezone));
-    for (const row of heartRateLogs ?? []) days.add(localDateString(new Date(row.logged_at), timezone));
-    for (const row of sleepLogs ?? []) days.add(row.date);
+    for (const row of workoutLogs ?? []) days.add(localDateString(new Date(row.started_at), timezone));
+    for (const row of weightLogs ?? []) days.add(localDateString(new Date(row.started_at), timezone));
+    for (const row of stepLogs ?? []) days.add(localDateString(new Date(row.started_at), timezone));
+    for (const row of heartRateLogs ?? []) days.add(localDateString(new Date(row.started_at), timezone));
+    for (const row of sleepLogs ?? []) days.add(localDateString(new Date(row.started_at), timezone));
 
     for (const day of days) {
       await recomputeActivityDailySummaryForDay(supabase, userId, day);

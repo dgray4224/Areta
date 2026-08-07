@@ -40,8 +40,20 @@ import {
   type OverrideExerciseInput,
 } from "@/domains/trainerprogram/overrides";
 import { resolveMealProgramPhase } from "@/domains/trainermealprogram/phase-resolution";
-import { getMealPortionRows } from "@/domains/trainermealprogram/portions";
-import { materializeCurrentMealWeek, archiveStaleTrainerMealPlans } from "@/domains/trainermealprogram/materialize";
+import { getMealPortionRows, resolveMealDayServings } from "@/domains/trainermealprogram/portions";
+import {
+  materializeCurrentMealWeek,
+  materializeMealWeekContaining,
+  archiveStaleTrainerMealPlans,
+} from "@/domains/trainermealprogram/materialize";
+import { getHydratedPhasesForMealProgram } from "@/domains/trainermealprogram/service";
+import { projectMealProgramRange } from "@/domains/trainermealprogram/calendar-projection";
+import {
+  setMealDateOverride,
+  clearMealDateOverride,
+  getMealOverridesForRange,
+  type OverrideMealInput,
+} from "@/domains/trainermealprogram/overrides";
 import type { ActionResult } from "@/platform/auth/actions";
 import type { Database } from "@/platform/db/types";
 import type {
@@ -1664,6 +1676,96 @@ export async function saveMealPortions(
 
   await logTrainerAction(user, "client_meal_portions_saved", clientId, { count: portions.length });
   return { ok: true, data: undefined };
+}
+
+// ---------------------------------------------------------------------------
+// Nutrition calendar (2026-08-07) -- mirrors the workout calendar section
+// above (getClientMonthCalendar/setClientDateOverride/
+// clearClientDateOverride) closely; see that section's own comments for
+// conventions reused here without re-explaining them.
+// ---------------------------------------------------------------------------
+
+export async function getClientMealMonthCalendar(
+  clientId: string,
+  monthStart: string,
+  monthEnd: string
+): Promise<ActionResult<ReturnType<typeof projectMealProgramRange>>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { data: assignment } = await supabase
+    .from("trainer_meal_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!assignment) return { ok: false, error: "No active nutrition program assigned." };
+
+  const phases = await getHydratedPhasesForMealProgram(assignment.program_id, supabase);
+  const overridesByDate = await getMealOverridesForRange(assignment.id, monthStart, monthEnd, supabase);
+
+  const days = projectMealProgramRange({
+    startsOn: assignment.starts_on,
+    endDate: assignment.end_date,
+    phases,
+    rangeStart: monthStart,
+    rangeEnd: monthEnd,
+    overridesByDate,
+  });
+
+  // Same priority as materializeMealWeek: an engagement-scoped override
+  // (migration 0084) beats the client's own long-range approved target.
+  // Without this, every template day's meals would show servings:null on
+  // the calendar -- see resolveMealDayServings's own doc comment for why
+  // that's not just a display gap but a real risk (editing any field on
+  // an unresolved day and saving would silently shrink its real portion
+  // down to a bare "1").
+  const nutritionOverride = (assignment.nutrition_override as unknown as NutritionOverride | null) ?? null;
+  const approvedCalorieTarget = await getApprovedParameterValue(clientId, "nutrition", "calorie_target");
+  const calorieTarget = nutritionOverride?.calorieTarget ?? approvedCalorieTarget;
+  const resolvedDays = await resolveMealDayServings(days, assignment.id, calorieTarget, supabase);
+
+  return { ok: true, data: resolvedDays };
+}
+
+export async function setClientMealDateOverride(
+  clientId: string,
+  date: string,
+  input: { isNoProgramDay: boolean; meals: OverrideMealInput[] }
+): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await setMealDateOverride(clientId, date, input, supabase);
+  if (!result.ok) return result;
+  await logTrainerAction(user, "client_meal_date_override_set", clientId, { date, isNoProgramDay: input.isNoProgramDay });
+
+  // Auto-sync: the override is already safely saved above regardless of
+  // what happens here. If materialization fails, surface it as this
+  // action's error so the trainer knows the client can't see the edit
+  // yet -- the edit isn't lost, the next successful save will pick it up.
+  const synced = await materializeMealWeekContaining(clientId, date, supabase);
+  if (!synced.ok) return synced;
+  return { ok: true, data: undefined };
+}
+
+export async function clearClientMealDateOverride(clientId: string, date: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await clearMealDateOverride(clientId, date, supabase);
+  if (!result.ok) return result;
+  await logTrainerAction(user, "client_meal_date_override_cleared", clientId, { date });
+  return materializeMealWeekContaining(clientId, date, supabase);
 }
 
 // ---------------------------------------------------------------------------

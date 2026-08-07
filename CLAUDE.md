@@ -1063,19 +1063,21 @@ Use fast manual entry for:
 The `areta-mobile` repo (Expo/React Native, standalone — see its own
 `AGENTS.md`) is the native companion reading HealthKit data with permission.
 
-Implemented and syncing into this app via `/api/health-sync`:
+Implemented and syncing into this app via `/api/health-sync` — 23 types total,
+all stored in one `health_metrics` table (`metric_type` column), not a table
+per type:
 
-- Weight
-- Sleep
-- Steps
-- Heart rate
-- Workouts (raw imported sessions — `workout_logs`, distinct from
-  `exercise_logs`/`workoutplan`'s manual and planned entries)
+- Weight, sleep, steps, heart rate
+- Workouts (raw imported sessions, distinct from `exercise_logs`/
+  `workoutplan`'s manual and planned entries)
+- Vitals (import-only, no manual-entry form, not yet surfaced in any UI —
+  stored for future features to build on): VO2 max, resting heart rate,
+  heart rate variability (SDNN), walking heart rate average, active/basal
+  energy burned, distance walking-running/cycling, body fat %, lean body
+  mass, BMI, height, flights climbed, walking speed/steadiness, oxygen
+  saturation, respiratory rate, mindful minutes
 
-Not yet implemented: sleep stages, resting heart rate, HRV, active energy.
-
-Store (implemented for all five types above, same shape on every
-`*_logs` table):
+Store (same shape for every type, on the shared `health_metrics` table):
 
 - Source
 - Import timestamp
@@ -1083,11 +1085,16 @@ Store (implemented for all five types above, same shape on every
 - User override
 - Deduplication key
 
-See `domains/weight`, `domains/sleep`, `domains/steps`, `domains/heartrate`,
-and `domains/workout` for the per-type schema/service pattern (all import
-paths follow the same upsert-on-`dedup_key` + skip-if-`user_override`
-logic — see the comment on `insertImportedWeightLog` in
-`domains/weight/service.ts` for the canonical explanation). A basic "see
+`weight`/`sleep` are the only two types with a manual-entry path (`notes`,
+and sleep's `sleep_quality`/`sleep_interruptions`) — every other type is
+import-only, matching steps/heart-rate/workouts' original pattern. See
+`platform/health/metrics.ts` for the shared insert/retention/dedup logic
+(`insertManualHealthMetric`/`insertImportedHealthMetric`), and
+`domains/weight`, `domains/sleep`, `domains/steps`, `domains/heartrate`,
+`domains/workout`, and `domains/vitals` for the thin per-type wrappers on
+top of it (all import paths follow the same upsert-on-`dedup_key` +
+skip-if-`user_override` logic — see the comment on `insertImportedWeightLog`
+in `domains/weight/service.ts` for the canonical explanation). A basic "see
 your synced data" table lives at Settings → Health Data (workouts only,
 last 30 days, for now).
 
@@ -1105,8 +1112,11 @@ mobile app isn't guaranteed to be the only future writer.
 
 ## Silver-layer daily analytics
 
-`activity_daily_summaries` — one row per user per day, derived from all
-five `*_logs` tables, populated incrementally (no cron/scheduler exists in
+`activity_daily_summaries` — one row per user per day, derived from the
+original five types (workout/weight/steps/sleep/heart_rate) in
+`health_metrics` — the 18 vitals types don't roll up into this yet, kept
+out of scope when they were added since nothing reads them anywhere either
+(see §14 above). Populated incrementally (no cron/scheduler exists in
 this repo; recompute runs inline from every log-insert path, same
 on-demand-computation convention as `weekly_reviews`/`weekly_outcomes`).
 Tracks, per day: workout count/total minutes/first-and-last start

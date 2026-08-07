@@ -114,10 +114,11 @@ export async function getNutritionCalculationBaseInputs(
     supabase.from("profiles").select("units").eq("id", userId).single(),
     supabase.from("onboarding_responses").select("nutrition").eq("user_id", userId).single(),
     supabase
-      .from("weight_logs")
-      .select("weight, unit, logged_at")
+      .from("health_metrics")
+      .select("value, unit, started_at")
       .eq("user_id", userId)
-      .order("logged_at", { ascending: false })
+      .eq("metric_type", "weight")
+      .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
   ]);
@@ -125,7 +126,7 @@ export async function getNutritionCalculationBaseInputs(
   const nutrition = (responses?.nutrition ?? {}) as NutritionInput;
   const units = (profile?.units as "metric" | "imperial") ?? "imperial";
   const currentWeight = latestWeightLog
-    ? convertLoggedWeight(latestWeightLog.weight, latestWeightLog.unit as "lb" | "kg", units)
+    ? convertLoggedWeight(Number(latestWeightLog.value), latestWeightLog.unit as "lb" | "kg", units)
     : nutrition.currentWeight;
 
   return {

@@ -25,49 +25,78 @@ async function recomputeForDayAndTimezone(
   const startIso = start.toISOString();
   const endIso = end.toISOString();
 
-  const [{ data: workoutLogs }, { data: weightLogs }, { data: stepLogs }, { data: sleepLogs }, { data: heartRateLogs }] =
+  // All five now query health_metrics filtered by metric_type instead of
+  // five separate tables. Sleep previously bucketed by an equality match on
+  // sleep_logs.date (a UTC-derived calendar date set by the mobile client);
+  // health_metrics has no separate date column for sleep, so it now uses
+  // the same timezone-aware started_at range as the other four types --
+  // more consistent than the prior UTC-slice/local-range split, and sleep's
+  // duration/quality (the only fields aggregate.ts reads) don't depend on
+  // exactly which bucketing scheme selected the row.
+  const [{ data: workoutRows }, { data: weightRows }, { data: stepRows }, { data: sleepRows }, { data: heartRateRows }] =
     await Promise.all([
       supabase
-        .from("workout_logs")
-        .select("start_date, duration_minutes, activity_type")
+        .from("health_metrics")
+        .select("started_at, ended_at, activity_type")
         .eq("user_id", userId)
-        .gte("start_date", startIso)
-        .lt("start_date", endIso),
+        .eq("metric_type", "workout")
+        .gte("started_at", startIso)
+        .lt("started_at", endIso),
       supabase
-        .from("weight_logs")
-        .select("logged_at, weight, unit")
+        .from("health_metrics")
+        .select("started_at, value, unit")
         .eq("user_id", userId)
-        .gte("logged_at", startIso)
-        .lt("logged_at", endIso),
+        .eq("metric_type", "weight")
+        .gte("started_at", startIso)
+        .lt("started_at", endIso),
       supabase
-        .from("step_logs")
-        .select("logged_at, count")
+        .from("health_metrics")
+        .select("started_at, value")
         .eq("user_id", userId)
-        .gte("logged_at", startIso)
-        .lt("logged_at", endIso),
-      // sleep_logs.date is already a plain local date -- direct equality,
-      // no UTC-range conversion needed (unlike the four timestamptz tables).
-      supabase.from("sleep_logs").select("total_duration_minutes, quality").eq("user_id", userId).eq("date", day),
+        .eq("metric_type", "steps")
+        .gte("started_at", startIso)
+        .lt("started_at", endIso),
       supabase
-        .from("heart_rate_logs")
-        .select("bpm")
+        .from("health_metrics")
+        .select("value, sleep_quality")
         .eq("user_id", userId)
-        .gte("logged_at", startIso)
-        .lt("logged_at", endIso),
+        .eq("metric_type", "sleep")
+        .gte("started_at", startIso)
+        .lt("started_at", endIso),
+      supabase
+        .from("health_metrics")
+        .select("value")
+        .eq("user_id", userId)
+        .eq("metric_type", "heart_rate")
+        .gte("started_at", startIso)
+        .lt("started_at", endIso),
     ]);
 
   const summary = aggregateActivityDailySummary({
     userId,
     day,
     timezone,
-    workoutLogs: workoutLogs ?? [],
+    workoutLogs: (workoutRows ?? []).map((r) => ({
+      start_date: r.started_at,
+      duration_minutes: r.ended_at
+        ? Math.round((new Date(r.ended_at).getTime() - new Date(r.started_at).getTime()) / 60000)
+        : 0,
+      activity_type: r.activity_type ?? "",
+    })),
     // unit is a plain `text` column DB-side (CHECK-constrained to
     // 'lb'|'kg', not a Postgres enum), so the generated type widens it to
     // `string` -- the cast reflects a constraint the DB already enforces.
-    weightLogs: (weightLogs ?? []) as { logged_at: string; weight: number; unit: "lb" | "kg" }[],
-    stepLogs: stepLogs ?? [],
-    sleepLogs: sleepLogs ?? [],
-    heartRateLogs: heartRateLogs ?? [],
+    weightLogs: (weightRows ?? []).map((r) => ({
+      logged_at: r.started_at,
+      weight: Number(r.value),
+      unit: r.unit as "lb" | "kg",
+    })),
+    stepLogs: (stepRows ?? []).map((r) => ({ logged_at: r.started_at, count: Number(r.value) })),
+    sleepLogs: (sleepRows ?? []).map((r) => ({
+      total_duration_minutes: r.value != null ? Number(r.value) : null,
+      quality: r.sleep_quality,
+    })),
+    heartRateLogs: (heartRateRows ?? []).map((r) => ({ bpm: Number(r.value) })),
   });
 
   const { error } = await supabase.from("activity_daily_summaries").upsert(summary, { onConflict: "user_id,day" });
@@ -99,10 +128,10 @@ export async function recomputeActivityDailySummaryForInstant(
 }
 
 /**
- * Same as recomputeActivityDailySummaryForInstant, but for sleep_logs,
- * whose `date` column is already a plain local calendar date with no
- * timezone conversion needed -- skips the instant-to-local-day derivation
- * and recomputes directly for the given day.
+ * Same as recomputeActivityDailySummaryForInstant, but for sleep entries --
+ * skips the instant-to-local-day derivation and recomputes directly for the
+ * given day (sleep's manual-entry form collects a plain date, not an
+ * instant).
  */
 export async function recomputeActivityDailySummaryForDay(
   supabase: SupabaseClient<Database>,
