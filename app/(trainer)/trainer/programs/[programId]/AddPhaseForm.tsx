@@ -54,7 +54,7 @@ export function AddPhaseForm({ programId }: { programId: string }) {
       <FormField label="Focus" htmlFor="phase-focus" hint="Optional — shows on the client's plan.">
         <TextArea id="phase-focus" value={focus} onChange={(e) => setFocus(e.target.value)} rows={2} />
       </FormField>
-      <FormField label="Length (weeks)" htmlFor="phase-weeks" hint="Every week in this phase repeats identically.">
+      <FormField label="Length (weeks)" htmlFor="phase-weeks" hint="Every week in this phase is the same.">
         <TextInput
           id="phase-weeks"
           type="number"

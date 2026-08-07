@@ -3,8 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addClientWorkoutItem } from "@/domains/trainer/service";
-import { SelectInput, TextInput } from "@/platform/ui/FormField";
+import { TextInput } from "@/platform/ui/FormField";
 import { Button } from "@/platform/ui/Button";
+import { ExerciseSearchField } from "../../../ExercisePicker";
 import type { Exercise } from "@/domains/exerciselibrary/types";
 
 export function AddWorkoutItem({
@@ -19,6 +20,7 @@ export function AddWorkoutItem({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [exerciseId, setExerciseId] = useState("");
+  const [exerciseList, setExerciseList] = useState(exercises);
   const [sets, setSets] = useState("");
   const [reps, setReps] = useState("");
   const [durationMinutes, setDurationMinutes] = useState("");
@@ -61,14 +63,12 @@ export function AddWorkoutItem({
 
   return (
     <div className="mt-2 space-y-2 rounded-xl border border-neutral-200 p-2 dark:border-neutral-800">
-      <SelectInput value={exerciseId} onChange={(e) => setExerciseId(e.target.value)} aria-label="New exercise">
-        <option value="">Pick an exercise…</option>
-        {exercises.map((ex) => (
-          <option key={ex.id} value={ex.id}>
-            {ex.name}
-          </option>
-        ))}
-      </SelectInput>
+      <ExerciseSearchField
+        exerciseId={exerciseId}
+        onSelect={setExerciseId}
+        exercises={exerciseList}
+        onExerciseCreated={(ex) => setExerciseList((prev) => [...prev, ex])}
+      />
       <div className="grid grid-cols-3 gap-2">
         <TextInput type="number" placeholder="Sets" value={sets} onChange={(e) => setSets(e.target.value)} />
         <TextInput type="number" placeholder="Reps" value={reps} onChange={(e) => setReps(e.target.value)} />

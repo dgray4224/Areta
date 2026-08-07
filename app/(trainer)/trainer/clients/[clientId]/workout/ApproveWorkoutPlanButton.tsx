@@ -5,16 +5,13 @@ import { useRouter } from "next/navigation";
 import { approveClientWorkoutPlan } from "@/domains/trainer/service";
 import { Button } from "@/platform/ui/Button";
 
-/** Standalone approve action for whatever draft is currently sitting in
- * workout_plans, regardless of source -- split out from the removed
- * library-generate flow (2026-08-06: trainers can no longer generate a
- * plan from the shared library themselves, only assign/customize their
- * own authored programs, but a trainer-program-sourced draft still needs
- * an explicit approval before it goes live, same as any other plan
- * under CLAUDE.md rule 10). approveWorkoutPlan itself is source-agnostic
- * (just flips status by week_start), so this works whether the draft
- * came from a trainer program or, for a client not currently assigned
- * one, from the client's own onboarding-driven generation. */
+/** Approve action for whatever draft is currently sitting in
+ * workout_plans. As of 2026-08-07 the only path that still produces a
+ * draft is a client's own self-generated plan (onboarding/library) for
+ * someone not currently assigned a trainer program -- every trainer-
+ * program materialization now writes 'active' directly (see
+ * materializeWeek's doc comment), so this button only ever appears for
+ * that one remaining case. */
 export function ApproveWorkoutPlanButton({ clientId }: { clientId: string }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -34,7 +31,7 @@ export function ApproveWorkoutPlanButton({ clientId }: { clientId: string }) {
 
   return (
     <div className="space-y-2">
-      <Button type="button" disabled={isPending} onClick={onApprove} title="Makes this week's draft live for the client.">
+      <Button type="button" disabled={isPending} onClick={onApprove} title="Shows this week's plan to the client.">
         {isPending ? "Approving…" : "Approve this week's plan"}
       </Button>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}

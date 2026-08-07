@@ -31,11 +31,9 @@ export function AssignProgramForm({
 }) {
   const router = useRouter();
   const [programId, setProgramId] = useState(initialProgramId ?? "");
-  const [onComplete, setOnComplete] = useState<"repeat" | "freeze">("repeat");
   const [startsOn, setStartsOn] = useState(todayIso());
   const [endDate, setEndDate] = useState("");
   const [goalOutcome, setGoalOutcome] = useState(initialGoalOutcome ?? "");
-  const [autoApprove, setAutoApprove] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -66,15 +64,7 @@ export function AssignProgramForm({
     }
     setError(null);
     startTransition(async () => {
-      const result = await assignProgramToClient(
-        clientId,
-        programId,
-        onComplete,
-        startsOn,
-        endDate,
-        goalOutcome,
-        autoApprove
-      );
+      const result = await assignProgramToClient(clientId, programId, startsOn, endDate, goalOutcome);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -100,7 +90,7 @@ export function AssignProgramForm({
           value={programId}
           onChange={(e) => setProgramId(e.target.value)}
           aria-label="Program"
-          title="Which of your programs this client will run."
+          title="Pick which program this client will follow."
         >
           <option value="">Pick a program…</option>
           {programs.map((p) => (
@@ -114,29 +104,20 @@ export function AssignProgramForm({
           value={startsOn}
           onChange={(e) => setStartsOn(e.target.value)}
           aria-label="Starts on"
-          title="First day the program is scheduled. A future date won't generate anything until that week arrives."
+          title="The day the program starts. Pick a future date to start it later."
         />
         <TextInput
           type="date"
           value={endDate}
           onChange={(e) => setEndDate(e.target.value)}
           aria-label="Ends on"
-          title="Required. Once this date passes, the assignment automatically ends -- no further weeks get generated. It stays in this client's history and can be reassigned later."
+          title="Required. The program stops on this day. If it runs out of workouts before then, add more on the calendar or assign a new program."
         />
       </div>
-      <SelectInput
-        value={onComplete}
-        onChange={(e) => setOnComplete(e.target.value as "repeat" | "freeze")}
-        aria-label="When the program finishes"
-        title="What happens if the program's own phases run out before the end date above."
-      >
-        <option value="repeat">If the phases finish early: repeat from the start</option>
-        <option value="freeze">If the phases finish early: keep the last week</option>
-      </SelectInput>
       <FormField
         label="Tangible goal"
         htmlFor="goal-outcome"
-        hint="What this program is meant to achieve by the end date. Becomes a real goal on the client's own Goals list."
+        hint="What this program should achieve. Shows up on the client's own Goals list."
       >
         <TextArea
           id="goal-outcome"
@@ -146,13 +127,6 @@ export function AssignProgramForm({
           placeholder="e.g. Increase back squat 1RM by 20 lb"
         />
       </FormField>
-      <label
-        className="flex items-center gap-2 text-sm"
-        title="Skips the weekly manual approve click entirely — each week goes straight from the calendar to live for the client, no separate review step. Turn this on only once you're confident in reviewing everything in advance through the calendar; off is the safer default."
-      >
-        <input type="checkbox" checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)} />
-        Automatically approve each week (skip the manual review click)
-      </label>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <Button type="button" disabled={isPending} onClick={onAssign}>
         {isPending ? "Assigning…" : "Assign program"}

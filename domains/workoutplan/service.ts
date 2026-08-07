@@ -344,11 +344,17 @@ export async function getWorkoutPlanForWeek(
   client?: SupabaseClient<Database>
 ): Promise<WorkoutPlanView | null> {
   const supabase = client ?? (await createClient());
+  // Excludes 'archived' (found 2026-08-07): this is an exact date match
+  // with no other filter, so a stale row a trainer-program switch left
+  // behind for today's date would otherwise still surface here as "the"
+  // plan for today even after archiveStaleTrainerProgramPlans marks it
+  // done -- see that function's own doc comment in domains/trainer/service.ts.
   const { data: plan } = await supabase
     .from("workout_plans")
     .select("id, week_start, status, sessions_per_week, phase_focus, program_id, program_phase_id, phase_week_number")
     .eq("user_id", userId)
     .eq("week_start", weekStart)
+    .neq("status", "archived")
     .maybeSingle();
 
   if (!plan) return null;

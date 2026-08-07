@@ -15,7 +15,7 @@ export default async function TrainerDashboardPage() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">Your clients</h1>
+      <h1 className="text-2xl font-semibold">Dashboard</h1>
 
       <div className="flex justify-end gap-2">
         <LinkButton href="/trainer/programs" variant="secondary">
@@ -29,6 +29,12 @@ export default async function TrainerDashboardPage() {
       <IncomingRequests initialRequests={incomingRequests} />
 
       <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">Your clients</h2>
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            Everyone you&apos;re coaching. Tap a client to see their progress and manage their plan.
+          </p>
+        </div>
         {clients.length === 0 ? (
           <EmptyState
             title="No clients yet"

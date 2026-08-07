@@ -6,9 +6,9 @@ import {
   listClientAssignmentHistory,
   getNextScheduledSession,
 } from "@/domains/trainer/service";
-import { listMyPrograms } from "@/domains/trainerprogram/service";
+import { listMyPrograms, getExercisesForTrainer } from "@/domains/trainerprogram/service";
 import { sundayOfWeekContaining, addDays } from "@/domains/trainerprogram/calendar-projection";
-import { getExercisesByIds, getAllExercises } from "@/domains/exerciselibrary/service";
+import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { WorkoutItemCustomizer } from "./WorkoutItemCustomizer";
@@ -102,12 +102,11 @@ export default async function ClientWorkoutPage({
         <Card>
           <p className="mb-2 text-sm font-medium">Assign one of your programs</p>
           <p className="mb-3 text-sm text-neutral-600 dark:text-neutral-400">
-            Write and reuse your own programs at{" "}
+            Build a program under{" "}
             <Link href="/trainer/programs" className="underline">
               Your programs
             </Link>
-            , then assign one here. There&apos;s no library-generated fallback for a trainer-managed client — a
-            program you&apos;ve actually built and customized is the whole point of paying for a trainer.
+            , then assign it here.
           </p>
           <AssignProgramForm clientId={clientId} programs={publishedPrograms} />
         </Card>
@@ -149,9 +148,17 @@ async function WorkoutPlanBody({
   status: string;
 }) {
   const exerciseIds = [...new Set(items.map((i) => i.exerciseId))];
+  // getExercisesForTrainer, not getAllExercises -- this trainer's own
+  // still-status:'review' submissions (created via the "Can't find it?
+  // Add a new exercise" flow, same as the program builder and calendar
+  // editor) need to show up here too, or a trainer who typed one in
+  // while building a program would have to retype it to customize a
+  // client's already-materialized plan item. Found 2026-08-07: this was
+  // the one of four trainer-facing exercise pickers still on the
+  // client's-own-app-scoped, active-only fetch.
   const [exercisesById, allExercises]: [Map<string, Exercise>, Exercise[]] = await Promise.all([
     getExercisesByIds(exerciseIds),
-    getAllExercises(),
+    getExercisesForTrainer(),
   ]);
 
   const byDay = new Map<number, WorkoutPlanItemView[]>();
@@ -163,16 +170,45 @@ async function WorkoutPlanBody({
 
   return (
     <div className="space-y-3">
-      <span className="inline-block rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs capitalize text-neutral-500 dark:border-neutral-700">
-        {status}
-      </span>
+      <div className="flex items-center justify-between">
+        {/* Was a plain "Active"/"draft" status pill -- confusing sitting
+         * right above a single week's days when the program itself can
+         * span several phases (2026-08-07, user feedback): this is only
+         * ever the *current* week's split, not the whole program, so it
+         * says that directly. The program's own Active/Upcoming status
+         * moved to AssignedProgramPanel.tsx, next to the program name --
+         * that's the thing actually worth a status pill. Draft is the
+         * one status still worth flagging here: it means this week
+         * hasn't been approved yet (see ApproveWorkoutPlanButton above),
+         * which "current week split" alone wouldn't convey. */}
+        <h3 className="text-sm font-medium text-neutral-500">Current week split</h3>
+        {status === "draft" ? (
+          <span className="inline-block rounded-full border border-amber-300 px-2.5 py-0.5 text-xs text-amber-700 dark:border-amber-800 dark:text-amber-400">
+            Draft
+          </span>
+        ) : null}
+      </div>
       {DAY_NAMES.map((dayName, dayIndex) => {
         const dayItems = (byDay.get(dayIndex) ?? []).sort((a, b) => a.sessionOrder - b.sessionOrder);
         if (dayItems.length === 0) return null;
+        // <details>/<summary> instead of Card -- collapsed by default,
+        // click to expand, same zero-JS pattern PastProgramsList.tsx
+        // already uses for "Past programs" below. Requested 2026-08-07:
+        // a week of fully-expanded days made this page long and busy;
+        // collapsed headers give a clean day-by-day overview at a
+        // glance, full detail still one click away.
         return (
-          <Card key={dayIndex}>
-            <p className="mb-2 text-sm font-medium">{dayName}</p>
-            <ul className="space-y-2 text-sm">
+          <details
+            key={dayIndex}
+            className="rounded-2xl border border-black/5 bg-card p-4 text-foreground dark:border-white/5"
+          >
+            <summary className="cursor-pointer select-none text-sm font-medium">
+              {dayName}
+              <span className="ml-2 font-normal text-neutral-500">
+                {dayItems.length} exercise{dayItems.length === 1 ? "" : "s"}
+              </span>
+            </summary>
+            <ul className="mt-3 space-y-2 text-sm">
               {dayItems.map((item) => (
                 <li key={item.id} className="text-neutral-600 dark:text-neutral-400">
                   <div className="flex justify-between">
@@ -186,7 +222,7 @@ async function WorkoutPlanBody({
             <div className="mt-2">
               <AddWorkoutItem clientId={clientId} dayOfWeek={dayIndex} exercises={allExercises} />
             </div>
-          </Card>
+          </details>
         );
       })}
     </div>

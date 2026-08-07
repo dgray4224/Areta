@@ -48,7 +48,6 @@ describe("projectProgramRange", () => {
     const days = projectProgramRange({
       startsOn: "2026-08-10",
       phases,
-      onComplete: "repeat",
       rangeStart: "2026-08-08",
       rangeEnd: "2026-08-09",
       overridesByDate: new Map(),
@@ -62,7 +61,6 @@ describe("projectProgramRange", () => {
     const days = projectProgramRange({
       startsOn: "2026-08-10",
       phases,
-      onComplete: "repeat",
       rangeStart: "2026-08-10",
       rangeEnd: "2026-08-11",
       overridesByDate: new Map(),
@@ -78,7 +76,6 @@ describe("projectProgramRange", () => {
     const days = projectProgramRange({
       startsOn: "2026-08-10",
       phases: [phaseOne, phaseTwo],
-      onComplete: "repeat",
       rangeStart: "2026-08-10",
       rangeEnd: "2026-08-17",
       overridesByDate: new Map(),
@@ -90,34 +87,49 @@ describe("projectProgramRange", () => {
     expect(week2?.weekInPhase).toBe(1);
   });
 
-  it("loops back to phase 1 on repeat once the cycle completes", () => {
+  it("marks dates as phases_complete once the phase cycle runs out, with no auto-repeat or auto-freeze", () => {
     const onlyPhase = phase({ id: "p1", lengthWeeks: 1, isFinal: true, sessions: [session(1)] });
     const days = projectProgramRange({
       startsOn: "2026-08-10",
       phases: [onlyPhase],
-      onComplete: "repeat",
       rangeStart: "2026-08-10",
       rangeEnd: "2026-08-24",
       overridesByDate: new Map(),
     });
+    const withinPhase = days.find((d) => d.date === "2026-08-10");
     const threeWeeksLater = days.find((d) => d.date === "2026-08-24");
-    expect(threeWeeksLater?.phaseId).toBe("p1");
-    expect(threeWeeksLater?.weekInPhase).toBe(1);
+    expect(withinPhase).toMatchObject({ source: "template", phaseId: "p1" });
+    expect(threeWeeksLater).toMatchObject({ source: "phases_complete", phaseId: null, exercises: [] });
   });
 
-  it("freezes on the final week once the cycle completes with onComplete 'freeze'", () => {
-    const onlyPhase = phase({ id: "p1", lengthWeeks: 2, isFinal: true, sessions: [session(1)] });
+  it("an override still applies to a phases_complete date -- a trainer can manually fill the gap", () => {
+    const onlyPhase = phase({ id: "p1", lengthWeeks: 1, isFinal: true, sessions: [session(1)] });
+    const override: DateOverrideInput = {
+      isRestDay: false,
+      exercises: [
+        {
+          exerciseId: "ex9",
+          sets: 3,
+          repsMin: 10,
+          repsMax: 10,
+          intensityType: null,
+          intensityValue: null,
+          durationMinutes: null,
+          cardioIntensity: null,
+          coachingNotes: null,
+          sourceSessionExerciseId: null,
+        },
+      ],
+    };
     const days = projectProgramRange({
       startsOn: "2026-08-10",
       phases: [onlyPhase],
-      onComplete: "freeze",
-      rangeStart: "2026-08-10",
-      rangeEnd: "2026-09-07",
-      overridesByDate: new Map(),
+      rangeStart: "2026-08-24",
+      rangeEnd: "2026-08-24",
+      overridesByDate: new Map([["2026-08-24", override]]),
     });
-    const farFuture = days.find((d) => d.date === "2026-09-07");
-    expect(farFuture?.phaseId).toBe("p1");
-    expect(farFuture?.weekInPhase).toBe(2);
+    expect(days[0].source).toBe("override");
+    expect(days[0].exercises).toHaveLength(1);
   });
 
   it("an override takes precedence over the template, including marking a template session day as rest", () => {
@@ -126,7 +138,6 @@ describe("projectProgramRange", () => {
     const days = projectProgramRange({
       startsOn: "2026-08-10",
       phases,
-      onComplete: "repeat",
       rangeStart: "2026-08-10",
       rangeEnd: "2026-08-10",
       overridesByDate: new Map([["2026-08-10", override]]),
@@ -158,7 +169,6 @@ describe("projectProgramRange", () => {
     const days = projectProgramRange({
       startsOn: "2026-08-10",
       phases,
-      onComplete: "repeat",
       rangeStart: "2026-08-11",
       rangeEnd: "2026-08-11",
       overridesByDate: new Map([["2026-08-11", override]]),
@@ -175,7 +185,6 @@ describe("projectProgramRange", () => {
       startsOn: "2026-08-10",
       endDate: "2026-08-11",
       phases,
-      onComplete: "repeat",
       rangeStart: "2026-08-10",
       rangeEnd: "2026-08-17",
       overridesByDate: new Map([["2026-08-17", override]]),

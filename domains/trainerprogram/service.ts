@@ -22,6 +22,41 @@ import type {
   TrainerProgramWithPhases,
 } from "@/domains/trainerprogram/types";
 import type { Exercise } from "@/domains/exerciselibrary/types";
+import { resyncAssignedClients } from "@/domains/trainerprogram/materialize";
+
+/** FK-chain helpers so the content-mutation functions below can find
+ * "which program does this phase/session/exercise belong to" and hand
+ * it to resyncAssignedClients -- same walk-the-chain style as
+ * hasMaterializedReferences/deletePhase's doc comment already use in
+ * this file, just upward instead of downward. */
+async function programIdForPhase(phaseId: string, supabase: SupabaseClient<Database>): Promise<string | null> {
+  const { data } = await supabase
+    .from("trainer_program_phases")
+    .select("program_id")
+    .eq("id", phaseId)
+    .maybeSingle();
+  return data?.program_id ?? null;
+}
+
+async function programIdForSession(sessionId: string, supabase: SupabaseClient<Database>): Promise<string | null> {
+  const { data } = await supabase
+    .from("trainer_program_sessions")
+    .select("phase_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!data) return null;
+  return programIdForPhase(data.phase_id, supabase);
+}
+
+async function programIdForSessionExercise(id: string, supabase: SupabaseClient<Database>): Promise<string | null> {
+  const { data } = await supabase
+    .from("trainer_program_session_exercises")
+    .select("session_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!data) return null;
+  return programIdForSession(data.session_id, supabase);
+}
 
 /** Every mutation here relies on RLS (migration 0075's owner_all
  * policies, each walking the FK chain back to trainer_programs.trainer_id
@@ -181,6 +216,7 @@ export async function updateProgram(programId: string, input: unknown): Promise<
     .update({ name: parsed.data.name, description: parsed.data.description || null })
     .eq("id", programId);
   if (error) return { ok: false, error: error.message };
+  await resyncAssignedClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 
@@ -265,6 +301,7 @@ export async function addPhase(programId: string, input: unknown): Promise<Actio
     .select("id")
     .single();
   if (error) return { ok: false, error: error.message };
+  await resyncAssignedClients(programId, supabase);
   return { ok: true, data: { id: data.id } };
 }
 
@@ -284,6 +321,8 @@ export async function updatePhase(phaseId: string, input: unknown): Promise<Acti
     })
     .eq("id", phaseId);
   if (error) return { ok: false, error: error.message };
+  const programId = await programIdForPhase(phaseId, supabase);
+  if (programId) await resyncAssignedClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 
@@ -340,8 +379,10 @@ export async function deletePhase(phaseId: string): Promise<ActionResult> {
     };
   }
 
+  const programId = await programIdForPhase(phaseId, supabase);
   const { error } = await supabase.from("trainer_program_phases").delete().eq("id", phaseId);
   if (error) return { ok: false, error: error.message };
+  if (programId) await resyncAssignedClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 
@@ -369,6 +410,8 @@ export async function addSession(phaseId: string, input: unknown): Promise<Actio
     if (error.code === "23505") return { ok: false, error: "This phase already has a session on that day." };
     return { ok: false, error: error.message };
   }
+  const programId = await programIdForPhase(phaseId, supabase);
+  if (programId) await resyncAssignedClients(programId, supabase);
   return { ok: true, data: { id: data.id } };
 }
 
@@ -390,6 +433,8 @@ export async function updateSession(sessionId: string, input: unknown): Promise<
     if (error.code === "23505") return { ok: false, error: "This phase already has a session on that day." };
     return { ok: false, error: error.message };
   }
+  const programId = await programIdForSession(sessionId, supabase);
+  if (programId) await resyncAssignedClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 
@@ -415,8 +460,10 @@ export async function deleteSession(sessionId: string): Promise<ActionResult> {
     };
   }
 
+  const programId = await programIdForSession(sessionId, supabase);
   const { error } = await supabase.from("trainer_program_sessions").delete().eq("id", sessionId);
   if (error) return { ok: false, error: error.message };
+  if (programId) await resyncAssignedClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 
@@ -460,6 +507,8 @@ export async function addSessionExercise(
     .select("id")
     .single();
   if (error) return { ok: false, error: error.message };
+  const programId = await programIdForSession(sessionId, supabase);
+  if (programId) await resyncAssignedClients(programId, supabase);
   return { ok: true, data: { id: data.id } };
 }
 
@@ -484,6 +533,8 @@ export async function updateSessionExercise(id: string, input: unknown): Promise
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+  const programId = await programIdForSessionExercise(id, supabase);
+  if (programId) await resyncAssignedClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 
@@ -500,8 +551,10 @@ export async function deleteSessionExercise(id: string): Promise<ActionResult> {
     };
   }
 
+  const programId = await programIdForSessionExercise(id, supabase);
   const { error } = await supabase.from("trainer_program_session_exercises").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
+  if (programId) await resyncAssignedClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 

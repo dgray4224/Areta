@@ -29,9 +29,8 @@ export function ImportProgramForm() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-neutral-600 dark:text-neutral-400">
-        Paste a program you&apos;ve already written — a spreadsheet copy-paste, a plain-text list, whatever you
-        have. It lands as a draft you can review and edit before publishing, same as building one by hand.
-        Exercise names that don&apos;t match your library become new exercises automatically, pending review.
+        Paste in a program you&apos;ve already written — from a spreadsheet or plain text. You&apos;ll get a
+        draft to review and edit before it goes live. New exercise names get added automatically.
       </p>
       <TextArea
         value={pastedText}

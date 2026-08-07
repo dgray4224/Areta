@@ -42,7 +42,7 @@ export function PastProgramsList({
                 type="button"
                 variant="secondary"
                 onClick={() => setReassigningId((id) => (id === entry.id ? null : entry.id))}
-                title="Assign this program again, with fresh start/end dates and a chance to update the goal."
+                title="Use this program again, with new dates and a chance to update the goal."
               >
                 {reassigningId === entry.id ? "Cancel" : "Reassign"}
               </Button>

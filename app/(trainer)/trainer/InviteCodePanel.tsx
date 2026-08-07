@@ -60,9 +60,21 @@ export function InviteCodePanel({ initialCodes }: { initialCodes: InviteCode[] }
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium">Invite codes</p>
-        <Button type="button" variant="secondary" disabled={isPending} onClick={onGenerate}>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium">Invite codes</p>
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            Share a code with a client so they can connect with you. They enter it in Settings → Trainer. Each
+            code works once and expires in 7 days.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          className="shrink-0"
+          disabled={isPending}
+          onClick={onGenerate}
+        >
           {isPending ? "Generating…" : "+ New invite code"}
         </Button>
       </div>

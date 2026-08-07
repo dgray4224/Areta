@@ -98,7 +98,7 @@ export function DayEditorPanel({
             </button>
           </div>
 
-          <label className="mb-3 flex items-center gap-2 text-sm" title="Marks this date as a rest day, replacing whatever the recurring schedule or a previous edit had.">
+          <label className="mb-3 flex items-center gap-2 text-sm" title="Makes this a rest day instead of a workout day.">
             <input
               type="checkbox"
               checked={isRestDay}
@@ -150,7 +150,7 @@ export function DayEditorPanel({
               type="button"
               disabled={isPending}
               onClick={onSave}
-              title="Saves this date only -- doesn't change the recurring template."
+              title="Saves changes for this day only."
             >
               {isPending ? "Saving…" : "Save"}
             </Button>
@@ -159,7 +159,7 @@ export function DayEditorPanel({
                 type="button"
                 disabled={isPending}
                 onClick={onResetToTemplate}
-                title="Discards this date's custom content and goes back to whatever the recurring schedule says."
+                title="Undoes your changes and goes back to the normal plan for this day."
                 className="text-sm text-neutral-500 hover:underline"
               >
                 Reset to template

@@ -1,0 +1,11 @@
+-- Requested 2026-08-07: the founder doesn't want a program's own phases
+-- running out (before its end_date) to auto-continue at all -- no
+-- looping back to phase 1 ("repeat"), no freezing on the last week
+-- ("freeze", migration 0075). A program should end exactly on its
+-- specified end date and nothing else; if the phase content itself runs
+-- out earlier, the trainer has to manually assign a new program or add
+-- calendar overrides to cover the gap (domains/trainerprogram/
+-- calendar-projection.ts's resolvePhaseForDate now returns null past the
+-- phase cycle instead of branching on this column). Nothing left to
+-- control with it.
+alter table public.trainer_program_assignments drop column on_complete;

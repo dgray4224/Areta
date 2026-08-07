@@ -16,15 +16,14 @@ export default async function TrainerProgramsPage() {
   return (
     <div className="space-y-6">
       <Link href="/trainer" className="text-sm text-neutral-500 hover:underline">
-        ← Your clients
+        ← Dashboard
       </Link>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">Your programs</h2>
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Write a program once, assign it to any client. Each phase repeats for its own number of weeks, then
-            hands off to the next one — same block-periodization model your clients&apos; library-generated plans
-            already use, just authored by you instead.
+            Write a program once, then assign it to any client. It&apos;s split into phases — each one runs for a
+            set number of weeks, then moves to the next.
           </p>
         </div>
         <LinkButton href="/trainer/programs/new">+ New program</LinkButton>

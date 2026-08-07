@@ -17,7 +17,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
   return (
     <div className="space-y-6">
       <Link href="/trainer" className="text-sm text-neutral-500 hover:underline">
-        ← Your clients
+        ← Dashboard
       </Link>
       <h1 className="text-2xl font-semibold">{clientName ?? "Your client"}</h1>
 
@@ -33,8 +33,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Goals</h2>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Current fitness-related goals only (nutrition, exercise, recovery) — status and priority are editable
-          here. Personal goals outside your scope, and anything already achieved or abandoned, aren&apos;t shown.
+          Only fitness goals — nutrition, exercise, recovery. You can edit status and priority here.
         </p>
         {goals.length === 0 ? (
           <EmptyState

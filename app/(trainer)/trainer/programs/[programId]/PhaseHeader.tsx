@@ -58,7 +58,7 @@ export function PhaseHeader({ phase, phaseNumber }: { phase: TrainerProgramPhase
         <FormField
           label="Length (weeks)"
           htmlFor={`edit-phase-weeks-${phase.id}`}
-          hint="Every week in this phase repeats identically."
+          hint="Every week in this phase is the same."
         >
           <TextInput
             id={`edit-phase-weeks-${phase.id}`}
@@ -99,7 +99,9 @@ export function PhaseHeader({ phase, phaseNumber }: { phase: TrainerProgramPhase
         {phase.focus ? <p className="text-sm text-neutral-500">{phase.focus}</p> : null}
         <p className="text-xs text-neutral-400">
           {phase.lengthWeeks} week{phase.lengthWeeks === 1 ? "" : "s"}, then{" "}
-          {phase.isFinal ? "the program repeats or freezes per the assignment's setting" : "advances to the next phase"}
+          {phase.isFinal
+            ? "nothing's scheduled after that until the end date — assign a new program or add workouts on the calendar"
+            : "moves to the next phase"}
         </p>
       </div>
       <span className="flex shrink-0 gap-2">

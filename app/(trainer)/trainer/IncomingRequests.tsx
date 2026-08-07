@@ -30,9 +30,14 @@ export function IncomingRequests({ initialRequests }: { initialRequests: Incomin
 
   return (
     <section className="space-y-3">
-      <p className="text-sm font-medium">
-        {requests.length} client request{requests.length === 1 ? "" : "s"}
-      </p>
+      <div>
+        <p className="text-sm font-medium">
+          {requests.length} client request{requests.length === 1 ? "" : "s"}
+        </p>
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          People who found you and want you as their trainer. Accept to make them your client.
+        </p>
+      </div>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <div className="space-y-2">
         {requests.map((req) => (

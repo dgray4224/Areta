@@ -20,8 +20,12 @@ import {
   type CustomizeExerciseInput,
 } from "@/domains/workoutplan/service";
 import { getFirstPhase, getHydratedPhasesForProgram } from "@/domains/trainerprogram/service";
-import { generateAndSaveFromTrainerProgram, generateAndApproveWeeksThrough } from "@/domains/trainerprogram/materialize";
-import { projectProgramRange, addDays } from "@/domains/trainerprogram/calendar-projection";
+import {
+  generateAndSaveFromTrainerProgram,
+  generateAndApproveWeeksThrough,
+  materializeWeekContaining,
+} from "@/domains/trainerprogram/materialize";
+import { projectProgramRange, addDays, sundayOfWeekContaining } from "@/domains/trainerprogram/calendar-projection";
 import {
   setDateOverride,
   clearDateOverride,
@@ -487,8 +491,17 @@ export async function getClientWorkoutOverview(
  * could click themselves. generateAndSaveWorkoutPlan's own guard already
  * refuses to run for a trainer-assigned client either way; this is the
  * other half — no UI or Server Action path exists for a trainer to
- * trigger it for anyone. Approval stays (below): a trainer-program-
- * sourced draft still needs one, same as any generated plan. */
+ * trigger it for anyone.
+ *
+ * Approval stays, but its reachable surface shrank to one case
+ * (2026-08-07): a trainer-program-sourced plan is now always written
+ * 'active' directly (materializeWeek), and the item-edit wrappers below
+ * no longer demote an active plan back to draft either -- see this
+ * function's own doc comment. What's left is a client who isn't
+ * currently trainer-assigned but has their own pending self-generated
+ * draft (from onboarding or the library) -- CLAUDE.md rule 10 still
+ * protects that self-service path, and a trainer viewing that client's
+ * page can approve it on their behalf same as before. */
 export async function approveClientWorkoutPlan(clientId: string): Promise<ActionResult> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
@@ -502,57 +515,20 @@ export async function approveClientWorkoutPlan(clientId: string): Promise<Action
   return result;
 }
 
-/** customizeWorkoutPlanItemExercise/addWorkoutPlanItemExercise (unlike
- * this file's own generate/approve wrappers) write straight to an
- * existing plan with no approval gate of their own — fine for a client
- * tweaking their own already-approved plan, but a trainer silently
- * rewriting a client's *already-active* plan with no new approval step
- * breaks CLAUDE.md rule 10 ("require approval before changing active
- * plans"). Found in the 2026-08-06 code-review pass. Demoting the
- * client's active plan back to draft after a trainer edit means the
- * change has to be approved (by the trainer or the client) before it's
- * live again, same as a fresh generate — not a silent live rewrite.
- *
- * Returns an ActionResult rather than swallowing its own error (found
- * missing in the third code-review pass): the caller's item-write can
- * succeed while this demotion fails, and the original code returned the
- * item-write's own `ok: true` regardless, silently leaving the trainer's
- * change live on an "active" plan with no re-approval step required —
- * exactly the bug this function exists to prevent.
- *
- * Honest limit, also raised in the third pass: this is an app-level
- * speed bump, not a database-enforced one — workout_plans_trainer_update
- * (migration 0066) grants a trainer row-level UPDATE with no column/
- * value restriction (unlike goals/generated_parameters, which got a
- * BEFORE UPDATE trigger in migration 0070/0072), so a trainer could set
- * status back to 'active' via a direct API call instead of the intended
- * approveClientWorkoutPlan flow. A trigger can't meaningfully close that
- * gap here without also breaking the legitimate approve path, which
- * performs the exact same "set status = active" write — there's no
- * value-level way to distinguish a reviewed approval from a bypass.
- * What this function *does* guarantee: the normal app-mediated flow
- * always pauses for re-approval, and no edit is silently left live by
- * accident. */
-async function demoteActivePlanToDraft(
-  supabase: SupabaseClient<Database>,
-  clientId: string
-): Promise<ActionResult> {
-  const { error } = await supabase
-    .from("workout_plans")
-    .update({ status: "draft" })
-    .eq("user_id", clientId)
-    .eq("status", "active");
-  if (error) return { ok: false, error: `Saved, but couldn't require re-approval: ${error.message}` };
-  return { ok: true, data: undefined };
-}
-
 /** Free-form replace — see CustomizeExerciseInput's own doc comment in
  * domains/workoutplan/service.ts. Curated "alternates" swap
  * (swapWorkoutPlanItemExercise, mobile-only today via app/api/exercise)
  * isn't wired up here — that needs the same slot-options/equipment
  * filtering app/api/exercise/route.ts's GET handler does, which is a
  * bigger lift than a free-pick replace; deliberately out of scope for
- * this pass. */
+ * this pass.
+ *
+ * Writes straight to the client's plan with no re-approval step
+ * (2026-08-07, previously demoted the plan back to 'draft' after every
+ * trainer edit under CLAUDE.md rule 10 -- removed on the founder's
+ * explicit call: rule 10 protects a user's *own* self-service plan
+ * generation, not a trainer acting on a client who already consented to
+ * that trainer's access by accepting them). */
 export async function customizeClientWorkoutItem(
   clientId: string,
   itemId: string,
@@ -567,9 +543,6 @@ export async function customizeClientWorkoutItem(
 
   const result = await customizeWorkoutPlanItemExercise(clientId, itemId, input, supabase);
   if (!result.ok) return result;
-
-  const demoted = await demoteActivePlanToDraft(supabase, clientId);
-  if (!demoted.ok) return demoted;
 
   await logTrainerAction(user, "client_workout_item_customized", clientId, { itemId, ...input });
   return result;
@@ -590,9 +563,6 @@ export async function addClientWorkoutItem(
   const result = await addWorkoutPlanItemExercise(clientId, dayOfWeek, input, supabase);
   if (!result.ok) return result;
 
-  const demoted = await demoteActivePlanToDraft(supabase, clientId);
-  if (!demoted.ok) return demoted;
-
   await logTrainerAction(user, "client_workout_item_added", clientId, { dayOfWeek, ...input });
   return result;
 }
@@ -606,6 +576,36 @@ export async function addClientWorkoutItem(
 // functions that need requireActiveClient.
 // ---------------------------------------------------------------------------
 
+/** Archives this client's still-current (today-or-future) workout_plans
+ * rows that belong to a trainer program they're no longer on -- called
+ * right after a program switch or unassign actually commits. Found
+ * 2026-08-07: getWorkoutPlanForWeek's exact-today match has no idea
+ * which trainer_program_id a row belongs to, only its date, so a
+ * leftover 'active' row materialized under the OLD program before the
+ * switch keeps getting served as "today's plan" forever -- most visibly
+ * when the NEW program hasn't started yet (generateAndSaveFromTrainerProgram
+ * no-ops until then, so nothing ever overwrites the stale row). Scoped
+ * to today-or-future dates only, same "don't rewrite history" boundary
+ * the rest of this file uses (e.g. validateEditableDate) -- what already
+ * happened stays untouched. 'archived' (a workout_plans status the
+ * schema has allowed since migration 0010 but nothing ever set) is what
+ * makes getWorkoutPlanForWeek stop returning the row, without deleting
+ * it. */
+async function archiveStaleTrainerProgramPlans(
+  clientId: string,
+  trainerProgramId: string,
+  supabase: SupabaseClient<Database>
+): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  await supabase
+    .from("workout_plans")
+    .update({ status: "archived" })
+    .eq("user_id", clientId)
+    .eq("trainer_program_id", trainerProgramId)
+    .gte("week_start", today)
+    .neq("status", "archived");
+}
+
 /** end_date and goalOutcome are both required (2026-08-06: "every time a
  * trainer sets a program, they need to specify the start and end date,
  * the tangible goals") — enforced here, not the database (migration
@@ -617,11 +617,9 @@ export async function addClientWorkoutItem(
 export async function assignProgramToClient(
   clientId: string,
   programId: string,
-  onComplete: "repeat" | "freeze",
   startsOn: string,
   endDate: string,
-  goalOutcome: string,
-  autoApprove = false
+  goalOutcome: string
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
@@ -702,7 +700,7 @@ export async function assignProgramToClient(
   // failure between them previously stranded the client program-less.
   const { data: previousActive } = await supabase
     .from("trainer_program_assignments")
-    .select("id")
+    .select("id, program_id")
     .eq("client_id", clientId)
     .eq("status", "active")
     .maybeSingle();
@@ -719,12 +717,10 @@ export async function assignProgramToClient(
     program_id: programId,
     trainer_id: user.id,
     client_id: clientId,
-    on_complete: onComplete,
     starts_on: resolvedStartsOn,
     end_date: endDate,
     goal_outcome: trimmedGoal,
     linked_goal_id: goalRow.id,
-    auto_approve: autoApprove,
   });
   if (insertError) {
     if (previousActive) {
@@ -740,6 +736,15 @@ export async function assignProgramToClient(
     return { ok: false, error: insertError.message };
   }
 
+  // Clean up the OLD program's leftovers now that the switch actually
+  // committed -- see archiveStaleTrainerProgramPlans's own doc comment
+  // for why this can't wait on generateAndSaveFromTrainerProgram below
+  // to overwrite it naturally (it won't, if the new program hasn't
+  // started yet).
+  if (previousActive) {
+    await archiveStaleTrainerProgramPlans(clientId, previousActive.program_id, supabase);
+  }
+
   // A no-op (with an explanatory warning, not an error) if startsOn is in
   // the future — generateAndSaveFromTrainerProgram itself checks that.
   // Its warnings are surfaced here rather than discarded (found in code
@@ -750,10 +755,8 @@ export async function assignProgramToClient(
 
   await logTrainerAction(user, "client_program_assigned", clientId, {
     programId,
-    onComplete,
     startsOn,
     endDate,
-    autoApprove,
   });
   return { ok: true, data: { warnings: generated.data.warnings } };
 }
@@ -766,12 +769,23 @@ export async function unassignProgram(clientId: string): Promise<ActionResult> {
     return { ok: false, error: "This is not your client." };
   }
 
+  const { data: activeAssignment } = await supabase
+    .from("trainer_program_assignments")
+    .select("id, program_id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+
   const { error } = await supabase
     .from("trainer_program_assignments")
     .update({ status: "ended", ended_at: new Date().toISOString() })
     .eq("client_id", clientId)
     .eq("status", "active");
   if (error) return { ok: false, error: error.message };
+
+  if (activeAssignment) {
+    await archiveStaleTrainerProgramPlans(clientId, activeAssignment.program_id, supabase);
+  }
 
   await logTrainerAction(user, "client_program_unassigned", clientId, {});
   return { ok: true, data: undefined };
@@ -801,7 +815,6 @@ async function loadAssignmentView(
           startsOn: row.starts_on,
           endDate: row.end_date,
           phases,
-          onComplete: row.on_complete as TrainerProgramAssignment["onComplete"],
           rangeStart: today,
           rangeEnd: today,
           overridesByDate: new Map(),
@@ -815,11 +828,9 @@ async function loadAssignmentView(
     trainerId: row.trainer_id,
     clientId: row.client_id,
     status: row.status as TrainerProgramAssignment["status"],
-    onComplete: row.on_complete as TrainerProgramAssignment["onComplete"],
     startsOn: row.starts_on,
     endDate: row.end_date,
     goalOutcome: row.goal_outcome,
-    autoApprove: row.auto_approve,
     currentPhaseName: todayProjection?.phaseName ?? null,
     currentWeekInPhase: todayProjection?.weekInPhase ?? null,
     startedAt: row.started_at,
@@ -875,64 +886,13 @@ export async function listClientAssignmentHistory(clientId: string): Promise<Act
   };
 }
 
-/** Manual "(re)generate this week" for a trainer-assigned program — same
- * button whether it's the very first week or a mid-program regenerate,
- * naturally idempotent now that generation is a pure projection of
- * (starts_on, phases, overrides) rather than a pointer that advances. */
-export async function generateClientWorkoutPlanFromProgram(
-  clientId: string
-): Promise<ActionResult<{ warnings: string[] }>> {
-  const { user } = await requireTrainer();
-  const supabase = await createClient();
-
-  if (!(await requireActiveClient(user.id, clientId, supabase))) {
-    return { ok: false, error: "This is not your client." };
-  }
-
-  const result = await generateAndSaveFromTrainerProgram(clientId, supabase);
-  if (result.ok) await logTrainerAction(user, "client_workout_plan_generated_from_program", clientId, {});
-  return result;
-}
-
-/** Toggle for an *existing* assignment -- assignProgramToClient's own
- * autoApprove param only sets the initial value at assign time, a
- * trainer deciding partway through a program that the weekly click is
- * unnecessary shouldn't have to reassign to change it. Turning it on
- * also immediately approves whatever draft is currently sitting there,
- * so behavior is consistent right away rather than waiting for the next
- * regenerate. */
-export async function setClientAutoApprove(clientId: string, autoApprove: boolean): Promise<ActionResult> {
-  const { user } = await requireTrainer();
-  const supabase = await createClient();
-
-  if (!(await requireActiveClient(user.id, clientId, supabase))) {
-    return { ok: false, error: "This is not your client." };
-  }
-
-  const { error } = await supabase
-    .from("trainer_program_assignments")
-    .update({ auto_approve: autoApprove })
-    .eq("client_id", clientId)
-    .eq("status", "active");
-  if (error) return { ok: false, error: error.message };
-
-  if (autoApprove) {
-    await supabase.from("workout_plans").update({ status: "active" }).eq("user_id", clientId).eq("status", "draft");
-  }
-
-  await logTrainerAction(user, "client_auto_approve_changed", clientId, { autoApprove });
-  return { ok: true, data: undefined };
-}
-
 /** Manual "push weeks live now" (2026-08-06) — for a trainer who's
- * customized several weeks ahead through the calendar and doesn't want
- * to wait for the weekly cron to reach each one, or re-approve every
- * single week by hand. Distinct from auto_approve: this is a one-time
- * bulk push through an explicit date, not a standing "always skip
- * approval" setting — the trainer chooses exactly how far to go each
- * time they use it. Still gated the same way auto_approve is: a
- * deliberate, visible exception to CLAUDE.md's "require approval before
- * changing active plans" rule, never a silent default. */
+ * customized several weeks ahead through the calendar and wants that
+ * content materialized today instead of waiting for the weekly cron to
+ * reach each one naturally. No approval semantics as of 2026-08-07 --
+ * every trainer-program materialization goes straight to 'active' now
+ * (see materializeWeek's doc comment), so this is purely a "generate
+ * now" convenience, not a distinct exception to anything. */
 export async function bulkApproveClientWeeks(
   clientId: string,
   throughDate: string
@@ -988,7 +948,6 @@ export async function getClientMonthCalendar(
     startsOn: assignment.starts_on,
     endDate: assignment.end_date,
     phases,
-    onComplete: assignment.on_complete as TrainerProgramAssignment["onComplete"],
     rangeStart: monthStart,
     rangeEnd: monthEnd,
     overridesByDate,
@@ -1034,7 +993,6 @@ export async function getNextScheduledSession(
     startsOn: assignment.starts_on,
     endDate: assignment.end_date,
     phases,
-    onComplete: assignment.on_complete as TrainerProgramAssignment["onComplete"],
     rangeStart: today,
     rangeEnd,
     overridesByDate,
@@ -1056,10 +1014,16 @@ export async function setClientDateOverride(
   }
 
   const result = await setDateOverride(clientId, date, input, supabase);
-  if (result.ok) {
-    await logTrainerAction(user, "client_date_override_set", clientId, { date, isRestDay: input.isRestDay });
-  }
-  return result;
+  if (!result.ok) return result;
+  await logTrainerAction(user, "client_date_override_set", clientId, { date, isRestDay: input.isRestDay });
+
+  // Auto-sync (2026-08-07, replaces the old manual "Regenerate this
+  // week" button): the override itself is already safely saved above
+  // regardless of what happens here. If materialization fails, surface
+  // it as this action's error so the trainer knows the client can't see
+  // the edit yet -- the edit isn't lost, the next successful save or the
+  // weekly cron will pick it up.
+  return materializeWeekContaining(clientId, date, supabase);
 }
 
 export async function clearClientDateOverride(clientId: string, date: string): Promise<ActionResult> {
@@ -1070,8 +1034,9 @@ export async function clearClientDateOverride(clientId: string, date: string): P
   }
 
   const result = await clearDateOverride(clientId, date, supabase);
-  if (result.ok) await logTrainerAction(user, "client_date_override_cleared", clientId, { date });
-  return result;
+  if (!result.ok) return result;
+  await logTrainerAction(user, "client_date_override_cleared", clientId, { date });
+  return materializeWeekContaining(clientId, date, supabase);
 }
 
 /** Drag-and-drop "move" semantics: fromDate's effective content (whether
@@ -1110,13 +1075,11 @@ export async function moveClientSessionToDate(
 
   const phases = await getHydratedPhasesForProgram(assignment.program_id, supabase);
   const overridesByDate = await getOverridesForRange(assignment.id, fromDate, toDate, supabase);
-  const onComplete = assignment.on_complete as TrainerProgramAssignment["onComplete"];
 
   const [fromProjection] = projectProgramRange({
     startsOn: assignment.starts_on,
     endDate: assignment.end_date,
     phases,
-    onComplete,
     rangeStart: fromDate,
     rangeEnd: fromDate,
     overridesByDate,
@@ -1129,7 +1092,6 @@ export async function moveClientSessionToDate(
     startsOn: assignment.starts_on,
     endDate: assignment.end_date,
     phases,
-    onComplete,
     rangeStart: toDate,
     rangeEnd: toDate,
     overridesByDate,
@@ -1159,6 +1121,18 @@ export async function moveClientSessionToDate(
   }
 
   await logTrainerAction(user, "client_session_moved", clientId, { fromDate, toDate });
+
+  // Auto-sync both ends of the move -- a drag can cross a week boundary,
+  // so this isn't always the same week twice. Dedup by week_start so a
+  // same-week drag (the common case) only materializes once.
+  const fromWeek = sundayOfWeekContaining(fromDate);
+  const toWeek = sundayOfWeekContaining(toDate);
+  const fromSync = await materializeWeekContaining(clientId, fromDate, supabase);
+  if (!fromSync.ok) return fromSync;
+  if (toWeek !== fromWeek) {
+    const toSync = await materializeWeekContaining(clientId, toDate, supabase);
+    if (!toSync.ok) return toSync;
+  }
   return { ok: true, data: undefined };
 }
 

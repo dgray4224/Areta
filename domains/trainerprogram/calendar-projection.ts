@@ -1,4 +1,4 @@
-import type { HydratedTrainerProgramPhase, OnProgramComplete } from "@/domains/trainerprogram/types";
+import type { HydratedTrainerProgramPhase } from "@/domains/trainerprogram/types";
 
 export type ProjectedExercise = {
   exerciseId: string;
@@ -21,12 +21,17 @@ export type ProjectedDay = {
   date: string;
   dayOfWeek: number;
   /** "not_started": before the assignment's starts_on. "ended": after
-   * its end_date (hard cutoff -- see migration 0078). "override": a
+   * its end_date (hard cutoff -- see migration 0078). "phases_complete":
+   * on or after starts_on and before end_date, but the program's own
+   * phases have already run their full length -- no auto-repeat or
+   * auto-freeze (removed 2026-08-07, the founder's explicit call): the
+   * trainer has to manually assign a new program or add calendar
+   * overrides to cover the remaining time until end_date. "override": a
    * trainer_program_date_overrides row exists for this date (may itself
    * be a rest day). "template": the recurring day-of-week session for
    * whatever phase/week this date falls in. "rest": no override, and no
    * session is authored for this day-of-week in the resolved phase. */
-  source: "not_started" | "ended" | "override" | "template" | "rest";
+  source: "not_started" | "ended" | "phases_complete" | "override" | "template" | "rest";
   phaseId: string | null;
   phaseName: string | null;
   /** 1-indexed week within phaseId. */
@@ -80,12 +85,19 @@ function dayOfWeekOf(isoDate: string): number {
  * the whole point of this rewrite (see migration 0076's doc comment):
  * the same computation always produces the same answer for the same
  * date, so the calendar and the real weekly generator can never disagree.
+ *
+ * Returns null once `date` is at or past the end of the phase cycle
+ * (weeksSinceStart >= totalCycleWeeks) -- no auto-repeat, no auto-freeze
+ * on the last week (removed 2026-08-07, migration 0082): a program's
+ * phases running out is the trainer's cue to manually assign a new
+ * program or fill the remaining time with calendar overrides, not
+ * something this function papers over. Callers distinguish this from
+ * "hasn't started yet" themselves (see projectProgramRange below).
  */
 function resolvePhaseForDate(
   date: string,
   startsOn: string,
-  phases: HydratedTrainerProgramPhase[],
-  onComplete: OnProgramComplete
+  phases: HydratedTrainerProgramPhase[]
 ): { phase: HydratedTrainerProgramPhase; weekInPhase: number } | null {
   if (phases.length === 0) return null;
   if (date < startsOn) return null;
@@ -93,18 +105,16 @@ function resolvePhaseForDate(
   const weeksSinceStart = Math.floor(daysBetween(startsOn, date) / 7);
   const totalCycleWeeks = phases.reduce((sum, p) => sum + p.lengthWeeks, 0);
   if (totalCycleWeeks <= 0) return null;
+  if (weeksSinceStart >= totalCycleWeeks) return null;
 
-  const effectiveWeekIndex =
-    onComplete === "repeat" ? weeksSinceStart % totalCycleWeeks : Math.min(weeksSinceStart, totalCycleWeeks - 1);
-
-  let remaining = effectiveWeekIndex;
+  let remaining = weeksSinceStart;
   for (const phase of phases) {
     if (remaining < phase.lengthWeeks) {
       return { phase, weekInPhase: remaining + 1 };
     }
     remaining -= phase.lengthWeeks;
   }
-  // Should be unreachable given effectiveWeekIndex < totalCycleWeeks, but
+  // Should be unreachable given weeksSinceStart < totalCycleWeeks, but
   // fall back to the last phase's last week rather than throwing.
   const last = phases[phases.length - 1];
   return { phase: last, weekInPhase: last.lengthWeeks };
@@ -127,12 +137,11 @@ export function projectProgramRange(input: {
   endDate?: string | null;
   /** Sorted by phaseOrder ascending. */
   phases: HydratedTrainerProgramPhase[];
-  onComplete: OnProgramComplete;
   rangeStart: string;
   rangeEnd: string;
   overridesByDate: Map<string, DateOverrideInput>;
 }): ProjectedDay[] {
-  const { startsOn, endDate, phases, onComplete, rangeStart, rangeEnd, overridesByDate } = input;
+  const { startsOn, endDate, phases, rangeStart, rangeEnd, overridesByDate } = input;
   const days: ProjectedDay[] = [];
 
   const dayCount = daysBetween(rangeStart, rangeEnd) + 1;
@@ -155,7 +164,7 @@ export function projectProgramRange(input: {
     }
 
     const override = overridesByDate.get(date);
-    const resolved = resolvePhaseForDate(date, startsOn, phases, onComplete);
+    const resolved = resolvePhaseForDate(date, startsOn, phases);
 
     if (override) {
       days.push({
@@ -175,7 +184,10 @@ export function projectProgramRange(input: {
       days.push({
         date,
         dayOfWeek,
-        source: "not_started",
+        // Two distinct reasons resolvePhaseForDate can come back empty --
+        // the calendar and empty-state copy read this to tell "hasn't
+        // started yet" apart from "ran out of program content" (2026-08-07).
+        source: date < startsOn ? "not_started" : "phases_complete",
         phaseId: null,
         phaseName: null,
         weekInPhase: null,
