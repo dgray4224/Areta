@@ -11,13 +11,15 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
   const { clientId } = await params;
   const result = await getClientHistorySummary(clientId);
   if (!result.ok) notFound();
-  const { recentWeightLogs, recentSleepLogs, recentNutritionLogs, recentRecoveryLogs, goals } = result.data;
+  const { clientName, recentWeightLogs, recentSleepLogs, recentNutritionLogs, recentRecoveryLogs, goals } =
+    result.data;
 
   return (
     <div className="space-y-6">
       <Link href="/trainer" className="text-sm text-neutral-500 hover:underline">
         ← Your clients
       </Link>
+      <h1 className="text-2xl font-semibold">{clientName ?? "Your client"}</h1>
 
       <div className="flex flex-wrap gap-2">
         <LinkButton href={`/trainer/clients/${clientId}/nutrition`} variant="secondary">

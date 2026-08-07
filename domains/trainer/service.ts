@@ -11,7 +11,7 @@ import { getApprovedParameterValue, getGeneratedParameters, approveAllGeneratedP
 import { generateAndSaveMealPlan, getMealPlanForWeek, type MealPlanView } from "@/domains/mealplan/service";
 import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
 import {
-  getWorkoutPlanForWeek,
+  getCurrentWorkoutPlan,
   approveWorkoutPlan,
   customizeWorkoutPlanItemExercise,
   addWorkoutPlanItemExercise,
@@ -20,7 +20,7 @@ import {
   type CustomizeExerciseInput,
 } from "@/domains/workoutplan/service";
 import { getFirstPhase, getHydratedPhasesForProgram } from "@/domains/trainerprogram/service";
-import { generateAndSaveFromTrainerProgram } from "@/domains/trainerprogram/materialize";
+import { generateAndSaveFromTrainerProgram, generateAndApproveWeeksThrough } from "@/domains/trainerprogram/materialize";
 import { projectProgramRange, addDays } from "@/domains/trainerprogram/calendar-projection";
 import {
   setDateOverride,
@@ -244,7 +244,7 @@ export async function getClientHistorySummary(clientId: string): Promise<ActionR
     return { ok: false, error: "This is not your client." };
   }
 
-  const [weightRes, sleepRes, nutritionRes, recoveryRes, goalsRes] = await Promise.all([
+  const [weightRes, sleepRes, nutritionRes, recoveryRes, goalsRes, nameById] = await Promise.all([
     supabase
       .from("weight_logs")
       .select("id, logged_at, weight, unit")
@@ -274,9 +274,11 @@ export async function getClientHistorySummary(clientId: string): Promise<ActionR
       .select("id, outcome, why, target_date, priority, confidence, status")
       .eq("user_id", clientId)
       .order("priority", { ascending: true, nullsFirst: false }),
+    getVisibleNames(supabase, [clientId]),
   ]);
 
   const summary: ClientHistorySummary = {
+    clientName: nameById.get(clientId) ?? null,
     recentWeightLogs: (weightRes.data ?? []).map((r) => ({
       id: r.id,
       loggedAt: r.logged_at,
@@ -466,9 +468,13 @@ export async function getClientWorkoutOverview(
     return { ok: false, error: "This is not your client." };
   }
 
-  // getWorkoutPlanForWeek, not getActiveWorkoutPlan — same fix and same
-  // reasoning as getClientNutritionOverview above.
-  const workoutPlan = await getWorkoutPlanForWeek(clientId, undefined, supabase);
+  // getCurrentWorkoutPlan (2026-08-06), not getWorkoutPlanForWeek's own
+  // exact-today default or the plain getActiveWorkoutPlan -- the trainer
+  // needs to see whatever's actually current, whether that's a draft
+  // generated today or a still-active plan from earlier in the week that
+  // nothing has touched since (see getCurrentWorkoutPlan's own doc
+  // comment for the underlying week_start-exact-match gap this closes).
+  const workoutPlan = await getCurrentWorkoutPlan(clientId, supabase);
   return { ok: true, data: { workoutPlan } };
 }
 
@@ -491,7 +497,7 @@ export async function approveClientWorkoutPlan(clientId: string): Promise<Action
     return { ok: false, error: "This is not your client." };
   }
 
-  const result = await approveWorkoutPlan(clientId);
+  const result = await approveWorkoutPlan(clientId, supabase);
   if (result.ok) await logTrainerAction(user, "client_workout_plan_approved", clientId, {});
   return result;
 }
@@ -916,6 +922,36 @@ export async function setClientAutoApprove(clientId: string, autoApprove: boolea
 
   await logTrainerAction(user, "client_auto_approve_changed", clientId, { autoApprove });
   return { ok: true, data: undefined };
+}
+
+/** Manual "push weeks live now" (2026-08-06) — for a trainer who's
+ * customized several weeks ahead through the calendar and doesn't want
+ * to wait for the weekly cron to reach each one, or re-approve every
+ * single week by hand. Distinct from auto_approve: this is a one-time
+ * bulk push through an explicit date, not a standing "always skip
+ * approval" setting — the trainer chooses exactly how far to go each
+ * time they use it. Still gated the same way auto_approve is: a
+ * deliberate, visible exception to CLAUDE.md's "require approval before
+ * changing active plans" rule, never a silent default. */
+export async function bulkApproveClientWeeks(
+  clientId: string,
+  throughDate: string
+): Promise<ActionResult<{ weeksGenerated: number; warnings: string[] }>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await generateAndApproveWeeksThrough(clientId, throughDate, supabase);
+  if (result.ok) {
+    await logTrainerAction(user, "client_weeks_bulk_approved", clientId, {
+      throughDate,
+      weeksGenerated: result.data.weeksGenerated,
+    });
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

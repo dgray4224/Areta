@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@/platform/supabase/server";
 import type { TaskStatus } from "@/domains/tasks/schema";
-import { getWorkoutPlanForWeek } from "@/domains/workoutplan/service";
+import { getCurrentWorkoutPlan } from "@/domains/workoutplan/service";
 import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { getGroceryListForWeek } from "@/domains/grocery/service";
 import { getPrepPlanForWeek } from "@/domains/prep/service";
@@ -171,7 +171,7 @@ export async function getDashboardData(userId: string, viewDate?: string): Promi
   }
 
   const [workoutPlan, groceryItems, prepPlan] = await Promise.all([
-    getWorkoutPlanForWeek(userId),
+    getCurrentWorkoutPlan(userId),
     getGroceryListForWeek(userId),
     getPrepPlanForWeek(userId),
   ]);

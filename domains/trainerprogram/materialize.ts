@@ -6,92 +6,41 @@ import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { getHydratedPhasesForProgram } from "@/domains/trainerprogram/service";
 import { getOverridesForRange } from "@/domains/trainerprogram/overrides";
-import { projectProgramRange, addDays, sundayOfWeekContaining } from "@/domains/trainerprogram/calendar-projection";
-import type { OnProgramComplete } from "@/domains/trainerprogram/types";
+import { projectProgramRange, addDays, sundayOfWeekContaining, daysBetween } from "@/domains/trainerprogram/calendar-projection";
+import type { OnProgramComplete, HydratedTrainerProgramPhase } from "@/domains/trainerprogram/types";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+type AssignmentRow = Database["public"]["Tables"]["trainer_program_assignments"]["Row"];
+
 /**
- * Turns a client's active trainer_program_assignment into a concrete
- * draft week in workout_plans/workout_plan_items — the trainer-program
- * analog of domains/workoutplan/service.ts's generateAndSaveWorkoutPlan,
- * called from the same two places that one is: a manual trainer action
- * (domains/trainer/service.ts) and the weekly cron
- * (app/api/cron/regenerate-workout-plans/route.ts), neither of which has
- * a user session — so, same convention, this takes a plain clientId and
- * trusts RLS/the caller's own client rather than deriving identity
- * itself. Still only ever produces a DRAFT (CLAUDE.md rule 10) —
- * approval happens the same way as any other plan.
- *
- * Rewritten (2026-08-06, calendar feature) to compute the target week
- * via calendar-projection.ts's pure projectProgramRange instead of a
- * stored "pointer" that got manually advanced — the same function the
- * calendar UI uses to show a trainer what any date looks like, so
- * regenerating is now naturally idempotent (same inputs -> same output,
- * no special-casing needed to detect "is this a re-run") and a date
- * override a trainer sets always lands correctly whenever that week
- * next gets materialized, without this function needing to know
- * anything about overrides beyond fetching them.
- *
- * workout_plans keeps the rest of the app's existing (slightly
- * misleading) "week_start" convention: it's literally today's date at
- * generation time, not an aligned Sunday — see getWorkoutPlanForWeek's
- * callers, which all key off "whatever date generation last ran" as an
- * opaque version identifier. The *items* still span the full Sun-Sat
- * calendar week containing today (sundayOfWeekContaining), matching how
- * the shared library's own generator always produces day_of_week 0-6
- * regardless of which weekday generation happens to run on.
+ * The actual per-week materialization, shared by generateAndSaveFromTrainerProgram
+ * (always "this week", anchored to real today) and
+ * generateAndApproveWeeksThrough (an explicit anchor date, possibly
+ * several weeks out). `anchorDate` picks which Sun-Sat week's content to
+ * write and becomes workout_plans.week_start for that row -- see
+ * getCurrentWorkoutPlan's doc comment (domains/workoutplan/service.ts)
+ * for why that's safe for a future date: the lookup no longer requires
+ * an exact match against "today", so a week materialized now for three
+ * weeks out is still findable whenever that week actually arrives.
+ * `forceActive` is true only for the explicit bulk-approve path --
+ * everywhere else, status still depends on the assignment's own
+ * auto_approve setting (or 'draft', requiring the normal approval step).
  */
-export async function generateAndSaveFromTrainerProgram(
+async function materializeWeek(
   clientId: string,
-  client?: SupabaseClient<Database>
+  assignmentRow: AssignmentRow,
+  phases: HydratedTrainerProgramPhase[],
+  anchorDate: string,
+  forceActive: boolean,
+  supabase: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
-  const supabase = client ?? (await createClient());
-  const today = todayIso();
-  const weekStart = sundayOfWeekContaining(today);
+  const weekStart = sundayOfWeekContaining(anchorDate);
   const weekEnd = addDays(weekStart, 6);
 
-  const { data: assignmentRow, error: assignmentError } = await supabase
-    .from("trainer_program_assignments")
-    .select("*")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .maybeSingle();
-  if (assignmentError) return { ok: false, error: assignmentError.message };
-  if (!assignmentRow) return { ok: false, error: "No active trainer program assigned." };
-
-  // Hard cutoff (migration 0078): once the stated end date has passed,
-  // the assignment ends itself rather than generating further weeks --
-  // "every program needs a start and end date" means the end date is a
-  // real boundary, not just a display label. The row is never deleted
-  // (status: 'ended', same as a manual unassign) -- it's exactly what
-  // the trainer's "past programs" list reads to offer reassigning it,
-  // possibly with modifications, later.
-  if (assignmentRow.end_date && today > assignmentRow.end_date) {
-    await supabase
-      .from("trainer_program_assignments")
-      .update({ status: "ended", ended_at: new Date().toISOString() })
-      .eq("id", assignmentRow.id);
-    return {
-      ok: true,
-      data: { warnings: [`This program ended on ${assignmentRow.end_date}.`] },
-    };
-  }
-
-  if (assignmentRow.starts_on > weekEnd) {
-    return {
-      ok: true,
-      data: { warnings: [`This program starts ${assignmentRow.starts_on} — nothing to generate for this week yet.`] },
-    };
-  }
-
-  const phases = await getHydratedPhasesForProgram(assignmentRow.program_id, supabase);
-  if (phases.length === 0) return { ok: false, error: "This program has no phases defined yet." };
-
   const overridesByDate = await getOverridesForRange(assignmentRow.id, weekStart, weekEnd, supabase);
-
   const projectedDays = projectProgramRange({
     startsOn: assignmentRow.starts_on,
     endDate: assignmentRow.end_date,
@@ -103,28 +52,20 @@ export async function generateAndSaveFromTrainerProgram(
   });
 
   const warnings: string[] = [];
-  const todaysProjection = projectedDays.find((d) => d.date === today) ?? projectedDays[0];
-  const phaseName = todaysProjection?.phaseName ?? null;
-  const phaseId = todaysProjection?.phaseId ?? null;
+  const anchorProjection = projectedDays.find((d) => d.date === anchorDate) ?? projectedDays[0];
+  const phaseName = anchorProjection?.phaseName ?? null;
+  const phaseId = anchorProjection?.phaseId ?? null;
   if (projectedDays.every((d) => d.exercises.length === 0)) {
-    warnings.push("No sessions are scheduled this week — check the calendar or phase content.");
+    warnings.push(`No sessions are scheduled the week of ${weekStart} — check the calendar or phase content.`);
   }
 
-  // auto_approve (migration 0080, opt-in per assignment): skips the
-  // draft-then-approve step entirely, for a trainer who's already
-  // reviewed everything several weeks ahead via the calendar and found
-  // the recurring weekly approval click to be pure friction rather than
-  // a genuine new review each time. Off by default -- every other
-  // assignment still requires the explicit approve action CLAUDE.md
-  // rule 10 calls for. Applies the same way whether this run came from
-  // the weekly cron or a manual "Regenerate this week" click.
   const { data: plan, error: planError } = await supabase
     .from("workout_plans")
     .upsert(
       {
         user_id: clientId,
-        week_start: today,
-        status: assignmentRow.auto_approve ? "active" : "draft",
+        week_start: anchorDate,
+        status: forceActive || assignmentRow.auto_approve ? "active" : "draft",
         phase_focus: phaseName,
         trainer_program_id: assignmentRow.program_id,
         trainer_program_phase_id: phaseId,
@@ -168,4 +109,145 @@ export async function generateAndSaveFromTrainerProgram(
   }
 
   return { ok: true, data: { warnings } };
+}
+
+/**
+ * Turns a client's active trainer_program_assignment into a concrete
+ * draft (or, if auto_approve is on, active) week in workout_plans/
+ * workout_plan_items — the trainer-program analog of
+ * domains/workoutplan/service.ts's generateAndSaveWorkoutPlan, called
+ * from the same two places that one is: a manual trainer action
+ * (domains/trainer/service.ts) and the weekly cron
+ * (app/api/cron/regenerate-workout-plans/route.ts), neither of which has
+ * a user session — so, same convention, this takes a plain clientId and
+ * trusts RLS/the caller's own client rather than deriving identity
+ * itself.
+ *
+ * Always anchored to real today's week -- for materializing a specific
+ * *future* week ahead of schedule, see generateAndApproveWeeksThrough
+ * below, which shares this function's core (materializeWeek) but loops
+ * over an explicit range instead of always "this week".
+ */
+export async function generateAndSaveFromTrainerProgram(
+  clientId: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ warnings: string[] }>> {
+  const supabase = client ?? (await createClient());
+  const today = todayIso();
+
+  const { data: assignmentRow, error: assignmentError } = await supabase
+    .from("trainer_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (assignmentError) return { ok: false, error: assignmentError.message };
+  if (!assignmentRow) return { ok: false, error: "No active trainer program assigned." };
+
+  // Hard cutoff (migration 0078): once the stated end date has passed,
+  // the assignment ends itself rather than generating further weeks --
+  // "every program needs a start and end date" means the end date is a
+  // real boundary, not just a display label. The row is never deleted
+  // (status: 'ended', same as a manual unassign) -- it's exactly what
+  // the trainer's "past programs" list reads to offer reassigning it,
+  // possibly with modifications, later.
+  if (assignmentRow.end_date && today > assignmentRow.end_date) {
+    await supabase
+      .from("trainer_program_assignments")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", assignmentRow.id);
+    return {
+      ok: true,
+      data: { warnings: [`This program ended on ${assignmentRow.end_date}.`] },
+    };
+  }
+
+  const weekEnd = addDays(sundayOfWeekContaining(today), 6);
+  if (assignmentRow.starts_on > weekEnd) {
+    return {
+      ok: true,
+      data: { warnings: [`This program starts ${assignmentRow.starts_on} — nothing to generate for this week yet.`] },
+    };
+  }
+
+  const phases = await getHydratedPhasesForProgram(assignmentRow.program_id, supabase);
+  if (phases.length === 0) return { ok: false, error: "This program has no phases defined yet." };
+
+  return materializeWeek(clientId, assignmentRow, phases, today, false, supabase);
+}
+
+const MAX_BULK_WEEKS = 12;
+
+/**
+ * The manual "push future weeks live now" action (2026-08-06): a
+ * trainer who's already customized several weeks ahead through the
+ * calendar can pull them live today instead of waiting for the cron to
+ * reach each one naturally, one at a time. Always materializes straight
+ * to 'active' (forceActive=true in materializeWeek) regardless of the
+ * assignment's own auto_approve setting -- clicking this button *is*
+ * the explicit approval, for exactly the weeks it covers, no more.
+ *
+ * Capped at MAX_BULK_WEEKS and at the assignment's own end_date, so this
+ * can't be used to generate an unbounded amount of content or push
+ * content past where the program is supposed to stop. The real
+ * auto-end check (has the assignment *actually* ended, as of right now)
+ * still uses real today, never the requested throughDate -- pre-
+ * generating weeks near or past end_date shouldn't retroactively end an
+ * assignment that hasn't really ended yet.
+ */
+export async function generateAndApproveWeeksThrough(
+  clientId: string,
+  throughDate: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ weeksGenerated: number; warnings: string[] }>> {
+  const supabase = client ?? (await createClient());
+  const today = todayIso();
+  if (throughDate < today) return { ok: false, error: "Pick a date today or in the future." };
+
+  const { data: assignmentRow, error: assignmentError } = await supabase
+    .from("trainer_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (assignmentError) return { ok: false, error: assignmentError.message };
+  if (!assignmentRow) return { ok: false, error: "No active trainer program assigned." };
+
+  if (assignmentRow.end_date && today > assignmentRow.end_date) {
+    await supabase
+      .from("trainer_program_assignments")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", assignmentRow.id);
+    return { ok: false, error: `This program already ended on ${assignmentRow.end_date}.` };
+  }
+
+  const effectiveThrough =
+    assignmentRow.end_date && assignmentRow.end_date < throughDate ? assignmentRow.end_date : throughDate;
+  const firstWeekStart = sundayOfWeekContaining(today);
+  const lastWeekStart = sundayOfWeekContaining(effectiveThrough);
+  const weekCount = Math.floor(daysBetween(firstWeekStart, lastWeekStart) / 7) + 1;
+
+  if (weekCount > MAX_BULK_WEEKS) {
+    return { ok: false, error: `That's ${weekCount} weeks — generate at most ${MAX_BULK_WEEKS} at a time.` };
+  }
+
+  const phases = await getHydratedPhasesForProgram(assignmentRow.program_id, supabase);
+  if (phases.length === 0) return { ok: false, error: "This program has no phases defined yet." };
+
+  const warnings: string[] = [];
+  let weeksGenerated = 0;
+  for (let i = 0; i < weekCount; i++) {
+    const anchor = addDays(firstWeekStart, i * 7);
+    if (assignmentRow.starts_on > addDays(anchor, 6)) continue; // whole week falls before the program starts
+    const result = await materializeWeek(clientId, assignmentRow, phases, anchor, true, supabase);
+    if (!result.ok) return result;
+    warnings.push(...result.data.warnings);
+    weeksGenerated++;
+  }
+
+  if (weeksGenerated === 0) {
+    return { ok: false, error: "Nothing to generate — the program hasn't started yet in that range." };
+  }
+
+  return { ok: true, data: { weeksGenerated, warnings } };
 }

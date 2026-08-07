@@ -5,7 +5,7 @@ import { Card } from "@/platform/ui/Card";
 import { ProgramDetailsEditor } from "./ProgramDetailsEditor";
 import { ProgramStatusActions } from "./ProgramStatusActions";
 import { AddPhaseForm } from "./AddPhaseForm";
-import { DeletePhaseButton } from "./DeletePhaseButton";
+import { PhaseHeader } from "./PhaseHeader";
 import { AddSessionForm } from "./AddSessionForm";
 import { DeleteSessionButton } from "./DeleteSessionButton";
 import { AddSessionExerciseForm, SessionExerciseRow } from "./SessionExerciseForm";
@@ -93,24 +93,7 @@ function PhaseCard({
   const takenDays = phase.sessions.map((s) => s.dayOfWeek);
   return (
     <Card>
-      <div className="mb-3 flex items-start justify-between">
-        <div>
-          <p className="font-medium">
-            Phase {phaseNumber}: {phase.name}
-            {phase.isFinal ? (
-              <span className="ml-2 rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 dark:border-neutral-700">
-                Final
-              </span>
-            ) : null}
-          </p>
-          {phase.focus ? <p className="text-sm text-neutral-500">{phase.focus}</p> : null}
-          <p className="text-xs text-neutral-400">
-            {phase.lengthWeeks} week{phase.lengthWeeks === 1 ? "" : "s"}, then{" "}
-            {phase.isFinal ? "the program repeats or freezes per the assignment's setting" : "advances to the next phase"}
-          </p>
-        </div>
-        <DeletePhaseButton phaseId={phase.id} />
-      </div>
+      <PhaseHeader phase={phase} phaseNumber={phaseNumber} />
 
       <div className="space-y-3">
         {phase.sessions

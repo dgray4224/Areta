@@ -6,7 +6,7 @@ export default async function TrainerLayout({ children }: { children: React.Reac
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
-      <div>
+      <div className="flex items-center justify-between">
         <div className="flex gap-3">
           <Link href="/settings/trainer" className="text-sm text-neutral-500 hover:underline">
             ← Settings
@@ -15,12 +15,9 @@ export default async function TrainerLayout({ children }: { children: React.Reac
             Areta
           </Link>
         </div>
-        <div className="mt-2 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Your clients</h1>
-          <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-500 dark:border-neutral-700">
-            Trainer
-          </span>
-        </div>
+        <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-500 dark:border-neutral-700">
+          Trainer
+        </span>
       </div>
 
       {children}

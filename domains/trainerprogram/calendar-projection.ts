@@ -62,7 +62,7 @@ export function sundayOfWeekContaining(isoDate: string): string {
   return addDays(isoDate, -dow);
 }
 
-function daysBetween(fromIso: string, toIso: string): number {
+export function daysBetween(fromIso: string, toIso: string): number {
   const from = new Date(`${fromIso}T00:00:00Z`).getTime();
   const to = new Date(`${toIso}T00:00:00Z`).getTime();
   return Math.round((to - from) / (1000 * 60 * 60 * 24));

@@ -3,7 +3,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { unassignProgram, generateClientWorkoutPlanFromProgram, setClientAutoApprove } from "@/domains/trainer/service";
+import {
+  unassignProgram,
+  generateClientWorkoutPlanFromProgram,
+  setClientAutoApprove,
+  bulkApproveClientWeeks,
+} from "@/domains/trainer/service";
 import { Button } from "@/platform/ui/Button";
 import { Card } from "@/platform/ui/Card";
 import { sundayOfWeekContaining, addDays } from "@/domains/trainerprogram/calendar-projection";
@@ -21,9 +26,12 @@ export function AssignedProgramPanel({
 }) {
   const router = useRouter();
   const [changing, setChanging] = useState(false);
+  const [bulkApproving, setBulkApproving] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [bulkThroughDate, setBulkThroughDate] = useState(() => addDays(new Date().toISOString().slice(0, 10), 28));
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
   const today = new Date().toISOString().slice(0, 10);
   const weekStart = sundayOfWeekContaining(today);
   const weekEnd = addDays(weekStart, 6);
@@ -67,6 +75,23 @@ export function AssignedProgramPanel({
     });
   };
 
+  const onBulkApprove = () => {
+    setError(null);
+    setBulkResult(null);
+    startTransition(async () => {
+      const result = await bulkApproveClientWeeks(clientId, bulkThroughDate);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setWarnings(result.data.warnings);
+      setBulkResult(
+        `Pushed ${result.data.weeksGenerated} week${result.data.weeksGenerated === 1 ? "" : "s"} live, through ${bulkThroughDate}.`
+      );
+      router.refresh();
+    });
+  };
+
   return (
     <Card>
       <div className="flex items-start justify-between">
@@ -103,6 +128,7 @@ export function AssignedProgramPanel({
         Automatically approve each week (skip the manual review click)
       </label>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      {bulkResult ? <p className="mt-2 text-sm text-green-700 dark:text-green-400">{bulkResult}</p> : null}
       {warnings.map((w, i) => (
         <p key={i} className="mt-2 text-sm text-amber-700 dark:text-amber-400">
           {w}
@@ -129,6 +155,15 @@ export function AssignedProgramPanel({
           type="button"
           variant="secondary"
           disabled={isPending}
+          onClick={() => setBulkApproving((v) => !v)}
+          title="Materializes and immediately activates every week between now and a date you choose — for when you've already customized several weeks ahead on the calendar and don't want to wait for each one or approve them one by one."
+        >
+          {bulkApproving ? "Cancel" : "Push weeks live"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={isPending}
           onClick={() => setChanging((v) => !v)}
           title="Swap this client to a different one of your programs. The current assignment ends and a new one starts immediately — the old one stays in this client's history, not deleted."
         >
@@ -144,6 +179,24 @@ export function AssignedProgramPanel({
           Unassign
         </button>
       </div>
+      {bulkApproving ? (
+        <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          <label className="flex flex-col gap-1 text-sm">
+            Push all weeks live through
+            <input
+              type="date"
+              value={bulkThroughDate}
+              min={today}
+              max={assignment.endDate ?? undefined}
+              onChange={(e) => setBulkThroughDate(e.target.value)}
+              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            />
+          </label>
+          <Button type="button" disabled={isPending} onClick={onBulkApprove}>
+            {isPending ? "Working…" : "Push live"}
+          </Button>
+        </div>
+      ) : null}
       {changing ? (
         <div className="mt-3 border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <AssignProgramForm clientId={clientId} programs={programs} />

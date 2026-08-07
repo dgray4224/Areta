@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/platform/auth/session";
 import { EmptyState } from "@/platform/ui/EmptyState";
-import { getWorkoutPlanForWeek, type WorkoutPlanItemView } from "@/domains/workoutplan/service";
+import { getCurrentWorkoutPlan, type WorkoutPlanItemView } from "@/domains/workoutplan/service";
 import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { GenerateWorkoutPlanButton } from "./GenerateWorkoutPlanButton";
 import { ApproveWorkoutPlanButton } from "./ApproveWorkoutPlanButton";
@@ -42,7 +42,7 @@ function formatPrescription(item: WorkoutPlanItemView): string {
 
 export default async function WorkoutsPage() {
   const user = await requireUser();
-  const plan = await getWorkoutPlanForWeek(user.id);
+  const plan = await getCurrentWorkoutPlan(user.id);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
@@ -69,7 +69,7 @@ async function WorkoutPlanBody({
   plan,
 }: {
   userId: string;
-  plan: NonNullable<Awaited<ReturnType<typeof getWorkoutPlanForWeek>>>;
+  plan: NonNullable<Awaited<ReturnType<typeof getCurrentWorkoutPlan>>>;
 }) {
   const exerciseIds = [...new Set(plan.items.map((i) => i.exerciseId))];
   const exercises = await getExercisesByIds(exerciseIds);

@@ -37,6 +37,7 @@ const ACTION_LABELS: Record<string, string> = {
   client_date_override_cleared: "Client calendar date reset to template",
   client_session_moved: "Client session moved on calendar",
   client_auto_approve_changed: "Client auto-approve setting changed",
+  client_weeks_bulk_approved: "Client weeks bulk-approved",
 };
 
 function shortId(id: string): string {
