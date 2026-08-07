@@ -17,9 +17,12 @@ export default async function TrainerDashboardPage() {
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
 
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         <LinkButton href="/trainer/programs" variant="secondary">
-          Your programs
+          Your workout programs
+        </LinkButton>
+        <LinkButton href="/trainer/meal-programs" variant="secondary">
+          Your nutrition programs
         </LinkButton>
         <LinkButton href="/trainer/profile" variant="secondary">
           Edit public profile

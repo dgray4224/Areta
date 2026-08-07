@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listMyPrograms } from "@/domains/trainerprogram/service";
+import { listMyMealPrograms } from "@/domains/trainermealprogram/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { LinkButton } from "@/platform/ui/Button";
@@ -10,8 +10,8 @@ const STATUS_LABEL: Record<string, string> = {
   archived: "Archived",
 };
 
-export default async function TrainerProgramsPage() {
-  const programs = await listMyPrograms();
+export default async function TrainerMealProgramsPage() {
+  const programs = await listMyMealPrograms();
 
   return (
     <div className="space-y-6">
@@ -20,27 +20,27 @@ export default async function TrainerProgramsPage() {
       </Link>
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Your workout programs</h2>
+          <h2 className="text-lg font-semibold">Your nutrition programs</h2>
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Write a program once, then assign it to any client. It&apos;s split into phases — each one runs for a
-            set number of weeks, then moves to the next.
+            Write a meal plan once, then assign it to any client. Split into phases like your workout
+            programs — portion sizes are set per client once assigned, not here.
           </p>
         </div>
-        <LinkButton href="/trainer/programs/new">+ New program</LinkButton>
+        <LinkButton href="/trainer/meal-programs/new">+ New program</LinkButton>
       </div>
 
       {programs.length === 0 ? (
         <EmptyState
-          title="No programs yet"
-          description="Build your first program, then assign it to a client from their workout tab."
-          action={<LinkButton href="/trainer/programs/new">+ New program</LinkButton>}
+          title="No nutrition programs yet"
+          description="Build your first meal program, then assign it to a client from their nutrition tab."
+          action={<LinkButton href="/trainer/meal-programs/new">+ New program</LinkButton>}
         />
       ) : (
         <div className="space-y-3">
           {programs.map((program) => {
             const totalWeeks = program.phases.reduce((sum, p) => sum + p.lengthWeeks, 0);
             return (
-              <Link key={program.id} href={`/trainer/programs/${program.id}`}>
+              <Link key={program.id} href={`/trainer/meal-programs/${program.id}`}>
                 <Card className="transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]">
                   <div className="flex items-center justify-between">
                     <div>

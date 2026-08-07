@@ -44,7 +44,7 @@ export default async function TrainerProgramBuilderPage({
   return (
     <div className="space-y-6">
       <Link href="/trainer/programs" className="text-sm text-neutral-500 hover:underline">
-        ← Your programs
+        ← Your workout programs
       </Link>
 
       {warnings.length > 0 ? (
