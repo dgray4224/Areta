@@ -13,7 +13,7 @@ export function AppHeader({ isAdmin }: { isAdmin: boolean }) {
     <header className="border-b border-black/5 dark:border-white/5">
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
-          <Logo />
+          <Logo size={32} />
           <span className="hidden text-sm text-neutral-400 sm:inline">
             | Become more of who you are
           </span>
