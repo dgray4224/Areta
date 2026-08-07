@@ -1091,6 +1091,7 @@ export type Database = {
           recipe_id: string
           scheduled_time: string | null
           servings: number
+          trainer_meal_program_meal_id: string | null
           user_id: string
         }
         Insert: {
@@ -1106,6 +1107,7 @@ export type Database = {
           recipe_id: string
           scheduled_time?: string | null
           servings?: number
+          trainer_meal_program_meal_id?: string | null
           user_id: string
         }
         Update: {
@@ -1121,6 +1123,7 @@ export type Database = {
           recipe_id?: string
           scheduled_time?: string | null
           servings?: number
+          trainer_meal_program_meal_id?: string | null
           user_id?: string
         }
         Relationships: [
@@ -1145,6 +1148,13 @@ export type Database = {
             referencedRelation: "recipes"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "meal_plan_items_trainer_meal_program_meal_id_fkey"
+            columns: ["trainer_meal_program_meal_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_meal_program_meals"
+            referencedColumns: ["id"]
+          },
         ]
       }
       meal_plans: {
@@ -1154,6 +1164,8 @@ export type Database = {
           id: string
           protein_target: number | null
           status: string
+          trainer_meal_program_id: string | null
+          trainer_meal_program_phase_id: string | null
           updated_at: string
           user_id: string
           week_start: string
@@ -1164,6 +1176,8 @@ export type Database = {
           id?: string
           protein_target?: number | null
           status?: string
+          trainer_meal_program_id?: string | null
+          trainer_meal_program_phase_id?: string | null
           updated_at?: string
           user_id: string
           week_start: string
@@ -1174,11 +1188,28 @@ export type Database = {
           id?: string
           protein_target?: number | null
           status?: string
+          trainer_meal_program_id?: string | null
+          trainer_meal_program_phase_id?: string | null
           updated_at?: string
           user_id?: string
           week_start?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "meal_plans_trainer_meal_program_id_fkey"
+            columns: ["trainer_meal_program_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_meal_programs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meal_plans_trainer_meal_program_phase_id_fkey"
+            columns: ["trainer_meal_program_phase_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_meal_program_phases"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       memories: {
         Row: {
@@ -1787,6 +1818,7 @@ export type Database = {
           carbs_g: number
           cook_minutes: number
           created_at: string
+          created_by: string | null
           dietary_tags: string[]
           fat_g: number
           fiber_g: number | null
@@ -1806,6 +1838,7 @@ export type Database = {
           carbs_g: number
           cook_minutes?: number
           created_at?: string
+          created_by?: string | null
           dietary_tags?: string[]
           fat_g: number
           fiber_g?: number | null
@@ -1825,6 +1858,7 @@ export type Database = {
           carbs_g?: number
           cook_minutes?: number
           created_at?: string
+          created_by?: string | null
           dietary_tags?: string[]
           fat_g?: number
           fiber_g?: number | null
@@ -2367,6 +2401,218 @@ export type Database = {
           trainer_id?: string
           used_at?: string | null
           used_by?: string | null
+        }
+        Relationships: []
+      }
+      trainer_meal_program_assignments: {
+        Row: {
+          client_id: string
+          end_date: string | null
+          ended_at: string | null
+          goal_outcome: string | null
+          id: string
+          linked_goal_id: string | null
+          program_id: string
+          started_at: string
+          starts_on: string
+          status: string
+          trainer_id: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          end_date?: string | null
+          ended_at?: string | null
+          goal_outcome?: string | null
+          id?: string
+          linked_goal_id?: string | null
+          program_id: string
+          started_at?: string
+          starts_on?: string
+          status?: string
+          trainer_id: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          end_date?: string | null
+          ended_at?: string | null
+          goal_outcome?: string | null
+          id?: string
+          linked_goal_id?: string | null
+          program_id?: string
+          started_at?: string
+          starts_on?: string
+          status?: string
+          trainer_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trainer_meal_program_assignments_linked_goal_id_fkey"
+            columns: ["linked_goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trainer_meal_program_assignments_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_meal_programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trainer_meal_program_meals: {
+        Row: {
+          created_at: string
+          day_of_week: number
+          id: string
+          meal_order: number
+          meal_type: string
+          phase_id: string
+          recipe_id: string
+        }
+        Insert: {
+          created_at?: string
+          day_of_week: number
+          id?: string
+          meal_order?: number
+          meal_type: string
+          phase_id: string
+          recipe_id: string
+        }
+        Update: {
+          created_at?: string
+          day_of_week?: number
+          id?: string
+          meal_order?: number
+          meal_type?: string
+          phase_id?: string
+          recipe_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trainer_meal_program_meals_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_meal_program_phases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trainer_meal_program_meals_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "recipes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trainer_meal_program_phases: {
+        Row: {
+          focus: string | null
+          id: string
+          is_final: boolean
+          length_weeks: number
+          name: string
+          phase_order: number
+          program_id: string
+        }
+        Insert: {
+          focus?: string | null
+          id?: string
+          is_final?: boolean
+          length_weeks?: number
+          name: string
+          phase_order: number
+          program_id: string
+        }
+        Update: {
+          focus?: string | null
+          id?: string
+          is_final?: boolean
+          length_weeks?: number
+          name?: string
+          phase_order?: number
+          program_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trainer_meal_program_phases_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_meal_programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trainer_meal_program_portions: {
+        Row: {
+          assignment_id: string
+          id: string
+          program_meal_id: string
+          servings: number
+          updated_at: string
+        }
+        Insert: {
+          assignment_id: string
+          id?: string
+          program_meal_id: string
+          servings?: number
+          updated_at?: string
+        }
+        Update: {
+          assignment_id?: string
+          id?: string
+          program_meal_id?: string
+          servings?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trainer_meal_program_portions_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_meal_program_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trainer_meal_program_portions_program_meal_id_fkey"
+            columns: ["program_meal_id"]
+            isOneToOne: false
+            referencedRelation: "trainer_meal_program_meals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trainer_meal_programs: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          status: string
+          trainer_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          status?: string
+          trainer_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          status?: string
+          trainer_id?: string
+          updated_at?: string
         }
         Relationships: []
       }
