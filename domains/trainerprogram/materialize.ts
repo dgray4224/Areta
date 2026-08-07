@@ -110,13 +110,21 @@ export async function generateAndSaveFromTrainerProgram(
     warnings.push("No sessions are scheduled this week — check the calendar or phase content.");
   }
 
+  // auto_approve (migration 0080, opt-in per assignment): skips the
+  // draft-then-approve step entirely, for a trainer who's already
+  // reviewed everything several weeks ahead via the calendar and found
+  // the recurring weekly approval click to be pure friction rather than
+  // a genuine new review each time. Off by default -- every other
+  // assignment still requires the explicit approve action CLAUDE.md
+  // rule 10 calls for. Applies the same way whether this run came from
+  // the weekly cron or a manual "Regenerate this week" click.
   const { data: plan, error: planError } = await supabase
     .from("workout_plans")
     .upsert(
       {
         user_id: clientId,
         week_start: today,
-        status: "draft",
+        status: assignmentRow.auto_approve ? "active" : "draft",
         phase_focus: phaseName,
         trainer_program_id: assignmentRow.program_id,
         trainer_program_phase_id: phaseId,

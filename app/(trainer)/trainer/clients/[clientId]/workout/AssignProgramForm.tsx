@@ -35,6 +35,7 @@ export function AssignProgramForm({
   const [startsOn, setStartsOn] = useState(todayIso());
   const [endDate, setEndDate] = useState("");
   const [goalOutcome, setGoalOutcome] = useState(initialGoalOutcome ?? "");
+  const [autoApprove, setAutoApprove] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -65,7 +66,15 @@ export function AssignProgramForm({
     }
     setError(null);
     startTransition(async () => {
-      const result = await assignProgramToClient(clientId, programId, onComplete, startsOn, endDate, goalOutcome);
+      const result = await assignProgramToClient(
+        clientId,
+        programId,
+        onComplete,
+        startsOn,
+        endDate,
+        goalOutcome,
+        autoApprove
+      );
       if (!result.ok) {
         setError(result.error);
         return;
@@ -137,6 +146,13 @@ export function AssignProgramForm({
           placeholder="e.g. Increase back squat 1RM by 20 lb"
         />
       </FormField>
+      <label
+        className="flex items-center gap-2 text-sm"
+        title="Skips the weekly manual approve click entirely — each week goes straight from the calendar to live for the client, no separate review step. Turn this on only once you're confident in reviewing everything in advance through the calendar; off is the safer default."
+      >
+        <input type="checkbox" checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)} />
+        Automatically approve each week (skip the manual review click)
+      </label>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <Button type="button" disabled={isPending} onClick={onAssign}>
         {isPending ? "Assigning…" : "Assign program"}

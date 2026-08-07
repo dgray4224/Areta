@@ -2408,6 +2408,7 @@ export type Database = {
       }
       trainer_program_assignments: {
         Row: {
+          auto_approve: boolean
           client_id: string
           end_date: string | null
           ended_at: string | null
@@ -2423,6 +2424,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auto_approve?: boolean
           client_id: string
           end_date?: string | null
           ended_at?: string | null
@@ -2438,6 +2440,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auto_approve?: boolean
           client_id?: string
           end_date?: string | null
           ended_at?: string | null

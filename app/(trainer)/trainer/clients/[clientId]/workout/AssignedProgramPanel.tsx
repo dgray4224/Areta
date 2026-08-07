@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { unassignProgram, generateClientWorkoutPlanFromProgram } from "@/domains/trainer/service";
+import { unassignProgram, generateClientWorkoutPlanFromProgram, setClientAutoApprove } from "@/domains/trainer/service";
 import { Button } from "@/platform/ui/Button";
 import { Card } from "@/platform/ui/Card";
 import { sundayOfWeekContaining, addDays } from "@/domains/trainerprogram/calendar-projection";
@@ -55,6 +55,18 @@ export function AssignedProgramPanel({
     });
   };
 
+  const onToggleAutoApprove = (next: boolean) => {
+    setError(null);
+    startTransition(async () => {
+      const result = await setClientAutoApprove(clientId, next);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  };
+
   return (
     <Card>
       <div className="flex items-start justify-between">
@@ -78,6 +90,18 @@ export function AssignedProgramPanel({
           ) : null}
         </div>
       </div>
+      <label
+        className="mt-3 flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400"
+        title="Skips the weekly manual approve click entirely — each week goes straight from the calendar to live for the client, no separate review step. Turning this on also immediately approves whatever draft is sitting there right now."
+      >
+        <input
+          type="checkbox"
+          checked={assignment.autoApprove}
+          disabled={isPending}
+          onChange={(e) => onToggleAutoApprove(e.target.checked)}
+        />
+        Automatically approve each week (skip the manual review click)
+      </label>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
       {warnings.map((w, i) => (
         <p key={i} className="mt-2 text-sm text-amber-700 dark:text-amber-400">

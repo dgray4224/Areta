@@ -89,6 +89,11 @@ export type TrainerProgramAssignment = {
    * created as a real goals-table row (linked_goal_id) so it shows up
    * on the client's own Goals list, not just here. */
   goalOutcome: string | null;
+  /** Opt-in (migration 0080), off by default -- when true, every
+   * materialized week goes straight to 'active', skipping the normal
+   * draft-then-approve step. Deliberate exception to CLAUDE.md rule 10,
+   * chosen per-assignment by the trainer, not a default behavior. */
+  autoApprove: boolean;
   /** Computed for "today" at load time, purely for display -- null if
    * startsOn is in the future (program hasn't started) or the program
    * has no phases. */

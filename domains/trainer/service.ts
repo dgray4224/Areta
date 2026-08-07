@@ -614,7 +614,8 @@ export async function assignProgramToClient(
   onComplete: "repeat" | "freeze",
   startsOn: string,
   endDate: string,
-  goalOutcome: string
+  goalOutcome: string,
+  autoApprove = false
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
@@ -717,6 +718,7 @@ export async function assignProgramToClient(
     end_date: endDate,
     goal_outcome: trimmedGoal,
     linked_goal_id: goalRow.id,
+    auto_approve: autoApprove,
   });
   if (insertError) {
     if (previousActive) {
@@ -740,7 +742,13 @@ export async function assignProgramToClient(
   const generated = await generateAndSaveFromTrainerProgram(clientId, supabase);
   if (!generated.ok) return generated;
 
-  await logTrainerAction(user, "client_program_assigned", clientId, { programId, onComplete, startsOn, endDate });
+  await logTrainerAction(user, "client_program_assigned", clientId, {
+    programId,
+    onComplete,
+    startsOn,
+    endDate,
+    autoApprove,
+  });
   return { ok: true, data: { warnings: generated.data.warnings } };
 }
 
@@ -805,6 +813,7 @@ async function loadAssignmentView(
     startsOn: row.starts_on,
     endDate: row.end_date,
     goalOutcome: row.goal_outcome,
+    autoApprove: row.auto_approve,
     currentPhaseName: todayProjection?.phaseName ?? null,
     currentWeekInPhase: todayProjection?.weekInPhase ?? null,
     startedAt: row.started_at,
@@ -877,6 +886,36 @@ export async function generateClientWorkoutPlanFromProgram(
   const result = await generateAndSaveFromTrainerProgram(clientId, supabase);
   if (result.ok) await logTrainerAction(user, "client_workout_plan_generated_from_program", clientId, {});
   return result;
+}
+
+/** Toggle for an *existing* assignment -- assignProgramToClient's own
+ * autoApprove param only sets the initial value at assign time, a
+ * trainer deciding partway through a program that the weekly click is
+ * unnecessary shouldn't have to reassign to change it. Turning it on
+ * also immediately approves whatever draft is currently sitting there,
+ * so behavior is consistent right away rather than waiting for the next
+ * regenerate. */
+export async function setClientAutoApprove(clientId: string, autoApprove: boolean): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { error } = await supabase
+    .from("trainer_program_assignments")
+    .update({ auto_approve: autoApprove })
+    .eq("client_id", clientId)
+    .eq("status", "active");
+  if (error) return { ok: false, error: error.message };
+
+  if (autoApprove) {
+    await supabase.from("workout_plans").update({ status: "active" }).eq("user_id", clientId).eq("status", "draft");
+  }
+
+  await logTrainerAction(user, "client_auto_approve_changed", clientId, { autoApprove });
+  return { ok: true, data: undefined };
 }
 
 // ---------------------------------------------------------------------------
