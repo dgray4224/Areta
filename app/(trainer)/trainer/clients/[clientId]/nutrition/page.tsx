@@ -129,15 +129,52 @@ export default async function ClientNutritionPage({
           </p>
           <MealPlanBody items={mealPlan.items} status={mealPlan.status} />
         </div>
-      ) : !assignment ? (
-        <EmptyState title="No meal plan yet" description="Assign a program above to get started." />
       ) : (
-        <EmptyState
-          title="No meal plan generated yet"
-          description="This program hasn't produced a plan for the current week — check the warning above, or that the current phase has meals assigned."
-        />
+        <NoMealPlanState assignment={assignment} />
       )}
     </div>
+  );
+}
+
+/**
+ * Three genuinely different reasons "no meal plan" can be true, each
+ * needing its own message -- collapsing them into one generic "no meal
+ * plan generated yet" (as this used to say) reads as a possible bug even
+ * in the entirely normal, expected case of a not-yet-started assignment
+ * (2026-08-07, found via a real screenshot: an "Upcoming" program two
+ * days from starting showed the same alarmed copy as a genuine failure
+ * would). Mirrors the workout page's own equivalent split
+ * (thisWeekStart/thisWeekEnd + nextSession) for the same reason.
+ */
+function NoMealPlanState({ assignment }: { assignment: Awaited<ReturnType<typeof getClientMealProgramAssignment>> }) {
+  if (!assignment) {
+    return <EmptyState title="No meal plan yet" description="Assign a program above to get started." />;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (assignment.startsOn > today) {
+    return (
+      <EmptyState
+        title={`Starts ${assignment.startsOn}`}
+        description="A meal plan generates automatically once the program starts — nothing to do here yet."
+      />
+    );
+  }
+
+  if (!assignment.currentPhaseId) {
+    return (
+      <EmptyState
+        title="This program's phases have run their course"
+        description="Nothing scheduled this week — assign a new program above, or add another phase in the program builder."
+      />
+    );
+  }
+
+  return (
+    <EmptyState
+      title={`Nothing scheduled for ${assignment.currentPhaseName ?? "the current phase"}, week ${assignment.currentWeekInPhase ?? "?"}`}
+      description="Check that this phase has meals assigned in the program builder."
+    />
   );
 }
 
