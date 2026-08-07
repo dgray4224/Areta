@@ -41,12 +41,18 @@ export default async function ClientNutritionPage({ params }: { params: Promise<
 
       <Card className="grid grid-cols-2 gap-4">
         <div>
-          <p className="text-xs font-medium text-neutral-500">Calorie target</p>
-          <p className="text-sm">{calorieTarget ? `${calorieTarget} cal` : "Not approved yet"}</p>
+          <p className="text-xs font-medium text-neutral-500">Calorie target (daily)</p>
+          <p className="text-sm">{calorieTarget ? `${calorieTarget.toLocaleString()} cal/day` : "Not approved yet"}</p>
+          {calorieTarget ? (
+            <p className="text-xs text-neutral-500">{(calorieTarget * 7).toLocaleString()} cal/week</p>
+          ) : null}
         </div>
         <div>
-          <p className="text-xs font-medium text-neutral-500">Protein target</p>
-          <p className="text-sm">{proteinTarget ? `${proteinTarget} g` : "Not approved yet"}</p>
+          <p className="text-xs font-medium text-neutral-500">Protein target (daily)</p>
+          <p className="text-sm">{proteinTarget ? `${proteinTarget.toLocaleString()} g/day` : "Not approved yet"}</p>
+          {proteinTarget ? (
+            <p className="text-xs text-neutral-500">{(proteinTarget * 7).toLocaleString()} g/week</p>
+          ) : null}
         </div>
       </Card>
 
