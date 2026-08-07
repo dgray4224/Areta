@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listExercisesAdmin } from "@/domains/exerciselibrary/service";
+import { listExercisesAdmin, getExerciseSubmitterNames } from "@/domains/exerciselibrary/service";
 import type { ExerciseStatus } from "@/domains/exerciselibrary/types";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
@@ -22,6 +22,8 @@ export default async function ExercisesAdminPage({
   const exercises = await listExercisesAdmin(
     status && status !== "all" ? (status as ExerciseStatus) : undefined
   );
+  const submitterIds = exercises.map((e) => e.createdBy).filter((id): id is string => id !== null);
+  const submitterNames = await getExerciseSubmitterNames(submitterIds);
 
   return (
     <div className="space-y-4">
@@ -45,6 +47,9 @@ export default async function ExercisesAdminPage({
                     {exercise.movementPattern} · {exercise.difficulty}
                     {exercise.primaryMuscleGroups.length > 0
                       ? ` · ${exercise.primaryMuscleGroups.join(", ")}`
+                      : ""}
+                    {exercise.createdBy
+                      ? ` · Submitted by ${submitterNames.get(exercise.createdBy) ?? "a trainer"}`
                       : ""}
                   </p>
                 </div>

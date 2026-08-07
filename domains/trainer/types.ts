@@ -31,6 +31,10 @@ export type ClientGoal = {
 };
 
 export type ClientHistorySummary = {
+  /** Via get_visible_profile_names (migration 0072) -- null falls back
+   * to "your client" in the UI, same convention as elsewhere in this
+   * file for when a name can't be resolved. */
+  clientName: string | null;
   recentWeightLogs: Array<{ id: string; loggedAt: string; weight: number; unit: string }>;
   recentSleepLogs: Array<{ id: string; date: string; totalDurationMinutes: number | null; quality: number | null }>;
   recentNutritionLogs: Array<{ id: string; date: string; meal: string; food: string; calories: number | null }>;

@@ -11,8 +11,7 @@ import { getApprovedParameterValue, getGeneratedParameters, approveAllGeneratedP
 import { generateAndSaveMealPlan, getMealPlanForWeek, type MealPlanView } from "@/domains/mealplan/service";
 import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
 import {
-  generateAndSaveWorkoutPlan,
-  getWorkoutPlanForWeek,
+  getCurrentWorkoutPlan,
   approveWorkoutPlan,
   customizeWorkoutPlanItemExercise,
   addWorkoutPlanItemExercise,
@@ -20,6 +19,15 @@ import {
   type WorkoutPlanItemView,
   type CustomizeExerciseInput,
 } from "@/domains/workoutplan/service";
+import { getFirstPhase, getHydratedPhasesForProgram } from "@/domains/trainerprogram/service";
+import { generateAndSaveFromTrainerProgram, generateAndApproveWeeksThrough } from "@/domains/trainerprogram/materialize";
+import { projectProgramRange, addDays } from "@/domains/trainerprogram/calendar-projection";
+import {
+  setDateOverride,
+  clearDateOverride,
+  getOverridesForRange,
+  type OverrideExerciseInput,
+} from "@/domains/trainerprogram/overrides";
 import type { ActionResult } from "@/platform/auth/actions";
 import type { Database } from "@/platform/db/types";
 import type {
@@ -33,6 +41,7 @@ import type {
   MyTrainerRequest,
   IncomingTrainerRequest,
 } from "@/domains/trainer/types";
+import type { TrainerProgramAssignment, PastAssignment } from "@/domains/trainerprogram/types";
 
 /** Shared guard for every trainer action that touches a specific client's
  * data — re-verifies the trainer_clients relationship server-side before
@@ -235,7 +244,7 @@ export async function getClientHistorySummary(clientId: string): Promise<ActionR
     return { ok: false, error: "This is not your client." };
   }
 
-  const [weightRes, sleepRes, nutritionRes, recoveryRes, goalsRes] = await Promise.all([
+  const [weightRes, sleepRes, nutritionRes, recoveryRes, goalsRes, nameById] = await Promise.all([
     supabase
       .from("weight_logs")
       .select("id, logged_at, weight, unit")
@@ -265,9 +274,11 @@ export async function getClientHistorySummary(clientId: string): Promise<ActionR
       .select("id, outcome, why, target_date, priority, confidence, status")
       .eq("user_id", clientId)
       .order("priority", { ascending: true, nullsFirst: false }),
+    getVisibleNames(supabase, [clientId]),
   ]);
 
   const summary: ClientHistorySummary = {
+    clientName: nameById.get(clientId) ?? null,
     recentWeightLogs: (weightRes.data ?? []).map((r) => ({
       id: r.id,
       loggedAt: r.logged_at,
@@ -457,25 +468,27 @@ export async function getClientWorkoutOverview(
     return { ok: false, error: "This is not your client." };
   }
 
-  // getWorkoutPlanForWeek, not getActiveWorkoutPlan — same fix and same
-  // reasoning as getClientNutritionOverview above.
-  const workoutPlan = await getWorkoutPlanForWeek(clientId, undefined, supabase);
+  // getCurrentWorkoutPlan (2026-08-06), not getWorkoutPlanForWeek's own
+  // exact-today default or the plain getActiveWorkoutPlan -- the trainer
+  // needs to see whatever's actually current, whether that's a draft
+  // generated today or a still-active plan from earlier in the week that
+  // nothing has touched since (see getCurrentWorkoutPlan's own doc
+  // comment for the underlying week_start-exact-match gap this closes).
+  const workoutPlan = await getCurrentWorkoutPlan(clientId, supabase);
   return { ok: true, data: { workoutPlan } };
 }
 
-export async function generateClientWorkoutPlan(clientId: string): Promise<ActionResult<{ warnings: string[] }>> {
-  const { user } = await requireTrainer();
-  const supabase = await createClient();
-
-  if (!(await requireActiveClient(user.id, clientId, supabase))) {
-    return { ok: false, error: "This is not your client." };
-  }
-
-  const result = await generateAndSaveWorkoutPlan(clientId);
-  if (result.ok) await logTrainerAction(user, "client_workout_plan_generated", clientId, {});
-  return result;
-}
-
+/** Deliberately no generateClientWorkoutPlan wrapper (removed 2026-08-06)
+ * — a trainer can no longer generate a client's workout plan from the
+ * shared library. The client would be paying for a program that's just
+ * the same free generation their own account already does; a trainer's
+ * value is the program they actually author and customize
+ * (domains/trainerprogram), not clicking the same button the client
+ * could click themselves. generateAndSaveWorkoutPlan's own guard already
+ * refuses to run for a trainer-assigned client either way; this is the
+ * other half — no UI or Server Action path exists for a trainer to
+ * trigger it for anyone. Approval stays (below): a trainer-program-
+ * sourced draft still needs one, same as any generated plan. */
 export async function approveClientWorkoutPlan(clientId: string): Promise<ActionResult> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
@@ -484,7 +497,7 @@ export async function approveClientWorkoutPlan(clientId: string): Promise<Action
     return { ok: false, error: "This is not your client." };
   }
 
-  const result = await approveWorkoutPlan(clientId);
+  const result = await approveWorkoutPlan(clientId, supabase);
   if (result.ok) await logTrainerAction(user, "client_workout_plan_approved", clientId, {});
   return result;
 }
@@ -582,6 +595,571 @@ export async function addClientWorkoutItem(
 
   await logTrainerAction(user, "client_workout_item_added", clientId, { dayOfWeek, ...input });
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Trainer-authored programs (2026-08-06) — assigning one of the trainer's
+// own domains/trainerprogram programs to a client, the default workout
+// view for a trainer's client page now. Authoring itself (create program/
+// phase/session/exercise) lives in domains/trainerprogram/service.ts,
+// since it's not client-scoped — these are the only trainer-program
+// functions that need requireActiveClient.
+// ---------------------------------------------------------------------------
+
+/** end_date and goalOutcome are both required (2026-08-06: "every time a
+ * trainer sets a program, they need to specify the start and end date,
+ * the tangible goals") — enforced here, not the database (migration
+ * 0078's own comment explains why the columns themselves stay nullable).
+ * goalOutcome becomes a real goals-table row (domain=exercise, so it
+ * shows up alongside the client's own goals, filtered to the same
+ * fitness-relevant/active view a trainer already sees — migration 0077),
+ * not just a label on the assignment. */
+export async function assignProgramToClient(
+  clientId: string,
+  programId: string,
+  onComplete: "repeat" | "freeze",
+  startsOn: string,
+  endDate: string,
+  goalOutcome: string,
+  autoApprove = false
+): Promise<ActionResult<{ warnings: string[] }>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const resolvedStartsOn = startsOn || new Date().toISOString().slice(0, 10);
+  const trimmedGoal = goalOutcome.trim();
+  if (!trimmedGoal) return { ok: false, error: "State a tangible goal for this program." };
+  if (!endDate) return { ok: false, error: "Set an end date for this program." };
+  if (endDate <= resolvedStartsOn) return { ok: false, error: "End date must be after the start date." };
+
+  const { data: programRow } = await supabase
+    .from("trainer_programs")
+    .select("id, trainer_id, status")
+    .eq("id", programId)
+    .maybeSingle();
+  if (!programRow || programRow.trainer_id !== user.id) {
+    return { ok: false, error: "Program not found." };
+  }
+  // Also enforced by only listing published programs in the assign UI,
+  // but checked again here since a draft (including one an AI import
+  // just created, before the trainer has reviewed it) must never reach a
+  // client via a direct action call either.
+  if (programRow.status !== "published") {
+    return { ok: false, error: "Publish this program before assigning it." };
+  }
+
+  const firstPhase = await getFirstPhase(programId, supabase);
+  if (!firstPhase) {
+    return { ok: false, error: "Add at least one phase to this program before assigning it." };
+  }
+
+  // Find or create the client's "exercise" domain to hang the goal off
+  // of -- not every onboarding path is guaranteed to have created one in
+  // advance. A plain select-then-insert rather than an upsert so an
+  // already-existing domain's label/is_active never gets silently
+  // overwritten by this unrelated flow.
+  const { data: existingDomain } = await supabase
+    .from("domains")
+    .select("id")
+    .eq("user_id", clientId)
+    .eq("key", "exercise")
+    .maybeSingle();
+
+  let domainId = existingDomain?.id;
+  if (!domainId) {
+    const { data: newDomain, error: domainError } = await supabase
+      .from("domains")
+      .insert({ user_id: clientId, key: "exercise", label: "Exercise" })
+      .select("id")
+      .single();
+    if (domainError || !newDomain) {
+      return { ok: false, error: `Couldn't set up the client's exercise goals: ${domainError?.message}` };
+    }
+    domainId = newDomain.id;
+  }
+
+  const { data: goalRow, error: goalError } = await supabase
+    .from("goals")
+    .insert({ user_id: clientId, domain_id: domainId, outcome: trimmedGoal, target_date: endDate, status: "active" })
+    .select("id")
+    .single();
+  if (goalError || !goalRow) {
+    return { ok: false, error: `Couldn't create the linked goal: ${goalError?.message}` };
+  }
+
+  // End any existing active assignment for this client first — the
+  // partial unique index (one active assignment per client, migration
+  // 0075) would otherwise reject the new insert. Switching programs
+  // deliberately doesn't require a separate "unassign" step first.
+  // Recorded by id (not just "ended") so a failed insert below can
+  // reactivate exactly this row rather than leaving the client with no
+  // active assignment at all — found in code review, 2026-08-06: two
+  // sequential writes with no real transaction at this layer means a
+  // failure between them previously stranded the client program-less.
+  const { data: previousActive } = await supabase
+    .from("trainer_program_assignments")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (previousActive) {
+    const { error: endError } = await supabase
+      .from("trainer_program_assignments")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", previousActive.id);
+    if (endError) return { ok: false, error: endError.message };
+  }
+
+  const { error: insertError } = await supabase.from("trainer_program_assignments").insert({
+    program_id: programId,
+    trainer_id: user.id,
+    client_id: clientId,
+    on_complete: onComplete,
+    starts_on: resolvedStartsOn,
+    end_date: endDate,
+    goal_outcome: trimmedGoal,
+    linked_goal_id: goalRow.id,
+    auto_approve: autoApprove,
+  });
+  if (insertError) {
+    if (previousActive) {
+      await supabase
+        .from("trainer_program_assignments")
+        .update({ status: "active", ended_at: null })
+        .eq("id", previousActive.id);
+    }
+    // Can't delete a client's goal (trainers never get that permission,
+    // by design), so soft-clean the orphan instead of leaving it looking
+    // like a real active goal with nothing behind it.
+    await supabase.from("goals").update({ status: "abandoned" }).eq("id", goalRow.id);
+    return { ok: false, error: insertError.message };
+  }
+
+  // A no-op (with an explanatory warning, not an error) if startsOn is in
+  // the future — generateAndSaveFromTrainerProgram itself checks that.
+  // Its warnings are surfaced here rather than discarded (found in code
+  // review, 2026-08-06) — a future-dated assignment previously reported
+  // bare success with no indication nothing was actually generated yet.
+  const generated = await generateAndSaveFromTrainerProgram(clientId, supabase);
+  if (!generated.ok) return generated;
+
+  await logTrainerAction(user, "client_program_assigned", clientId, {
+    programId,
+    onComplete,
+    startsOn,
+    endDate,
+    autoApprove,
+  });
+  return { ok: true, data: { warnings: generated.data.warnings } };
+}
+
+export async function unassignProgram(clientId: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { error } = await supabase
+    .from("trainer_program_assignments")
+    .update({ status: "ended", ended_at: new Date().toISOString() })
+    .eq("client_id", clientId)
+    .eq("status", "active");
+  if (error) return { ok: false, error: error.message };
+
+  await logTrainerAction(user, "client_program_unassigned", clientId, {});
+  return { ok: true, data: undefined };
+}
+
+async function loadAssignmentView(
+  clientId: string,
+  supabase: SupabaseClient<Database>
+): Promise<TrainerProgramAssignment | null> {
+  const { data: row } = await supabase
+    .from("trainer_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!row) return null;
+
+  const [{ data: programRow }, phases] = await Promise.all([
+    supabase.from("trainer_programs").select("name").eq("id", row.program_id).maybeSingle(),
+    getHydratedPhasesForProgram(row.program_id, supabase),
+  ]);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const [todayProjection] =
+    phases.length > 0 && row.starts_on <= today
+      ? projectProgramRange({
+          startsOn: row.starts_on,
+          endDate: row.end_date,
+          phases,
+          onComplete: row.on_complete as TrainerProgramAssignment["onComplete"],
+          rangeStart: today,
+          rangeEnd: today,
+          overridesByDate: new Map(),
+        })
+      : [];
+
+  return {
+    id: row.id,
+    programId: row.program_id,
+    programName: programRow?.name ?? "Untitled program",
+    trainerId: row.trainer_id,
+    clientId: row.client_id,
+    status: row.status as TrainerProgramAssignment["status"],
+    onComplete: row.on_complete as TrainerProgramAssignment["onComplete"],
+    startsOn: row.starts_on,
+    endDate: row.end_date,
+    goalOutcome: row.goal_outcome,
+    autoApprove: row.auto_approve,
+    currentPhaseName: todayProjection?.phaseName ?? null,
+    currentWeekInPhase: todayProjection?.weekInPhase ?? null,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+  };
+}
+
+export async function getClientProgramAssignment(clientId: string): Promise<TrainerProgramAssignment | null> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) return null;
+  return loadAssignmentView(clientId, supabase);
+}
+
+/** Ended assignments are never deleted (2026-08-06: "programs should stay
+ * in archive with the trainer having the ability to recycle it again") --
+ * this is that archive. Reassigning is just AssignProgramForm again,
+ * pre-filled from one of these entries; no separate "recycle" action or
+ * schema needed, since editing the program itself (before reassigning)
+ * is how "with modifications" happens. */
+export async function listClientAssignmentHistory(clientId: string): Promise<ActionResult<PastAssignment[]>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { data: rows, error } = await supabase
+    .from("trainer_program_assignments")
+    .select("id, program_id, starts_on, end_date, goal_outcome, status, started_at, ended_at")
+    .eq("client_id", clientId)
+    .eq("status", "ended")
+    .order("started_at", { ascending: false });
+  if (error) return { ok: false, error: error.message };
+  if (!rows || rows.length === 0) return { ok: true, data: [] };
+
+  const programIds = Array.from(new Set(rows.map((r) => r.program_id)));
+  const { data: programRows } = await supabase.from("trainer_programs").select("id, name").in("id", programIds);
+  const nameById = new Map((programRows ?? []).map((p) => [p.id, p.name]));
+
+  return {
+    ok: true,
+    data: rows.map((r) => ({
+      id: r.id,
+      programId: r.program_id,
+      programName: nameById.get(r.program_id) ?? "Untitled program",
+      startsOn: r.starts_on,
+      endDate: r.end_date,
+      goalOutcome: r.goal_outcome,
+      startedAt: r.started_at,
+      endedAt: r.ended_at,
+    })),
+  };
+}
+
+/** Manual "(re)generate this week" for a trainer-assigned program — same
+ * button whether it's the very first week or a mid-program regenerate,
+ * naturally idempotent now that generation is a pure projection of
+ * (starts_on, phases, overrides) rather than a pointer that advances. */
+export async function generateClientWorkoutPlanFromProgram(
+  clientId: string
+): Promise<ActionResult<{ warnings: string[] }>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await generateAndSaveFromTrainerProgram(clientId, supabase);
+  if (result.ok) await logTrainerAction(user, "client_workout_plan_generated_from_program", clientId, {});
+  return result;
+}
+
+/** Toggle for an *existing* assignment -- assignProgramToClient's own
+ * autoApprove param only sets the initial value at assign time, a
+ * trainer deciding partway through a program that the weekly click is
+ * unnecessary shouldn't have to reassign to change it. Turning it on
+ * also immediately approves whatever draft is currently sitting there,
+ * so behavior is consistent right away rather than waiting for the next
+ * regenerate. */
+export async function setClientAutoApprove(clientId: string, autoApprove: boolean): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { error } = await supabase
+    .from("trainer_program_assignments")
+    .update({ auto_approve: autoApprove })
+    .eq("client_id", clientId)
+    .eq("status", "active");
+  if (error) return { ok: false, error: error.message };
+
+  if (autoApprove) {
+    await supabase.from("workout_plans").update({ status: "active" }).eq("user_id", clientId).eq("status", "draft");
+  }
+
+  await logTrainerAction(user, "client_auto_approve_changed", clientId, { autoApprove });
+  return { ok: true, data: undefined };
+}
+
+/** Manual "push weeks live now" (2026-08-06) — for a trainer who's
+ * customized several weeks ahead through the calendar and doesn't want
+ * to wait for the weekly cron to reach each one, or re-approve every
+ * single week by hand. Distinct from auto_approve: this is a one-time
+ * bulk push through an explicit date, not a standing "always skip
+ * approval" setting — the trainer chooses exactly how far to go each
+ * time they use it. Still gated the same way auto_approve is: a
+ * deliberate, visible exception to CLAUDE.md's "require approval before
+ * changing active plans" rule, never a silent default. */
+export async function bulkApproveClientWeeks(
+  clientId: string,
+  throughDate: string
+): Promise<ActionResult<{ weeksGenerated: number; warnings: string[] }>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await generateAndApproveWeeksThrough(clientId, throughDate, supabase);
+  if (result.ok) {
+    await logTrainerAction(user, "client_weeks_bulk_approved", clientId, {
+      throughDate,
+      weeksGenerated: result.data.weeksGenerated,
+    });
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Calendar (2026-08-06) — month-by-month view of a client's assigned
+// program, and per-date overrides/drag-move on top of it. All still
+// scoped through requireActiveClient like every other trainer-on-client
+// action here; the low-level read/write logic lives in
+// domains/trainerprogram/overrides.ts and calendar-projection.ts.
+// ---------------------------------------------------------------------------
+
+export async function getClientMonthCalendar(
+  clientId: string,
+  monthStart: string,
+  monthEnd: string
+): Promise<ActionResult<ReturnType<typeof projectProgramRange>>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { data: assignment } = await supabase
+    .from("trainer_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!assignment) return { ok: false, error: "No active program assigned." };
+
+  const phases = await getHydratedPhasesForProgram(assignment.program_id, supabase);
+  const overridesByDate = await getOverridesForRange(assignment.id, monthStart, monthEnd, supabase);
+
+  const days = projectProgramRange({
+    startsOn: assignment.starts_on,
+    endDate: assignment.end_date,
+    phases,
+    onComplete: assignment.on_complete as TrainerProgramAssignment["onComplete"],
+    rangeStart: monthStart,
+    rangeEnd: monthEnd,
+    overridesByDate,
+  });
+
+  return { ok: true, data: days };
+}
+
+/** For the workout page's empty-state -- when the *current* week
+ * genuinely has nothing scheduled (a real, common case: any program with
+ * fewer than 7 sessions/week will have some weeks where none of its
+ * days fall between "today" and the end of the week, especially right
+ * after assigning mid-week), "No workout plan yet" reads as broken even
+ * though it's accurate to that one week. This looks further ahead (30
+ * days) so the page can say what's actually coming instead of just
+ * looking empty. Found 2026-08-06 when a trainer assigned a Mon/Wed-only
+ * program on a Thursday -- the rest of that calendar week legitimately
+ * has no sessions, but the UI gave no indication why or what to expect
+ * next. */
+export async function getNextScheduledSession(
+  clientId: string
+): Promise<ActionResult<{ date: string; sessionName: string | null } | null>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { data: assignment } = await supabase
+    .from("trainer_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!assignment) return { ok: true, data: null };
+
+  const phases = await getHydratedPhasesForProgram(assignment.program_id, supabase);
+  const today = new Date().toISOString().slice(0, 10);
+  const rangeEnd = addDays(today, 30);
+  const overridesByDate = await getOverridesForRange(assignment.id, today, rangeEnd, supabase);
+
+  const days = projectProgramRange({
+    startsOn: assignment.starts_on,
+    endDate: assignment.end_date,
+    phases,
+    onComplete: assignment.on_complete as TrainerProgramAssignment["onComplete"],
+    rangeStart: today,
+    rangeEnd,
+    overridesByDate,
+  });
+
+  const next = days.find((d) => d.exercises.length > 0);
+  return { ok: true, data: next ? { date: next.date, sessionName: next.sessionName } : null };
+}
+
+export async function setClientDateOverride(
+  clientId: string,
+  date: string,
+  input: { isRestDay: boolean; exercises: OverrideExerciseInput[] }
+): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await setDateOverride(clientId, date, input, supabase);
+  if (result.ok) {
+    await logTrainerAction(user, "client_date_override_set", clientId, { date, isRestDay: input.isRestDay });
+  }
+  return result;
+}
+
+export async function clearClientDateOverride(clientId: string, date: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const result = await clearDateOverride(clientId, date, supabase);
+  if (result.ok) await logTrainerAction(user, "client_date_override_cleared", clientId, { date });
+  return result;
+}
+
+/** Drag-and-drop "move" semantics: fromDate's effective content (whether
+ * already an override or just the recurring template) becomes toDate's
+ * new override, and fromDate itself becomes a rest-day override — a
+ * move, not a copy, matching normal calendar drag UX. Both dates go
+ * through the same past/not-started validation as any other override
+ * write (setDateOverride), so this refuses to touch history either.
+ *
+ * Two sequential writes, no real database transaction available at this
+ * layer — if the second (fromDate) write fails after the first (toDate)
+ * succeeded, the naive version would leave the session duplicated on
+ * both dates rather than moved. Snapshots toDate's pre-move state first
+ * and restores it (found in code review, 2026-08-06) if the fromDate
+ * write fails, so a failure always leaves the calendar exactly as it was
+ * before the drag, never duplicated. */
+export async function moveClientSessionToDate(
+  clientId: string,
+  fromDate: string,
+  toDate: string
+): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+  if (fromDate === toDate) return { ok: true, data: undefined };
+
+  const { data: assignment } = await supabase
+    .from("trainer_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!assignment) return { ok: false, error: "No active program assigned." };
+
+  const phases = await getHydratedPhasesForProgram(assignment.program_id, supabase);
+  const overridesByDate = await getOverridesForRange(assignment.id, fromDate, toDate, supabase);
+  const onComplete = assignment.on_complete as TrainerProgramAssignment["onComplete"];
+
+  const [fromProjection] = projectProgramRange({
+    startsOn: assignment.starts_on,
+    endDate: assignment.end_date,
+    phases,
+    onComplete,
+    rangeStart: fromDate,
+    rangeEnd: fromDate,
+    overridesByDate,
+  });
+  if (!fromProjection) return { ok: false, error: "Couldn't read that date." };
+
+  // Snapshot toDate's pre-move state so a failed second write can be
+  // rolled back to exactly this, not just cleared to template.
+  const [toProjectionBefore] = projectProgramRange({
+    startsOn: assignment.starts_on,
+    endDate: assignment.end_date,
+    phases,
+    onComplete,
+    rangeStart: toDate,
+    rangeEnd: toDate,
+    overridesByDate,
+  });
+
+  const toResult = await setDateOverride(
+    clientId,
+    toDate,
+    { isRestDay: fromProjection.exercises.length === 0, exercises: fromProjection.exercises },
+    supabase
+  );
+  if (!toResult.ok) return toResult;
+
+  const fromResult = await setDateOverride(clientId, fromDate, { isRestDay: true, exercises: [] }, supabase);
+  if (!fromResult.ok) {
+    if (toProjectionBefore?.source === "override") {
+      await setDateOverride(
+        clientId,
+        toDate,
+        { isRestDay: toProjectionBefore.exercises.length === 0, exercises: toProjectionBefore.exercises },
+        supabase
+      );
+    } else {
+      await clearDateOverride(clientId, toDate, supabase);
+    }
+    return fromResult;
+  }
+
+  await logTrainerAction(user, "client_session_moved", clientId, { fromDate, toDate });
+  return { ok: true, data: undefined };
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
+import { createAdminClient } from "@/platform/supabase/admin";
 import { requireAdmin } from "@/platform/auth/admin";
 import { logAdminAction } from "@/platform/audit/log";
 import type { Database } from "@/platform/db/types";
@@ -101,7 +102,24 @@ function toAdminExercise(row: Database["public"]["Tables"]["exercises"]["Row"]):
     imageUrl: row.image_url,
     videoUrl: row.video_url,
     createdAt: row.created_at,
+    createdBy: row.created_by,
   };
+}
+
+/** Resolves created_by ids to display names for the admin content review
+ * queue — goes through the service-role client rather than
+ * get_visible_profile_names, since that RPC is gated by trainer/client/
+ * marketplace relationships (migration 0072) and has no admin bypass; an
+ * admin reviewing a random trainer's submission isn't in any of those
+ * relationships with them. */
+export async function getExerciseSubmitterNames(ids: string[]): Promise<Map<string, string | null>> {
+  await requireAdmin();
+  const uniqueIds = Array.from(new Set(ids));
+  if (uniqueIds.length === 0) return new Map();
+
+  const admin = createAdminClient();
+  const { data } = await admin.from("profiles").select("id, full_name").in("id", uniqueIds);
+  return new Map((data ?? []).map((row) => [row.id, row.full_name]));
 }
 
 export async function countExercisesByStatus(

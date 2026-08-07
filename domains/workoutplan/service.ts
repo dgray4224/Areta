@@ -43,6 +43,28 @@ export async function generateAndSaveWorkoutPlan(
   const supabase = client ?? (await createClient());
   const weekStart = currentWeekStart();
 
+  // A client with an active trainer-assigned program (2026-08-06) should
+  // never have it silently clobbered by the library generator — both
+  // upsert onto the same (user_id, week_start) row, so whichever ran last
+  // would win with no warning either way. Trainer-side generation always
+  // goes through generateAndSaveFromTrainerProgram instead, which is
+  // exempt from this check (different code path entirely); this only
+  // guards the path a client or trainer could otherwise reach by mistake
+  // (the client's own "Generate" button on their Workouts page, or a
+  // trainer's demoted-to-secondary "Generate from library" action).
+  const { data: activeAssignment } = await supabase
+    .from("trainer_program_assignments")
+    .select("id")
+    .eq("client_id", userId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (activeAssignment) {
+    return {
+      ok: false,
+      error: "Your trainer has assigned you a program. Ask them to change or unassign it before generating a plan here.",
+    };
+  }
+
   const [sessionsPerWeek, parameters, { data: responses }] = await Promise.all([
     getApprovedParameterValue(userId, "exercise", "sessions_per_week"),
     getGeneratedParameters(userId, "exercise"),
@@ -244,18 +266,31 @@ export async function generateAndSaveWorkoutPlan(
   return { ok: true, data: { warnings } };
 }
 
-export async function approveWorkoutPlan(userId: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const weekStart = currentWeekStart();
-  const { error } = await supabase
+/**
+ * Approves whatever the most recent *draft* plan actually is, by id --
+ * not by an exact week_start === today match (found 2026-08-06, same
+ * root cause as getCurrentWorkoutPlan's own doc comment: a draft's
+ * week_start is stamped once, at generation time, so this would
+ * previously silently match zero rows -- update()'s error is null on a
+ * zero-row match, so approving would report success while doing
+ * nothing -- for anyone approving on a different day than whenever the
+ * draft was generated). Returns an explicit error when there's nothing
+ * to approve instead of that silent no-op.
+ */
+export async function approveWorkoutPlan(userId: string, client?: SupabaseClient<Database>): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
+  const { data: draftPlan } = await supabase
     .from("workout_plans")
-    .update({ status: "active" })
+    .select("id")
     .eq("user_id", userId)
-    .eq("week_start", weekStart);
+    .eq("status", "draft")
+    .order("week_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!draftPlan) return { ok: false, error: "No draft plan to approve." };
 
-  if (error) {
-    return { ok: false, error: error.message };
-  }
+  const { error } = await supabase.from("workout_plans").update({ status: "active" }).eq("id", draftPlan.id);
+  if (error) return { ok: false, error: error.message };
   return { ok: true, data: undefined };
 }
 
@@ -397,6 +432,39 @@ export async function getActiveWorkoutPlan(
 
   if (!plan) return null;
   return getWorkoutPlanForWeek(userId, plan.week_start, supabase);
+}
+
+/**
+ * Resilient "what should this user see as their current workout plan"
+ * lookup -- found missing 2026-08-06 while building a trainer feature
+ * that surfaces exactly this gap. getWorkoutPlanForWeek's own default
+ * (week_start === today, exact match) only matches on the *exact* day a
+ * plan was generated or approved, since both only ever stamp week_start
+ * with "today at that moment" and the weekly cron (or a client's own
+ * generate/approve click) typically only touches a given plan once per
+ * week. Every day other than that one, the dashboard and /plan/workouts
+ * would see a real, still-active plan as "no plan at all" -- pre-existing,
+ * not introduced by the trainer-program work, but directly blocking it
+ * (a trainer materializing a future week needs the client to actually
+ * be able to see it on whatever day they check, not just the day it was
+ * generated).
+ *
+ * Tries the exact-today row first, same as before -- a same-day fresh
+ * draft still shows immediately, unchanged from prior behavior -- then
+ * falls back to the most recent *active* row regardless of date (the
+ * same resilient query getActiveWorkoutPlan above already uses for the
+ * mobile API). The two together cover both cases that matter: "I just
+ * generated/edited something today" and "nothing changed today, but
+ * what I approved earlier this week is still what's current".
+ */
+export async function getCurrentWorkoutPlan(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<WorkoutPlanView | null> {
+  const supabase = client ?? (await createClient());
+  const todaysPlan = await getWorkoutPlanForWeek(userId, undefined, supabase);
+  if (todaysPlan) return todaysPlan;
+  return getActiveWorkoutPlan(userId, supabase);
 }
 
 /**

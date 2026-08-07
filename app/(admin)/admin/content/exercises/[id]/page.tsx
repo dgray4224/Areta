@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getExerciseAdmin } from "@/domains/exerciselibrary/service";
+import { getExerciseAdmin, getExerciseSubmitterNames } from "@/domains/exerciselibrary/service";
 import { ExerciseForm } from "../ExerciseForm";
 import type { ExerciseAdminInput } from "@/domains/exerciselibrary/schema";
 
@@ -8,6 +8,10 @@ export default async function ExerciseDetailPage({ params }: { params: Promise<{
   const { id } = await params;
   const exercise = await getExerciseAdmin(id);
   if (!exercise) notFound();
+
+  const submitterName = exercise.createdBy
+    ? (await getExerciseSubmitterNames([exercise.createdBy])).get(exercise.createdBy)
+    : null;
 
   const defaultValues: Partial<ExerciseAdminInput> = {
     name: exercise.name,
@@ -37,6 +41,9 @@ export default async function ExerciseDetailPage({ params }: { params: Promise<{
         ← Exercises
       </Link>
       <h2 className="text-lg font-semibold">{exercise.name}</h2>
+      {exercise.createdBy ? (
+        <p className="text-sm text-neutral-500">Submitted by {submitterName ?? "a trainer"}, status: {exercise.status}</p>
+      ) : null}
       <ExerciseForm mode="edit" exerciseId={exercise.id} defaultValues={defaultValues} />
     </div>
   );

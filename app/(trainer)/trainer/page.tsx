@@ -15,7 +15,12 @@ export default async function TrainerDashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-end">
+      <h1 className="text-2xl font-semibold">Your clients</h1>
+
+      <div className="flex justify-end gap-2">
+        <LinkButton href="/trainer/programs" variant="secondary">
+          Your programs
+        </LinkButton>
         <LinkButton href="/trainer/profile" variant="secondary">
           Edit public profile
         </LinkButton>

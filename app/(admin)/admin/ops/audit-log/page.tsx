@@ -27,6 +27,17 @@ const ACTION_LABELS: Record<string, string> = {
   trainer_invite_code_revoked: "Trainer invite code revoked",
   trainer_request_accepted: "Trainer request accepted",
   trainer_request_declined: "Trainer request declined",
+  trainer_program_created: "Trainer program created",
+  trainer_program_status_changed: "Trainer program status changed",
+  trainer_exercise_submitted: "Trainer submitted a new exercise",
+  client_program_assigned: "Client assigned a trainer program",
+  client_program_unassigned: "Client unassigned from a trainer program",
+  client_workout_plan_generated_from_program: "Client workout plan generated from trainer program",
+  client_date_override_set: "Client calendar date customized",
+  client_date_override_cleared: "Client calendar date reset to template",
+  client_session_moved: "Client session moved on calendar",
+  client_auto_approve_changed: "Client auto-approve setting changed",
+  client_weeks_bulk_approved: "Client weeks bulk-approved",
 };
 
 function shortId(id: string): string {

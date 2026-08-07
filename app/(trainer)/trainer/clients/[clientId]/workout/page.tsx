@@ -1,12 +1,22 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getClientWorkoutOverview, generateClientWorkoutPlan, approveClientWorkoutPlan } from "@/domains/trainer/service";
+import {
+  getClientWorkoutOverview,
+  getClientProgramAssignment,
+  listClientAssignmentHistory,
+  getNextScheduledSession,
+} from "@/domains/trainer/service";
+import { listMyPrograms } from "@/domains/trainerprogram/service";
+import { sundayOfWeekContaining, addDays } from "@/domains/trainerprogram/calendar-projection";
 import { getExercisesByIds, getAllExercises } from "@/domains/exerciselibrary/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
-import { PlanActions } from "../PlanActions";
 import { WorkoutItemCustomizer } from "./WorkoutItemCustomizer";
 import { AddWorkoutItem } from "./AddWorkoutItem";
+import { AssignedProgramPanel } from "./AssignedProgramPanel";
+import { AssignProgramForm } from "./AssignProgramForm";
+import { ApproveWorkoutPlanButton } from "./ApproveWorkoutPlanButton";
+import { PastProgramsList } from "./PastProgramsList";
 import type { WorkoutPlanItemView } from "@/domains/workoutplan/service";
 import type { Exercise } from "@/domains/exerciselibrary/types";
 
@@ -36,11 +46,40 @@ function formatPrescription(item: WorkoutPlanItemView): string {
   return `${item.sets ?? "?"} × ${repsLabel}${intensitySuffix}`;
 }
 
-export default async function ClientWorkoutPage({ params }: { params: Promise<{ clientId: string }> }) {
+export default async function ClientWorkoutPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ clientId: string }>;
+  searchParams: Promise<{ assignWarnings?: string }>;
+}) {
   const { clientId } = await params;
-  const result = await getClientWorkoutOverview(clientId);
+  const { assignWarnings } = await searchParams;
+  const [result, assignment, allPrograms, historyResult, nextSessionResult] = await Promise.all([
+    getClientWorkoutOverview(clientId),
+    getClientProgramAssignment(clientId),
+    listMyPrograms(),
+    listClientAssignmentHistory(clientId),
+    getNextScheduledSession(clientId),
+  ]);
   if (!result.ok) notFound();
   const { workoutPlan } = result.data;
+  const publishedPrograms = allPrograms.filter((p) => p.status === "published");
+  const history = historyResult.ok ? historyResult.data : [];
+  const nextSession = nextSessionResult.ok ? nextSessionResult.data : null;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const thisWeekStart = sundayOfWeekContaining(today);
+  const thisWeekEnd = addDays(thisWeekStart, 6);
+
+  let warnings: string[] = [];
+  if (assignWarnings) {
+    try {
+      warnings = JSON.parse(assignWarnings);
+    } catch {
+      // Malformed query param -- ignore rather than error the page.
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -49,25 +88,50 @@ export default async function ClientWorkoutPage({ params }: { params: Promise<{ 
       </Link>
       <h2 className="text-lg font-semibold">Workout program</h2>
 
-      <p className="text-sm text-neutral-600 dark:text-neutral-400">
-        Generating pulls from the same training-program library your client&apos;s own plan would use.
-        Each item can be freely replaced with any exercise in the library, or you can add extra exercises
-        to a day — both need an already-<span className="font-medium">approved</span> plan to start from,
-        and both send it back to draft afterward so the change gets approved before it&apos;s live again,
-        same as a fresh generate.
-      </p>
+      {warnings.length > 0 ? (
+        <div className="space-y-1 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          {warnings.map((w, i) => (
+            <p key={i}>{w}</p>
+          ))}
+        </div>
+      ) : null}
 
-      <PlanActions
-        clientId={clientId}
-        hasDraft={workoutPlan?.status === "draft"}
-        onGenerate={generateClientWorkoutPlan}
-        onApprove={approveClientWorkoutPlan}
-        generateLabel={workoutPlan ? "Regenerate plan" : "Generate workout plan"}
-        approveLabel="Approve plan"
-      />
+      {assignment ? (
+        <AssignedProgramPanel clientId={clientId} assignment={assignment} programs={publishedPrograms} />
+      ) : (
+        <Card>
+          <p className="mb-2 text-sm font-medium">Assign one of your programs</p>
+          <p className="mb-3 text-sm text-neutral-600 dark:text-neutral-400">
+            Write and reuse your own programs at{" "}
+            <Link href="/trainer/programs" className="underline">
+              Your programs
+            </Link>
+            , then assign one here. There&apos;s no library-generated fallback for a trainer-managed client — a
+            program you&apos;ve actually built and customized is the whole point of paying for a trainer.
+          </p>
+          <AssignProgramForm clientId={clientId} programs={publishedPrograms} />
+        </Card>
+      )}
+
+      {workoutPlan?.status === "draft" ? <ApproveWorkoutPlanButton clientId={clientId} /> : null}
+
+      {history.length > 0 ? (
+        <PastProgramsList clientId={clientId} history={history} programs={publishedPrograms} />
+      ) : null}
 
       {!workoutPlan || workoutPlan.items.length === 0 ? (
-        <EmptyState title="No workout plan yet" description="Generate one above." />
+        assignment ? (
+          <EmptyState
+            title={`Nothing scheduled ${thisWeekStart} – ${thisWeekEnd}`}
+            description={
+              nextSession
+                ? `This program has no session in the rest of this week. Next one: ${nextSession.date}${nextSession.sessionName ? ` — ${nextSession.sessionName}` : ""}. See the calendar above for the full schedule.`
+                : "This program has no session in the rest of this week, and none in the next 30 days either — check the program's phases and sessions, or the calendar above."
+            }
+          />
+        ) : (
+          <EmptyState title="No workout plan yet" description="Assign a program above to get started." />
+        )
       ) : (
         <WorkoutPlanBody clientId={clientId} items={workoutPlan.items} status={workoutPlan.status} />
       )}

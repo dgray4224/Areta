@@ -11,13 +11,15 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
   const { clientId } = await params;
   const result = await getClientHistorySummary(clientId);
   if (!result.ok) notFound();
-  const { recentWeightLogs, recentSleepLogs, recentNutritionLogs, recentRecoveryLogs, goals } = result.data;
+  const { clientName, recentWeightLogs, recentSleepLogs, recentNutritionLogs, recentRecoveryLogs, goals } =
+    result.data;
 
   return (
     <div className="space-y-6">
       <Link href="/trainer" className="text-sm text-neutral-500 hover:underline">
         ← Your clients
       </Link>
+      <h1 className="text-2xl font-semibold">{clientName ?? "Your client"}</h1>
 
       <div className="flex flex-wrap gap-2">
         <LinkButton href={`/trainer/clients/${clientId}/nutrition`} variant="secondary">
@@ -31,10 +33,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Goals</h2>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Status and priority are editable here.
+          Current fitness-related goals only (nutrition, exercise, recovery) — status and priority are editable
+          here. Personal goals outside your scope, and anything already achieved or abandoned, aren&apos;t shown.
         </p>
         {goals.length === 0 ? (
-          <EmptyState title="No goals yet" description="This client hasn't set any goals." />
+          <EmptyState
+            title="No active fitness goals"
+            description="Nothing in nutrition, exercise, or recovery is currently active for this client."
+          />
         ) : (
           <div className="space-y-2">
             {goals.map((goal) => (
