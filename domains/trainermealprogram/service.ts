@@ -7,6 +7,7 @@ import { logAdminAction } from "@/platform/audit/log";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { recipeSchema } from "@/domains/recipes/schema";
+import { resyncAssignedMealClients } from "@/domains/trainermealprogram/materialize";
 import {
   trainerMealProgramSchema,
   trainerMealProgramPhaseSchema,
@@ -60,6 +61,28 @@ function toMeal(row: Database["public"]["Tables"]["trainer_meal_program_meals"][
     mealOrder: row.meal_order,
     recipeId: row.recipe_id,
   };
+}
+
+/** Mirrors domains/trainerprogram/service.ts's own programIdForPhase --
+ * every meal/phase mutation below needs the owning program to re-sync
+ * any client currently assigned to it (resyncAssignedMealClients). */
+async function programIdForMealPhase(phaseId: string, supabase: SupabaseClient<Database>): Promise<string | null> {
+  const { data } = await supabase
+    .from("trainer_meal_program_phases")
+    .select("program_id")
+    .eq("id", phaseId)
+    .maybeSingle();
+  return data?.program_id ?? null;
+}
+
+async function programIdForMeal(mealId: string, supabase: SupabaseClient<Database>): Promise<string | null> {
+  const { data } = await supabase
+    .from("trainer_meal_program_meals")
+    .select("phase_id")
+    .eq("id", mealId)
+    .maybeSingle();
+  if (!data) return null;
+  return programIdForMealPhase(data.phase_id, supabase);
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +254,7 @@ export async function addPhase(programId: string, input: unknown): Promise<Actio
     .select("id")
     .single();
   if (error) return { ok: false, error: error.message };
+  await resyncAssignedMealClients(programId, supabase);
   return { ok: true, data: { id: data.id } };
 }
 
@@ -250,6 +274,8 @@ export async function updatePhase(phaseId: string, input: unknown): Promise<Acti
     })
     .eq("id", phaseId);
   if (error) return { ok: false, error: error.message };
+  const programId = await programIdForMealPhase(phaseId, supabase);
+  if (programId) await resyncAssignedMealClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 
@@ -287,8 +313,10 @@ export async function deletePhase(phaseId: string): Promise<ActionResult> {
     };
   }
 
+  const programId = await programIdForMealPhase(phaseId, supabase);
   const { error } = await supabase.from("trainer_meal_program_phases").delete().eq("id", phaseId);
   if (error) return { ok: false, error: error.message };
+  if (programId) await resyncAssignedMealClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 
@@ -326,6 +354,8 @@ export async function addMeal(phaseId: string, input: unknown): Promise<ActionRe
     .select("id")
     .single();
   if (error) return { ok: false, error: error.message };
+  const programId = await programIdForMealPhase(phaseId, supabase);
+  if (programId) await resyncAssignedMealClients(programId, supabase);
   return { ok: true, data: { id: data.id } };
 }
 
@@ -344,6 +374,8 @@ export async function updateMeal(mealId: string, input: unknown): Promise<Action
     })
     .eq("id", mealId);
   if (error) return { ok: false, error: error.message };
+  const programId = await programIdForMeal(mealId, supabase);
+  if (programId) await resyncAssignedMealClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 
@@ -359,8 +391,10 @@ export async function deleteMeal(mealId: string): Promise<ActionResult> {
     };
   }
 
+  const programId = await programIdForMeal(mealId, supabase);
   const { error } = await supabase.from("trainer_meal_program_meals").delete().eq("id", mealId);
   if (error) return { ok: false, error: error.message };
+  if (programId) await resyncAssignedMealClients(programId, supabase);
   return { ok: true, data: undefined };
 }
 

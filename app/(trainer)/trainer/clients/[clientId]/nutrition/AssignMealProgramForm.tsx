@@ -66,7 +66,18 @@ export function AssignMealProgramForm({
         setError(result.error);
         return;
       }
-      router.refresh();
+      // A plain router.refresh() wouldn't carry these warnings anywhere to
+      // display -- this form unmounts once an assignment exists (replaced
+      // by AssignedMealProgramPanel), so any local state here would
+      // vanish with it. Routing through a query param (same pattern as
+      // the workout side's AssignProgramForm) survives that swap.
+      if (result.data.warnings.length > 0) {
+        router.push(
+          `/trainer/clients/${clientId}/nutrition?assignWarnings=${encodeURIComponent(JSON.stringify(result.data.warnings))}`
+        );
+      } else {
+        router.refresh();
+      }
     });
   };
 

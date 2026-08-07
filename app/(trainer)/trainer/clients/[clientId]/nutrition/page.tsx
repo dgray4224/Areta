@@ -18,8 +18,15 @@ import type { MealPlanItemView } from "@/domains/mealplan/service";
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack"];
 
-export default async function ClientNutritionPage({ params }: { params: Promise<{ clientId: string }> }) {
+export default async function ClientNutritionPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ clientId: string }>;
+  searchParams: Promise<{ assignWarnings?: string }>;
+}) {
   const { clientId } = await params;
+  const { assignWarnings } = await searchParams;
   const [result, assignment, allPrograms, historyResult] = await Promise.all([
     getClientNutritionOverview(clientId),
     getClientMealProgramAssignment(clientId),
@@ -32,12 +39,29 @@ export default async function ClientNutritionPage({ params }: { params: Promise<
   const publishedPrograms = allPrograms.filter((p) => p.status === "published");
   const history = historyResult.ok ? historyResult.data : [];
 
+  let warnings: string[] = [];
+  if (assignWarnings) {
+    try {
+      warnings = JSON.parse(assignWarnings);
+    } catch {
+      // Malformed query param -- ignore rather than error the page.
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Link href={`/trainer/clients/${clientId}`} className="text-sm text-neutral-500 hover:underline">
         ← Back
       </Link>
       <h2 className="text-lg font-semibold">Nutrition</h2>
+
+      {warnings.length > 0 ? (
+        <div className="space-y-1 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          {warnings.map((w) => (
+            <p key={w}>{w}</p>
+          ))}
+        </div>
+      ) : null}
 
       <Card className="grid grid-cols-2 gap-4">
         <div>
@@ -99,15 +123,20 @@ export default async function ClientNutritionPage({ params }: { params: Promise<
       {mealPlan && mealPlan.items.length > 0 ? (
         <div className="space-y-2">
           <p className="text-xs text-neutral-500">
-            {assignment
-              ? "This client's currently active meal plan — assigning a program above doesn't regenerate it yet; that's coming in a later update."
-              : "This client's currently active meal plan."}
+            {mealPlan.trainerMealProgramId
+              ? "Generated from the assigned program above — updates automatically when you change portions, the engagement target, or the program itself."
+              : "This client's own self-generated meal plan (no trainer program assigned)."}
           </p>
           <MealPlanBody items={mealPlan.items} status={mealPlan.status} />
         </div>
       ) : !assignment ? (
         <EmptyState title="No meal plan yet" description="Assign a program above to get started." />
-      ) : null}
+      ) : (
+        <EmptyState
+          title="No meal plan generated yet"
+          description="This program hasn't produced a plan for the current week — check the warning above, or that the current phase has meals assigned."
+        />
+      )}
     </div>
   );
 }

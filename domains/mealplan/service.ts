@@ -30,6 +30,31 @@ export async function generateAndSaveMealPlan(
   userId: string,
   options?: { extraExcludeKeywords?: string[] }
 ): Promise<ActionResult<{ warnings: string[] }>> {
+  const supabase = await createClient();
+
+  // A client with an active trainer-assigned nutrition program (2026-08-07,
+  // mirrors domains/workoutplan/service.ts#generateAndSaveWorkoutPlan's own
+  // guard) should never have it silently clobbered by the library
+  // generator -- both upsert onto the same (user_id, week_start) row, so
+  // whichever ran last would win with no warning either way. Trainer-side
+  // generation always goes through
+  // domains/trainermealprogram/materialize.ts#materializeCurrentMealWeek
+  // instead, which is exempt from this check (different code path
+  // entirely); this only guards the path a client could otherwise reach
+  // by mistake (their own "Generate meal plan" button on /plan/meals).
+  const { data: activeAssignment } = await supabase
+    .from("trainer_meal_program_assignments")
+    .select("id")
+    .eq("client_id", userId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (activeAssignment) {
+    return {
+      ok: false,
+      error: "Your trainer has assigned you a nutrition program. Ask them to change or unassign it before generating a plan here.",
+    };
+  }
+
   const [calorieTarget, proteinTarget] = await Promise.all([
     getApprovedParameterValue(userId, "nutrition", "calorie_target"),
     getApprovedParameterValue(userId, "nutrition", "protein_target_g"),
@@ -39,7 +64,6 @@ export async function generateAndSaveMealPlan(
     return { ok: false, error: "Approve your nutrition targets before generating a meal plan." };
   }
 
-  const supabase = await createClient();
   const { data: responses } = await supabase
     .from("onboarding_responses")
     .select("nutrition")
@@ -165,6 +189,11 @@ export type MealPlanView = {
   status: "draft" | "active" | "archived";
   calorieTarget: number | null;
   proteinTarget: number | null;
+  /** Which trainer_meal_programs row materialized this plan, if any
+   * (domains/trainermealprogram/materialize.ts) -- null for a
+   * self-generated plan. Lets a trainer's own nutrition page distinguish
+   * "this is what I assigned" from "this is the client's own plan." */
+  trainerMealProgramId: string | null;
   items: MealPlanItemView[];
 };
 
@@ -176,7 +205,7 @@ export async function getMealPlanForWeek(
   const supabase = client ?? (await createClient());
   const { data: plan } = await supabase
     .from("meal_plans")
-    .select("id, week_start, status, calorie_target, protein_target")
+    .select("id, week_start, status, calorie_target, protein_target, trainer_meal_program_id")
     .eq("user_id", userId)
     .eq("week_start", weekStart)
     .maybeSingle();
@@ -201,6 +230,7 @@ export async function getMealPlanForWeek(
     status: plan.status as MealPlanView["status"],
     calorieTarget: plan.calorie_target,
     proteinTarget: plan.protein_target,
+    trainerMealProgramId: plan.trainer_meal_program_id,
     items: (items ?? []).map((i) => ({
       id: i.id,
       dayOfWeek: i.day_of_week,

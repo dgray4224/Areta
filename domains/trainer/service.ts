@@ -32,14 +32,16 @@ import {
   generateAndApproveWeeksThrough,
   materializeWeekContaining,
 } from "@/domains/trainerprogram/materialize";
-import { projectProgramRange, addDays, sundayOfWeekContaining, daysBetween } from "@/domains/trainerprogram/calendar-projection";
+import { projectProgramRange, addDays, sundayOfWeekContaining } from "@/domains/trainerprogram/calendar-projection";
 import {
   setDateOverride,
   clearDateOverride,
   getOverridesForRange,
   type OverrideExerciseInput,
 } from "@/domains/trainerprogram/overrides";
-import { recommendServings } from "@/domains/trainermealprogram/portion-recommendation";
+import { resolveMealProgramPhase } from "@/domains/trainermealprogram/phase-resolution";
+import { getMealPortionRows } from "@/domains/trainermealprogram/portions";
+import { materializeCurrentMealWeek, archiveStaleTrainerMealPlans } from "@/domains/trainermealprogram/materialize";
 import type { ActionResult } from "@/platform/auth/actions";
 import type { Database } from "@/platform/db/types";
 import type {
@@ -1132,45 +1134,13 @@ export async function moveClientSessionToDate(
 // program-assignment section above closely; see that section's own
 // comments for conventions reused here without re-explaining them.
 //
-// Materialization into meal_plans/meal_plan_items doesn't exist yet (a
-// later pass) -- assignMealProgramToClient only sets up the assignment
-// record, it doesn't generate anything a client can see yet. When that
-// materialization ships, remember the workout side's own lesson
-// (archiveStaleTrainerProgramPlans): switching or unassigning a meal
-// program will need the same cleanup for whatever gets materialized by
-// then, or a stale week from an abandoned program could keep showing
-// the same way a stale workout week once did.
+// Materialization into meal_plans/meal_plan_items (2026-08-07) lives in
+// domains/trainermealprogram/materialize.ts, not here -- mirrors
+// domains/trainerprogram/materialize.ts being its own module rather than
+// folded into this file. resolveMealProgramPhase itself moved to
+// domains/trainermealprogram/phase-resolution.ts so materialize.ts could
+// use it without a circular import back into this file.
 // ---------------------------------------------------------------------------
-
-/** Given a program's phases (sorted by phaseOrder) and a starts_on date,
- * resolves which phase + week-within-phase "today" falls into. Pure
- * arithmetic, the same core loop as domains/trainerprogram/calendar-
- * projection.ts#resolvePhaseForDate but without that module's
- * day-of-week/override machinery -- nutrition has no calendar UI yet, so
- * there's nothing here beyond "which phase is the client currently on"
- * to compute. No auto-repeat/freeze once the phase cycle runs out
- * (matches migration 0083's decision, same as the workout side's
- * "phases_complete" state) -- returns null in that case rather than
- * looping back or freezing. */
-function resolveMealProgramPhase(
-  startsOn: string,
-  phases: { id: string; name: string; lengthWeeks: number }[],
-  today: string
-): { phaseId: string; phaseName: string; weekInPhase: number } | null {
-  if (phases.length === 0 || today < startsOn) return null;
-  const weeksSinceStart = Math.floor(daysBetween(startsOn, today) / 7);
-  const totalCycleWeeks = phases.reduce((sum, p) => sum + p.lengthWeeks, 0);
-  if (totalCycleWeeks <= 0 || weeksSinceStart >= totalCycleWeeks) return null;
-
-  let remaining = weeksSinceStart;
-  for (const phase of phases) {
-    if (remaining < phase.lengthWeeks) {
-      return { phaseId: phase.id, phaseName: phase.name, weekInPhase: remaining + 1 };
-    }
-    remaining -= phase.lengthWeeks;
-  }
-  return null;
-}
 
 /** end_date and goalOutcome are both required (same reasoning as
  * assignProgramToClient above) -- enforced here, not the database. The
@@ -1182,7 +1152,7 @@ export async function assignMealProgramToClient(
   startsOn: string,
   endDate: string,
   goalOutcome: string
-): Promise<ActionResult> {
+): Promise<ActionResult<{ warnings: string[] }>> {
   const { user } = await requireTrainer();
   const supabase = await createClient();
 
@@ -1251,11 +1221,12 @@ export async function assignMealProgramToClient(
 
   // End any existing active meal-program assignment for this client
   // first -- the partial unique index (migration 0083) would otherwise
-  // reject the new insert. Recorded by id, same failed-insert-reactivates
-  // safety net as assignProgramToClient above.
+  // reject the new insert. Recorded by id (with program_id, needed below
+  // to archive its stale materialized plans), same failed-insert-
+  // reactivates safety net as assignProgramToClient above.
   const { data: previousActive } = await supabase
     .from("trainer_meal_program_assignments")
-    .select("id")
+    .select("id, program_id")
     .eq("client_id", clientId)
     .eq("status", "active")
     .maybeSingle();
@@ -1288,8 +1259,26 @@ export async function assignMealProgramToClient(
     return { ok: false, error: insertError.message };
   }
 
+  // Clean up the OLD program's leftovers now that the switch actually
+  // committed -- same reasoning as archiveStaleTrainerProgramPlans's own
+  // doc comment: this can't wait on materializeCurrentMealWeek below to
+  // overwrite it naturally, since it won't if the new program hasn't
+  // started yet.
+  if (previousActive) {
+    await archiveStaleTrainerMealPlans(clientId, previousActive.program_id, supabase);
+  }
+
+  // A no-op (with an explanatory warning, not an error) if startsOn is in
+  // the future -- materializeCurrentMealWeek itself checks that. Its
+  // warnings are surfaced here rather than discarded, same lesson code
+  // review found on the workout side: a future-dated assignment
+  // previously reporting bare success with no indication nothing was
+  // actually generated yet.
+  const materialized = await materializeCurrentMealWeek(clientId, supabase);
+  if (!materialized.ok) return materialized;
+
   await logTrainerAction(user, "client_meal_program_assigned", clientId, { programId, startsOn, endDate });
-  return { ok: true, data: undefined };
+  return { ok: true, data: { warnings: materialized.data.warnings } };
 }
 
 export async function unassignMealProgram(clientId: string): Promise<ActionResult> {
@@ -1300,12 +1289,23 @@ export async function unassignMealProgram(clientId: string): Promise<ActionResul
     return { ok: false, error: "This is not your client." };
   }
 
+  const { data: activeAssignment } = await supabase
+    .from("trainer_meal_program_assignments")
+    .select("id, program_id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+
   const { error } = await supabase
     .from("trainer_meal_program_assignments")
     .update({ status: "ended", ended_at: new Date().toISOString() })
     .eq("client_id", clientId)
     .eq("status", "active");
   if (error) return { ok: false, error: error.message };
+
+  if (activeAssignment) {
+    await archiveStaleTrainerMealPlans(clientId, activeAssignment.program_id, supabase);
+  }
 
   await logTrainerAction(user, "client_meal_program_unassigned", clientId, {});
   return { ok: true, data: undefined };
@@ -1508,6 +1508,14 @@ export async function saveEngagementNutritionTargets(
     .eq("id", assignment.id);
   if (error) return { ok: false, error: error.message };
 
+  // Re-sync the client's actual meal plan -- getMealPortionRows (and so
+  // materializeCurrentMealWeek) reads this override's calorieTarget to
+  // recompute recommended servings, so a saved engagement target that
+  // never reaches meal_plan_items would be misleading: the trainer would
+  // see one number here and the client a stale plan built off the old one.
+  const materialized = await materializeCurrentMealWeek(clientId, supabase);
+  if (!materialized.ok) return materialized;
+
   await logTrainerAction(user, "client_engagement_nutrition_targets_saved", clientId, {
     calorieTarget,
     proteinTarget,
@@ -1530,6 +1538,9 @@ export async function clearEngagementNutritionOverride(clientId: string): Promis
     .eq("client_id", clientId)
     .eq("status", "active");
   if (error) return { ok: false, error: error.message };
+
+  const materialized = await materializeCurrentMealWeek(clientId, supabase);
+  if (!materialized.ok) return materialized;
 
   await logTrainerAction(user, "client_engagement_nutrition_targets_cleared", clientId, {});
   return { ok: true, data: undefined };
@@ -1564,14 +1575,13 @@ export async function getMealPortionRecommendations(
     return { ok: false, error: "This is not your client." };
   }
 
-  const [{ data: assignment }, { data: mealRows }, approvedCalorieTarget] = await Promise.all([
+  const [{ data: assignment }, approvedCalorieTarget] = await Promise.all([
     supabase
       .from("trainer_meal_program_assignments")
       .select("id, nutrition_override")
       .eq("client_id", clientId)
       .eq("status", "active")
       .maybeSingle(),
-    supabase.from("trainer_meal_program_meals").select("*").eq("phase_id", phaseId),
     getApprovedParameterValue(clientId, "nutrition", "calorie_target"),
   ]);
 
@@ -1583,61 +1593,8 @@ export async function getMealPortionRecommendations(
       ? "client_approved"
       : "fallback";
 
-  if (!mealRows || mealRows.length === 0) {
-    return { ok: true, data: { calorieTarget, calorieTargetSource, rows: [] } };
-  }
-
-  const recipeIds = Array.from(new Set(mealRows.map((m) => m.recipe_id)));
-  const { data: recipeRows } = await supabase
-    .from("recipes")
-    .select("id, name, calories, protein_g")
-    .in("id", recipeIds);
-  const recipeById = new Map((recipeRows ?? []).map((r) => [r.id, r]));
-
-  const mealsPerDay = new Map<number, number>();
-  for (const m of mealRows) {
-    mealsPerDay.set(m.day_of_week, (mealsPerDay.get(m.day_of_week) ?? 0) + 1);
-  }
-
-  let savedByMealId = new Map<string, number>();
-  if (assignment) {
-    const { data: portionRows } = await supabase
-      .from("trainer_meal_program_portions")
-      .select("program_meal_id, servings")
-      .eq("assignment_id", assignment.id)
-      .in(
-        "program_meal_id",
-        mealRows.map((m) => m.id)
-      );
-    savedByMealId = new Map((portionRows ?? []).map((p) => [p.program_meal_id, p.servings]));
-  }
-
-  const effectiveTarget = calorieTarget ?? 2000;
-  return {
-    ok: true,
-    data: {
-      calorieTarget,
-      calorieTargetSource,
-      rows: mealRows.map((m) => {
-        const recipe = recipeById.get(m.recipe_id);
-        return {
-          programMealId: m.id,
-          dayOfWeek: m.day_of_week,
-          mealType: m.meal_type as MealPortionRow["mealType"],
-          recipeId: m.recipe_id,
-          recipeName: recipe?.name ?? "—",
-          baseCalories: recipe?.calories ?? 0,
-          baseProteinG: recipe?.protein_g ?? 0,
-          recommendedServings: recommendServings(
-            effectiveTarget,
-            mealsPerDay.get(m.day_of_week) ?? 1,
-            recipe?.calories ?? 0
-          ),
-          savedServings: savedByMealId.get(m.id) ?? null,
-        };
-      }),
-    },
-  };
+  const rows = await getMealPortionRows(phaseId, assignment?.id ?? null, calorieTarget, supabase);
+  return { ok: true, data: { calorieTarget, calorieTargetSource, rows } };
 }
 
 /** Bulk upsert -- the whole portions form saves in one action rather
@@ -1672,6 +1629,13 @@ export async function saveMealPortions(
     { onConflict: "assignment_id,program_meal_id" }
   );
   if (error) return { ok: false, error: error.message };
+
+  // Saved portions only matter if they actually reach the client's real
+  // plan -- re-materialize so meal_plan_items.servings picks up whatever
+  // was just saved instead of whatever recommendServings would still
+  // compute on its own.
+  const materialized = await materializeCurrentMealWeek(clientId, supabase);
+  if (!materialized.ok) return materialized;
 
   await logTrainerAction(user, "client_meal_portions_saved", clientId, { count: portions.length });
   return { ok: true, data: undefined };
