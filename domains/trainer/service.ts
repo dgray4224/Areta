@@ -8,8 +8,7 @@ import { requireTrainer } from "@/platform/auth/trainer";
 import { requireUser } from "@/platform/auth/session";
 import { logAdminAction } from "@/platform/audit/log";
 import { getApprovedParameterValue, getGeneratedParameters, approveAllGeneratedParameters, type StoredParameter } from "@/domains/parameters/service";
-import { generateAndSaveMealPlan, getMealPlanForWeek, type MealPlanView } from "@/domains/mealplan/service";
-import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
+import { getMealPlanForWeek, type MealPlanView } from "@/domains/mealplan/service";
 import {
   getCurrentWorkoutPlan,
   approveWorkoutPlan,
@@ -25,13 +24,14 @@ import {
   generateAndApproveWeeksThrough,
   materializeWeekContaining,
 } from "@/domains/trainerprogram/materialize";
-import { projectProgramRange, addDays, sundayOfWeekContaining } from "@/domains/trainerprogram/calendar-projection";
+import { projectProgramRange, addDays, sundayOfWeekContaining, daysBetween } from "@/domains/trainerprogram/calendar-projection";
 import {
   setDateOverride,
   clearDateOverride,
   getOverridesForRange,
   type OverrideExerciseInput,
 } from "@/domains/trainerprogram/overrides";
+import { recommendServings } from "@/domains/trainermealprogram/portion-recommendation";
 import type { ActionResult } from "@/platform/auth/actions";
 import type { Database } from "@/platform/db/types";
 import type {
@@ -46,6 +46,11 @@ import type {
   IncomingTrainerRequest,
 } from "@/domains/trainer/types";
 import type { TrainerProgramAssignment, PastAssignment } from "@/domains/trainerprogram/types";
+import type {
+  TrainerMealProgramAssignment,
+  PastMealAssignment,
+  MealPortionRow,
+} from "@/domains/trainermealprogram/types";
 
 /** Shared guard for every trainer action that touches a specific client's
  * data — re-verifies the trainer_clients relationship server-side before
@@ -430,37 +435,12 @@ export async function approveClientNutritionParameters(clientId: string): Promis
   return { ok: true, data: undefined };
 }
 
-/** Requires calorie/protein targets already approved (by the client
- * themselves, or by the trainer via approveClientNutritionParameters
- * above) — same precondition generateAndSaveMealPlan enforces for
- * anyone calling it. */
-export async function generateClientMealPlan(clientId: string): Promise<ActionResult<{ warnings: string[] }>> {
-  const { user } = await requireTrainer();
-  const supabase = await createClient();
-
-  if (!(await requireActiveClient(user.id, clientId, supabase))) {
-    return { ok: false, error: "This is not your client." };
-  }
-
-  const result = await generateAndSaveMealPlan(clientId);
-  if (result.ok) await logTrainerAction(user, "client_meal_plan_generated", clientId, {});
-  return result;
-}
-
-/** Cascades into the grocery list and Sunday prep plan too, same as when
- * the client approves their own plan (approveMealPlanAndGenerateDownstream). */
-export async function approveClientMealPlan(clientId: string): Promise<ActionResult> {
-  const { user } = await requireTrainer();
-  const supabase = await createClient();
-
-  if (!(await requireActiveClient(user.id, clientId, supabase))) {
-    return { ok: false, error: "This is not your client." };
-  }
-
-  const result = await approveMealPlanAndGenerateDownstream(clientId);
-  if (result.ok) await logTrainerAction(user, "client_meal_plan_approved", clientId, {});
-  return result;
-}
+// generateClientMealPlan/approveClientMealPlan (the old shared-algorithm
+// generate/approve flow) were removed 2026-08-07 when trainer-authored
+// nutrition programs (domains/trainermealprogram/) replaced them as the
+// trainer-managed-client nutrition path, per the confirmed "replace
+// entirely" decision. getMealPlanForWeek above still reads whatever plan
+// exists (self-generated or otherwise) for read-only display.
 
 export async function getClientWorkoutOverview(
   clientId: string
@@ -1133,6 +1113,405 @@ export async function moveClientSessionToDate(
     const toSync = await materializeWeekContaining(clientId, toDate, supabase);
     if (!toSync.ok) return toSync;
   }
+  return { ok: true, data: undefined };
+}
+
+// ---------------------------------------------------------------------------
+// Trainer-authored nutrition programs (2026-08-07) -- assigning one of
+// the trainer's own domains/trainermealprogram programs to a client, and
+// reviewing/tailoring per-client portion sizes. Mirrors the workout
+// program-assignment section above closely; see that section's own
+// comments for conventions reused here without re-explaining them.
+//
+// Materialization into meal_plans/meal_plan_items doesn't exist yet (a
+// later pass) -- assignMealProgramToClient only sets up the assignment
+// record, it doesn't generate anything a client can see yet. When that
+// materialization ships, remember the workout side's own lesson
+// (archiveStaleTrainerProgramPlans): switching or unassigning a meal
+// program will need the same cleanup for whatever gets materialized by
+// then, or a stale week from an abandoned program could keep showing
+// the same way a stale workout week once did.
+// ---------------------------------------------------------------------------
+
+/** Given a program's phases (sorted by phaseOrder) and a starts_on date,
+ * resolves which phase + week-within-phase "today" falls into. Pure
+ * arithmetic, the same core loop as domains/trainerprogram/calendar-
+ * projection.ts#resolvePhaseForDate but without that module's
+ * day-of-week/override machinery -- nutrition has no calendar UI yet, so
+ * there's nothing here beyond "which phase is the client currently on"
+ * to compute. No auto-repeat/freeze once the phase cycle runs out
+ * (matches migration 0083's decision, same as the workout side's
+ * "phases_complete" state) -- returns null in that case rather than
+ * looping back or freezing. */
+function resolveMealProgramPhase(
+  startsOn: string,
+  phases: { id: string; name: string; lengthWeeks: number }[],
+  today: string
+): { phaseId: string; phaseName: string; weekInPhase: number } | null {
+  if (phases.length === 0 || today < startsOn) return null;
+  const weeksSinceStart = Math.floor(daysBetween(startsOn, today) / 7);
+  const totalCycleWeeks = phases.reduce((sum, p) => sum + p.lengthWeeks, 0);
+  if (totalCycleWeeks <= 0 || weeksSinceStart >= totalCycleWeeks) return null;
+
+  let remaining = weeksSinceStart;
+  for (const phase of phases) {
+    if (remaining < phase.lengthWeeks) {
+      return { phaseId: phase.id, phaseName: phase.name, weekInPhase: remaining + 1 };
+    }
+    remaining -= phase.lengthWeeks;
+  }
+  return null;
+}
+
+/** end_date and goalOutcome are both required (same reasoning as
+ * assignProgramToClient above) -- enforced here, not the database. The
+ * linked goal goes on the client's 'nutrition' domain this time, not
+ * 'exercise' (both already trainer-writable, migrations 0077/0079). */
+export async function assignMealProgramToClient(
+  clientId: string,
+  programId: string,
+  startsOn: string,
+  endDate: string,
+  goalOutcome: string
+): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const resolvedStartsOn = startsOn || new Date().toISOString().slice(0, 10);
+  const trimmedGoal = goalOutcome.trim();
+  if (!trimmedGoal) return { ok: false, error: "State a tangible goal for this program." };
+  if (!endDate) return { ok: false, error: "Set an end date for this program." };
+  if (endDate <= resolvedStartsOn) return { ok: false, error: "End date must be after the start date." };
+
+  const { data: programRow } = await supabase
+    .from("trainer_meal_programs")
+    .select("id, trainer_id, status")
+    .eq("id", programId)
+    .maybeSingle();
+  if (!programRow || programRow.trainer_id !== user.id) {
+    return { ok: false, error: "Program not found." };
+  }
+  if (programRow.status !== "published") {
+    return { ok: false, error: "Publish this program before assigning it." };
+  }
+
+  const { data: phaseRows } = await supabase
+    .from("trainer_meal_program_phases")
+    .select("id")
+    .eq("program_id", programId)
+    .limit(1);
+  if (!phaseRows || phaseRows.length === 0) {
+    return { ok: false, error: "Add at least one phase to this program before assigning it." };
+  }
+
+  // Find or create the client's "nutrition" domain to hang the goal off
+  // of -- same pattern as assignProgramToClient's own "exercise" domain
+  // lookup, just the sibling fitness-relevant key.
+  const { data: existingDomain } = await supabase
+    .from("domains")
+    .select("id")
+    .eq("user_id", clientId)
+    .eq("key", "nutrition")
+    .maybeSingle();
+
+  let domainId = existingDomain?.id;
+  if (!domainId) {
+    const { data: newDomain, error: domainError } = await supabase
+      .from("domains")
+      .insert({ user_id: clientId, key: "nutrition", label: "Nutrition" })
+      .select("id")
+      .single();
+    if (domainError || !newDomain) {
+      return { ok: false, error: `Couldn't set up the client's nutrition goals: ${domainError?.message}` };
+    }
+    domainId = newDomain.id;
+  }
+
+  const { data: goalRow, error: goalError } = await supabase
+    .from("goals")
+    .insert({ user_id: clientId, domain_id: domainId, outcome: trimmedGoal, target_date: endDate, status: "active" })
+    .select("id")
+    .single();
+  if (goalError || !goalRow) {
+    return { ok: false, error: `Couldn't create the linked goal: ${goalError?.message}` };
+  }
+
+  // End any existing active meal-program assignment for this client
+  // first -- the partial unique index (migration 0083) would otherwise
+  // reject the new insert. Recorded by id, same failed-insert-reactivates
+  // safety net as assignProgramToClient above.
+  const { data: previousActive } = await supabase
+    .from("trainer_meal_program_assignments")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (previousActive) {
+    const { error: endError } = await supabase
+      .from("trainer_meal_program_assignments")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", previousActive.id);
+    if (endError) return { ok: false, error: endError.message };
+  }
+
+  const { error: insertError } = await supabase.from("trainer_meal_program_assignments").insert({
+    program_id: programId,
+    trainer_id: user.id,
+    client_id: clientId,
+    starts_on: resolvedStartsOn,
+    end_date: endDate,
+    goal_outcome: trimmedGoal,
+    linked_goal_id: goalRow.id,
+  });
+  if (insertError) {
+    if (previousActive) {
+      await supabase
+        .from("trainer_meal_program_assignments")
+        .update({ status: "active", ended_at: null })
+        .eq("id", previousActive.id);
+    }
+    await supabase.from("goals").update({ status: "abandoned" }).eq("id", goalRow.id);
+    return { ok: false, error: insertError.message };
+  }
+
+  await logTrainerAction(user, "client_meal_program_assigned", clientId, { programId, startsOn, endDate });
+  return { ok: true, data: undefined };
+}
+
+export async function unassignMealProgram(clientId: string): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { error } = await supabase
+    .from("trainer_meal_program_assignments")
+    .update({ status: "ended", ended_at: new Date().toISOString() })
+    .eq("client_id", clientId)
+    .eq("status", "active");
+  if (error) return { ok: false, error: error.message };
+
+  await logTrainerAction(user, "client_meal_program_unassigned", clientId, {});
+  return { ok: true, data: undefined };
+}
+
+async function loadMealAssignmentView(
+  clientId: string,
+  supabase: SupabaseClient<Database>
+): Promise<TrainerMealProgramAssignment | null> {
+  const { data: row } = await supabase
+    .from("trainer_meal_program_assignments")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!row) return null;
+
+  const [{ data: programRow }, { data: phaseRows }] = await Promise.all([
+    supabase.from("trainer_meal_programs").select("name").eq("id", row.program_id).maybeSingle(),
+    supabase
+      .from("trainer_meal_program_phases")
+      .select("id, name, length_weeks")
+      .eq("program_id", row.program_id)
+      .order("phase_order", { ascending: true }),
+  ]);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const resolved = resolveMealProgramPhase(
+    row.starts_on,
+    (phaseRows ?? []).map((p) => ({ id: p.id, name: p.name, lengthWeeks: p.length_weeks })),
+    today
+  );
+
+  return {
+    id: row.id,
+    programId: row.program_id,
+    programName: programRow?.name ?? "Untitled program",
+    trainerId: row.trainer_id,
+    clientId: row.client_id,
+    status: row.status as TrainerMealProgramAssignment["status"],
+    startsOn: row.starts_on,
+    endDate: row.end_date,
+    goalOutcome: row.goal_outcome,
+    currentPhaseId: resolved?.phaseId ?? null,
+    currentPhaseName: resolved?.phaseName ?? null,
+    currentWeekInPhase: resolved?.weekInPhase ?? null,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+  };
+}
+
+export async function getClientMealProgramAssignment(clientId: string): Promise<TrainerMealProgramAssignment | null> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) return null;
+  return loadMealAssignmentView(clientId, supabase);
+}
+
+/** Mirrors listClientAssignmentHistory above. */
+export async function listClientMealAssignmentHistory(clientId: string): Promise<ActionResult<PastMealAssignment[]>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { data: rows, error } = await supabase
+    .from("trainer_meal_program_assignments")
+    .select("id, program_id, starts_on, end_date, goal_outcome, status, started_at, ended_at")
+    .eq("client_id", clientId)
+    .eq("status", "ended")
+    .order("started_at", { ascending: false });
+  if (error) return { ok: false, error: error.message };
+  if (!rows || rows.length === 0) return { ok: true, data: [] };
+
+  const programIds = Array.from(new Set(rows.map((r) => r.program_id)));
+  const { data: programRows } = await supabase.from("trainer_meal_programs").select("id, name").in("id", programIds);
+  const nameById = new Map((programRows ?? []).map((p) => [p.id, p.name]));
+
+  return {
+    ok: true,
+    data: rows.map((r) => ({
+      id: r.id,
+      programId: r.program_id,
+      programName: nameById.get(r.program_id) ?? "Untitled program",
+      startsOn: r.starts_on,
+      endDate: r.end_date,
+      goalOutcome: r.goal_outcome,
+      startedAt: r.started_at,
+      endedAt: r.ended_at,
+    })),
+  };
+}
+
+/** Recommendations plus whatever the trainer has already saved, for
+ * every meal in one phase -- the portion-review screen's data source.
+ * The recommendation itself is never stored (migration 0083's own
+ * comment) -- recomputed live from the client's *current* approved
+ * calorie target every call, so it can't go stale the way a
+ * stored-at-assignment-time number would if the target changes later.
+ * calorieTarget is returned alongside the rows (not just baked into the
+ * math) so the UI can show an honest caveat when it's null -- the
+ * recommendation still has to produce *something* in that case
+ * (falls back to a generic 2000, same ballpark default used elsewhere
+ * in this app for a not-yet-known target) rather than blocking the
+ * whole screen on a target the client hasn't approved yet. */
+export async function getMealPortionRecommendations(
+  clientId: string,
+  phaseId: string
+): Promise<ActionResult<{ calorieTarget: number | null; rows: MealPortionRow[] }>> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const [{ data: assignment }, { data: mealRows }, calorieTarget] = await Promise.all([
+    supabase
+      .from("trainer_meal_program_assignments")
+      .select("id")
+      .eq("client_id", clientId)
+      .eq("status", "active")
+      .maybeSingle(),
+    supabase.from("trainer_meal_program_meals").select("*").eq("phase_id", phaseId),
+    getApprovedParameterValue(clientId, "nutrition", "calorie_target"),
+  ]);
+
+  if (!mealRows || mealRows.length === 0) return { ok: true, data: { calorieTarget, rows: [] } };
+
+  const recipeIds = Array.from(new Set(mealRows.map((m) => m.recipe_id)));
+  const { data: recipeRows } = await supabase
+    .from("recipes")
+    .select("id, name, calories, protein_g")
+    .in("id", recipeIds);
+  const recipeById = new Map((recipeRows ?? []).map((r) => [r.id, r]));
+
+  const mealsPerDay = new Map<number, number>();
+  for (const m of mealRows) {
+    mealsPerDay.set(m.day_of_week, (mealsPerDay.get(m.day_of_week) ?? 0) + 1);
+  }
+
+  let savedByMealId = new Map<string, number>();
+  if (assignment) {
+    const { data: portionRows } = await supabase
+      .from("trainer_meal_program_portions")
+      .select("program_meal_id, servings")
+      .eq("assignment_id", assignment.id)
+      .in(
+        "program_meal_id",
+        mealRows.map((m) => m.id)
+      );
+    savedByMealId = new Map((portionRows ?? []).map((p) => [p.program_meal_id, p.servings]));
+  }
+
+  const effectiveTarget = calorieTarget ?? 2000;
+  return {
+    ok: true,
+    data: {
+      calorieTarget,
+      rows: mealRows.map((m) => {
+        const recipe = recipeById.get(m.recipe_id);
+        return {
+          programMealId: m.id,
+          dayOfWeek: m.day_of_week,
+          mealType: m.meal_type as MealPortionRow["mealType"],
+          recipeId: m.recipe_id,
+          recipeName: recipe?.name ?? "—",
+          baseCalories: recipe?.calories ?? 0,
+          baseProteinG: recipe?.protein_g ?? 0,
+          recommendedServings: recommendServings(
+            effectiveTarget,
+            mealsPerDay.get(m.day_of_week) ?? 1,
+            recipe?.calories ?? 0
+          ),
+          savedServings: savedByMealId.get(m.id) ?? null,
+        };
+      }),
+    },
+  };
+}
+
+/** Bulk upsert -- the whole portions form saves in one action rather
+ * than one request per row. Requires an active assignment (portions are
+ * always scoped to one, per migration 0083's own FK). */
+export async function saveMealPortions(
+  clientId: string,
+  portions: { programMealId: string; servings: number }[]
+): Promise<ActionResult> {
+  const { user } = await requireTrainer();
+  const supabase = await createClient();
+  if (!(await requireActiveClient(user.id, clientId, supabase))) {
+    return { ok: false, error: "This is not your client." };
+  }
+
+  const { data: assignment } = await supabase
+    .from("trainer_meal_program_assignments")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!assignment) return { ok: false, error: "No active nutrition program assigned." };
+
+  if (portions.length === 0) return { ok: true, data: undefined };
+
+  const { error } = await supabase.from("trainer_meal_program_portions").upsert(
+    portions.map((p) => ({
+      assignment_id: assignment.id,
+      program_meal_id: p.programMealId,
+      servings: p.servings,
+    })),
+    { onConflict: "assignment_id,program_meal_id" }
+  );
+  if (error) return { ok: false, error: error.message };
+
+  await logTrainerAction(user, "client_meal_portions_saved", clientId, { count: portions.length });
   return { ok: true, data: undefined };
 }
 

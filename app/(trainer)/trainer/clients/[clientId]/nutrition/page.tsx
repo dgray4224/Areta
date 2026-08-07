@@ -1,11 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getClientNutritionOverview, generateClientMealPlan, approveClientMealPlan } from "@/domains/trainer/service";
+import {
+  getClientNutritionOverview,
+  getClientMealProgramAssignment,
+  listClientMealAssignmentHistory,
+} from "@/domains/trainer/service";
+import { listMyMealPrograms } from "@/domains/trainermealprogram/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
-import { PlanActions } from "../PlanActions";
 import { ApproveNutritionButton } from "./ApproveNutritionButton";
+import { AssignedMealProgramPanel } from "./AssignedMealProgramPanel";
+import { AssignMealProgramForm } from "./AssignMealProgramForm";
+import { PastMealProgramsList } from "./PastMealProgramsList";
 import type { MealPlanItemView } from "@/domains/mealplan/service";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -13,10 +20,17 @@ const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack"];
 
 export default async function ClientNutritionPage({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
-  const result = await getClientNutritionOverview(clientId);
+  const [result, assignment, allPrograms, historyResult] = await Promise.all([
+    getClientNutritionOverview(clientId),
+    getClientMealProgramAssignment(clientId),
+    listMyMealPrograms(),
+    listClientMealAssignmentHistory(clientId),
+  ]);
   if (!result.ok) notFound();
   const { calorieTarget, proteinTarget, parameters, mealPlan } = result.data;
   const unapproved = parameters.filter((p) => !p.approved);
+  const publishedPrograms = allPrograms.filter((p) => p.status === "published");
+  const history = historyResult.ok ? historyResult.data : [];
 
   return (
     <div className="space-y-6">
@@ -56,27 +70,38 @@ export default async function ClientNutritionPage({ params }: { params: Promise<
         </Card>
       ) : null}
 
-      {!calorieTarget || !proteinTarget ? (
-        <p className="text-sm text-neutral-500">
-          A meal plan can&apos;t be generated until calorie and protein targets are approved (above, or
-          by your client on their own Plan → Nutrition targets screen).
-        </p>
+      {assignment ? (
+        <AssignedMealProgramPanel clientId={clientId} assignment={assignment} programs={publishedPrograms} />
       ) : (
-        <PlanActions
-          clientId={clientId}
-          hasDraft={mealPlan?.status === "draft"}
-          onGenerate={generateClientMealPlan}
-          onApprove={approveClientMealPlan}
-          generateLabel={mealPlan ? "Regenerate plan" : "Generate meal plan"}
-          approveLabel="Approve plan"
-        />
+        <Card>
+          <p className="mb-2 text-sm font-medium">Assign one of your nutrition programs</p>
+          <p className="mb-3 text-sm text-neutral-600 dark:text-neutral-400">
+            Build a program under{" "}
+            <Link href="/trainer/meal-programs" className="underline">
+              Your nutrition programs
+            </Link>
+            , then assign it here.
+          </p>
+          <AssignMealProgramForm clientId={clientId} programs={publishedPrograms} />
+        </Card>
       )}
 
-      {!mealPlan || mealPlan.items.length === 0 ? (
-        <EmptyState title="No meal plan yet" description="Generate one above once targets are approved." />
-      ) : (
-        <MealPlanBody items={mealPlan.items} status={mealPlan.status} />
-      )}
+      {history.length > 0 ? (
+        <PastMealProgramsList clientId={clientId} history={history} programs={publishedPrograms} />
+      ) : null}
+
+      {mealPlan && mealPlan.items.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs text-neutral-500">
+            {assignment
+              ? "This client's currently active meal plan — assigning a program above doesn't regenerate it yet; that's coming in a later update."
+              : "This client's currently active meal plan."}
+          </p>
+          <MealPlanBody items={mealPlan.items} status={mealPlan.status} />
+        </div>
+      ) : !assignment ? (
+        <EmptyState title="No meal plan yet" description="Assign a program above to get started." />
+      ) : null}
     </div>
   );
 }
