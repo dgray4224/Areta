@@ -66,6 +66,7 @@ import type {
   DiscoverableTrainer,
   MyTrainerRequest,
   IncomingTrainerRequest,
+  MyTrainerRoleRequest,
 } from "@/domains/trainer/types";
 import type { TrainerProgramAssignment, PastAssignment } from "@/domains/trainerprogram/types";
 import type {
@@ -2241,6 +2242,79 @@ export async function respondToTrainerRequest(requestId: string, accept: boolean
     targetId: request.client_id,
     detail: { trainerId: user.id, clientId: request.client_id, requestId },
   });
+
+  return { ok: true, data: undefined };
+}
+
+/** Self-service "become a trainer" request (migration 0087) -- distinct
+ * from requestTrainer above (a client requesting a specific trainer).
+ * Reviewed by an admin-owner via domains/users/service.ts's
+ * approveTrainerRoleRequest/rejectTrainerRoleRequest. */
+export async function requestTrainerRole(message?: string): Promise<ActionResult> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data: profile } = await supabase.from("profiles").select("is_trainer").eq("id", user.id).maybeSingle();
+  if (profile?.is_trainer) {
+    return { ok: false, error: "You're already a trainer." };
+  }
+
+  const { data: existingRequest } = await supabase
+    .from("trainer_role_requests")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("status", "pending")
+    .maybeSingle();
+  if (existingRequest) {
+    return { ok: false, error: "You already have a pending request." };
+  }
+
+  const { error } = await supabase.from("trainer_role_requests").insert({
+    user_id: user.id,
+    message: message || null,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  return { ok: true, data: undefined };
+}
+
+/** Most recent request only -- a rejected/cancelled request stays visible
+ * (BecomeATrainerSection uses its status to decide whether to offer a
+ * fresh submit), a resolved-then-superseded older one doesn't matter. */
+export async function getMyTrainerRoleRequest(): Promise<MyTrainerRoleRequest | null> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("trainer_role_requests")
+    .select("id, message, status, created_at, reviewed_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load trainer role request: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    message: data.message,
+    status: data.status as MyTrainerRoleRequest["status"],
+    createdAt: data.created_at,
+    reviewedAt: data.reviewed_at,
+  };
+}
+
+export async function cancelTrainerRoleRequest(requestId: string): Promise<ActionResult> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("trainer_role_requests")
+    .update({ status: "cancelled" })
+    .eq("id", requestId)
+    .eq("user_id", user.id)
+    .eq("status", "pending");
+  if (error) return { ok: false, error: error.message };
 
   return { ok: true, data: undefined };
 }

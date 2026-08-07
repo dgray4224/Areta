@@ -1,10 +1,19 @@
 import Link from "next/link";
-import { getMyTrainerRelationship, listMyTrainerRequests } from "@/domains/trainer/service";
+import { requireUser } from "@/platform/auth/session";
+import { getTrainerStatus } from "@/platform/auth/trainer";
+import { getMyTrainerRelationship, listMyTrainerRequests, getMyTrainerRoleRequest } from "@/domains/trainer/service";
 import { TrainerSettingsPanel } from "./TrainerSettingsPanel";
 import { PendingRequests } from "./PendingRequests";
+import { BecomeATrainerSection } from "./BecomeATrainerSection";
 
 export default async function TrainerSettingsPage() {
-  const [trainer, requests] = await Promise.all([getMyTrainerRelationship(), listMyTrainerRequests()]);
+  const user = await requireUser();
+  const [isTrainer, trainer, requests, roleRequest] = await Promise.all([
+    getTrainerStatus(user.id),
+    getMyTrainerRelationship(),
+    listMyTrainerRequests(),
+    getMyTrainerRoleRequest(),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -18,6 +27,11 @@ export default async function TrainerSettingsPage() {
       </p>
       <TrainerSettingsPanel initialTrainer={trainer} />
       <PendingRequests requests={requests} />
+      {/* A trainer doesn't need to also request the role -- and if
+       * they're revoked later, is_trainer flips back to false and this
+       * reappears, which is correct (they'd re-apply same as anyone
+       * else, no residual fast-path). */}
+      {!isTrainer ? <BecomeATrainerSection request={roleRequest} /> : null}
     </div>
   );
 }

@@ -28,3 +28,15 @@ export type AdminUserSummary = {
    * guard (migration 0065/0066). */
   isTrainer: boolean;
 };
+
+/** Admin-side view of a pending "become a trainer" self-service request
+ * (migration 0087) -- domains/trainer/types.ts's MyTrainerRoleRequest is
+ * the requester's own view of the same underlying row. */
+export type TrainerRoleRequestSummary = {
+  id: string;
+  userId: string;
+  fullName: string | null;
+  email: string | null;
+  message: string | null;
+  createdAt: string;
+};

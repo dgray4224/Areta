@@ -4,7 +4,7 @@ import { createAdminClient } from "@/platform/supabase/admin";
 import { requireAdminOwner } from "@/platform/auth/admin";
 import { logAdminAction } from "@/platform/audit/log";
 import type { ActionResult } from "@/platform/auth/actions";
-import type { AdminUserSummary, AdminRole } from "@/domains/users/types";
+import type { AdminUserSummary, AdminRole, TrainerRoleRequestSummary } from "@/domains/users/types";
 
 /** Every user, newest first. Supabase's admin listUsers() is paginated;
  * a single generous page is fine at this app's current scale (README:
@@ -168,6 +168,114 @@ export async function setUserAdminStatus(
       from: { isAdmin: before?.is_admin ?? false, adminRole: before?.admin_role ?? null },
       to: { isAdmin: next.isAdmin, adminRole: next.isAdmin ? next.adminRole : null },
     },
+  });
+
+  return { ok: true, data: undefined };
+}
+
+/** Pending "become a trainer" requests, oldest first (migration 0087).
+ * email isn't on profiles -- fetched per-row via the admin auth API;
+ * fine at this app's current scale (pending requests are expected to be
+ * rare), a batch listUsers()+filter would be overkill here. */
+export async function listPendingTrainerRoleRequests(): Promise<TrainerRoleRequestSummary[]> {
+  await requireAdminOwner();
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from("trainer_role_requests")
+    .select("id, user_id, message, created_at")
+    .eq("status", "pending")
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`Failed to load trainer role requests: ${error.message}`);
+  if (!data || data.length === 0) return [];
+
+  const { data: profiles } = await admin
+    .from("profiles")
+    .select("id, full_name")
+    .in(
+      "id",
+      data.map((r) => r.user_id)
+    );
+  const nameById = new Map(profiles?.map((p) => [p.id, p.full_name]) ?? []);
+
+  return Promise.all(
+    data.map(async (r) => {
+      const { data: authData } = await admin.auth.admin.getUserById(r.user_id);
+      return {
+        id: r.id,
+        userId: r.user_id,
+        fullName: nameById.get(r.user_id) ?? null,
+        email: authData.user?.email ?? null,
+        message: r.message,
+        createdAt: r.created_at,
+      };
+    })
+  );
+}
+
+/** Approves a self-service trainer-role request. Grants the role through
+ * the existing setUserTrainerStatus() rather than duplicating its logic
+ * (so there's exactly one place that flips profiles.is_trainer and
+ * handles its side effects) -- only marks the request row itself as
+ * approved once that succeeds. */
+export async function approveTrainerRoleRequest(requestId: string): Promise<ActionResult> {
+  const { user: currentUser } = await requireAdminOwner();
+  const admin = createAdminClient();
+
+  const { data: request } = await admin
+    .from("trainer_role_requests")
+    .select("id, user_id, status")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (!request) return { ok: false, error: "Request not found." };
+  if (request.status !== "pending") return { ok: false, error: "This request has already been reviewed." };
+
+  const grantResult = await setUserTrainerStatus(request.user_id, true);
+  if (!grantResult.ok) return grantResult;
+
+  const { error } = await admin
+    .from("trainer_role_requests")
+    .update({ status: "approved", reviewed_by: currentUser.id, reviewed_at: new Date().toISOString() })
+    .eq("id", requestId);
+  if (error) return { ok: false, error: error.message };
+
+  await logAdminAction({
+    actorId: currentUser.id,
+    actorEmail: currentUser.email ?? null,
+    action: "trainer_role_request_approved",
+    targetType: "user",
+    targetId: request.user_id,
+    detail: { requestId },
+  });
+
+  return { ok: true, data: undefined };
+}
+
+export async function rejectTrainerRoleRequest(requestId: string): Promise<ActionResult> {
+  const { user: currentUser } = await requireAdminOwner();
+  const admin = createAdminClient();
+
+  const { data: request } = await admin
+    .from("trainer_role_requests")
+    .select("id, user_id, status")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (!request) return { ok: false, error: "Request not found." };
+  if (request.status !== "pending") return { ok: false, error: "This request has already been reviewed." };
+
+  const { error } = await admin
+    .from("trainer_role_requests")
+    .update({ status: "rejected", reviewed_by: currentUser.id, reviewed_at: new Date().toISOString() })
+    .eq("id", requestId);
+  if (error) return { ok: false, error: error.message };
+
+  await logAdminAction({
+    actorId: currentUser.id,
+    actorEmail: currentUser.email ?? null,
+    action: "trainer_role_request_rejected",
+    targetType: "user",
+    targetId: request.user_id,
+    detail: { requestId },
   });
 
   return { ok: true, data: undefined };

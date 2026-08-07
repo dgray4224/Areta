@@ -92,3 +92,18 @@ export type IncomingTrainerRequest = {
   status: TrainerRequestStatus;
   createdAt: string;
 };
+
+/** Self-service "become a trainer" request status -- a different axis
+ * than TrainerRequestStatus above (that's a client requesting a specific
+ * trainer; this is a user requesting the trainer role itself, reviewed
+ * by an admin-owner, see migration 0087). */
+export type TrainerRoleRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+/** Requester's own view of their "become a trainer" request. */
+export type MyTrainerRoleRequest = {
+  id: string;
+  message: string | null;
+  status: TrainerRoleRequestStatus;
+  createdAt: string;
+  reviewedAt: string | null;
+};
