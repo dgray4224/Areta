@@ -3,38 +3,55 @@ import { listUsersAdmin } from "@/domains/users/service";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { UserSearchBox } from "./UserSearchBox";
+import { RoleFilterTabs } from "./RoleFilterTabs";
+
+const ROLE_FILTERS = ["trainer", "admin", "none"] as const;
+type RoleFilter = (typeof ROLE_FILTERS)[number];
 
 export default async function UsersAdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; role?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, role } = await searchParams;
   const allUsers = await listUsersAdmin();
   const query = (q ?? "").trim().toLowerCase();
-  const users = query
+  const roleFilter = ROLE_FILTERS.includes(role as RoleFilter) ? (role as RoleFilter) : undefined;
+
+  let users = query
     ? allUsers.filter(
         (u) =>
           (u.fullName ?? "").toLowerCase().includes(query) ||
           (u.email ?? "").toLowerCase().includes(query)
       )
     : allUsers;
+  if (roleFilter === "trainer") users = users.filter((u) => u.isTrainer);
+  else if (roleFilter === "admin") users = users.filter((u) => u.isAdmin);
+  else if (roleFilter === "none") users = users.filter((u) => !u.isAdmin && !u.isTrainer);
+
+  const filterNotes = [
+    query ? `matching "${q}"` : null,
+    roleFilter ? `role: ${roleFilter === "none" ? "no role" : roleFilter}` : null,
+  ].filter(Boolean);
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-neutral-600 dark:text-neutral-400">
         {allUsers.length} {allUsers.length === 1 ? "account" : "accounts"} total
-        {query ? `, ${users.length} matching "${q}"` : ""}. Reads go through the service-role
-        client (no RLS path exposes auth.users or cross-user profiles to a regular session) — see
-        the comment on domains/users/service.ts.
+        {filterNotes.length ? `, ${users.length} shown (${filterNotes.join(", ")})` : ""}. Reads go
+        through the service-role client (no RLS path exposes auth.users or cross-user profiles to
+        a regular session) — see the comment on domains/users/service.ts.
       </p>
 
-      <UserSearchBox initialQuery={q ?? ""} />
+      <div className="flex flex-wrap items-center gap-3">
+        <UserSearchBox initialQuery={q ?? ""} />
+        <RoleFilterTabs q={q} current={roleFilter} />
+      </div>
 
       {users.length === 0 ? (
         <EmptyState
           title="No users"
-          description={query ? "No accounts match this search." : "Nothing to show."}
+          description={query || roleFilter ? "No accounts match this filter." : "Nothing to show."}
         />
       ) : (
         <div className="space-y-2">
