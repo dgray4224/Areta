@@ -2,36 +2,10 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { importedVitalSampleSchema, importedMindfulSessionSchema } from "@/domains/vitals/schema";
-import { insertImportedHealthMetric, type MetricType } from "@/platform/health/metrics";
+import type { VitalQuantityType } from "@/domains/vitals/types";
+import { insertImportedHealthMetric } from "@/platform/health/metrics";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
-
-/** The 16 simple point-in-time vitals types added alongside the original 5
- * HealthKit types (weight/sleep/steps/heart_rate/workout). None of these
- * roll up into activity_daily_summaries this pass — stored for future
- * features to build on, not surfaced yet (no recompute call, unlike
- * weight/sleep/steps/heart-rate/workout's insert paths). */
-export const VITAL_QUANTITY_TYPES = [
-  "vo2_max",
-  "resting_heart_rate",
-  "heart_rate_variability",
-  "walking_heart_rate_avg",
-  "active_energy",
-  "basal_energy",
-  "distance_walking_running",
-  "distance_cycling",
-  "body_fat_percentage",
-  "lean_body_mass",
-  "body_mass_index",
-  "height",
-  "flights_climbed",
-  "walking_speed",
-  "walking_steadiness",
-  "oxygen_saturation",
-  "respiratory_rate",
-] as const satisfies readonly MetricType[];
-
-export type VitalQuantityType = (typeof VITAL_QUANTITY_TYPES)[number];
 
 /** Insert path for imported data — see the matching note in
  * domains/weight/service.ts's insertImportedWeightLog for the dedup/
