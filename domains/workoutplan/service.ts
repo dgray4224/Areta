@@ -18,6 +18,7 @@ import {
 } from "@/domains/trainingprogram/service";
 import { isLegacyExerciseShape } from "@/domains/exercise/legacy";
 import { logScheduleEvent, hasActualScheduleEventToday } from "@/platform/scheduling/log-schedule-event";
+import { getWeekDates } from "@/platform/ui/week-dates";
 
 function currentWeekStart(): string {
   return new Date().toISOString().slice(0, 10);
@@ -427,11 +428,29 @@ export async function getActiveWorkoutPlan(
   client?: SupabaseClient<Database>
 ): Promise<WorkoutPlanView | null> {
   const supabase = client ?? (await createClient());
+
+  // Bounded to the Sun-Sat week containing today (found 2026-08-07 while
+  // investigating a real report of a not-yet-started trainer program
+  // showing real exercise content): an unbounded "most recent active row
+  // by week_start" silently picks up whatever the *furthest-future*
+  // pushed-live week is once "push weeks live" has materialized several
+  // weeks ahead (workout_plans.week_start is stamped per-anchor-date at
+  // generation time, so several future rows can coexist as 'active'
+  // simultaneously) -- showing that far-future week's real content as if
+  // it were "this week's plan" is worse than the "no plan" gap this
+  // function was originally written to close, since it's actively wrong
+  // rather than honestly empty. Scoping the fallback to this calendar
+  // week preserves the original intent (a plan generated on a different
+  // day *within the same week* still resolves) without reaching past it.
+  const today = new Date().toISOString().slice(0, 10);
+  const weekDates = getWeekDates(today);
   const { data: plan } = await supabase
     .from("workout_plans")
     .select("id, week_start, status, sessions_per_week, phase_focus")
     .eq("user_id", userId)
     .eq("status", "active")
+    .gte("week_start", weekDates[0])
+    .lte("week_start", weekDates[6])
     .order("week_start", { ascending: false })
     .limit(1)
     .maybeSingle();

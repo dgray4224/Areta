@@ -9,6 +9,7 @@ import { getAllRecipes, getRecipesByIds } from "@/domains/recipes/service";
 import { generateMealPlan, type RecipeForPlanning } from "@/domains/mealplan/generate";
 import type { NutritionInput } from "@/domains/nutrition/schema";
 import { logScheduleEvent } from "@/platform/scheduling/log-schedule-event";
+import { getWeekDates } from "@/platform/ui/week-dates";
 
 function currentWeekStart(): string {
   return new Date().toISOString().slice(0, 10);
@@ -251,17 +252,60 @@ export async function getActiveMealPlan(
   client?: SupabaseClient<Database>
 ): Promise<MealPlanView | null> {
   const supabase = client ?? (await createClient());
+
+  // Bounded to the Sun-Sat week containing today -- same fix as
+  // domains/workoutplan/service.ts#getActiveWorkoutPlan (2026-08-07,
+  // found investigating a real report on that side): an unbounded "most
+  // recent active row by week_start" would silently surface a
+  // far-future week's real content as "this week's plan" the moment
+  // anything ever materializes several weeks of meal_plans ahead of
+  // schedule for one user (no trainer-side "push weeks live" equivalent
+  // exists for nutrition yet, so this can't actually happen in practice
+  // today -- fixed anyway since /api/nutrition/route.ts already depends
+  // on this function, and the same gap would silently reappear the
+  // moment such a feature is added).
+  const today = new Date().toISOString().slice(0, 10);
+  const weekDates = getWeekDates(today);
   const { data: plan } = await supabase
     .from("meal_plans")
     .select("id, week_start, status, calorie_target, protein_target")
     .eq("user_id", userId)
     .eq("status", "active")
+    .gte("week_start", weekDates[0])
+    .lte("week_start", weekDates[6])
     .order("week_start", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (!plan) return null;
   return getMealPlanForWeek(userId, plan.week_start, supabase);
+}
+
+/**
+ * Resilient "what should this user see as their current meal plan"
+ * lookup -- nutrition-side mirror of
+ * domains/workoutplan/service.ts#getCurrentWorkoutPlan (see that
+ * function's own doc comment for the full "why exact-match alone misses
+ * a plan generated on a different day this week" reasoning). Added
+ * 2026-08-07 alongside the getActiveMealPlan week-bounding fix, to close
+ * the last piece of the "meal plans have the same stale-lookup bug
+ * workouts just got fixed for" gap this file's own README entry already
+ * flagged: domains/trainer/service.ts#getClientNutritionOverview was
+ * still calling plain getMealPlanForWeek(clientId, undefined) directly,
+ * which only ever matches the exact literal day materialization last ran
+ * -- any other day, a real active plan would show as "no meal plan" even
+ * though one exists. `/plan/meals` (the self-service page) has its own
+ * separate, still-open instance of this same gap -- not fixed here,
+ * still tracked in the README.
+ */
+export async function getCurrentMealPlan(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<MealPlanView | null> {
+  const supabase = client ?? (await createClient());
+  const todaysPlan = await getMealPlanForWeek(userId, undefined, supabase);
+  if (todaysPlan) return todaysPlan;
+  return getActiveMealPlan(userId, supabase);
 }
 
 /**

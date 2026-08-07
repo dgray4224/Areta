@@ -120,14 +120,27 @@ export default async function ClientWorkoutPage({
 
       {!workoutPlan || workoutPlan.items.length === 0 ? (
         assignment ? (
-          <EmptyState
-            title={`Nothing scheduled ${thisWeekStart} – ${thisWeekEnd}`}
-            description={
-              nextSession
-                ? `This program has no session in the rest of this week. Next one: ${nextSession.date}${nextSession.sessionName ? ` — ${nextSession.sessionName}` : ""}. See the calendar above for the full schedule.`
-                : "This program has no session in the rest of this week, and none in the next 30 days either — check the program's phases and sessions, or the calendar above."
-            }
-          />
+          assignment.startsOn > today ? (
+            // Consistent with the nutrition side's equivalent split
+            // (2026-08-07, found via a real screenshot there): a program
+            // that just hasn't started yet is a completely normal state,
+            // not a failure -- distinguishing it from "nothing scheduled
+            // this week" (a real program with a real gap) keeps this from
+            // reading as broken.
+            <EmptyState
+              title={`Starts ${assignment.startsOn}`}
+              description="A workout plan generates automatically once the program starts — nothing to do here yet."
+            />
+          ) : (
+            <EmptyState
+              title={`Nothing scheduled ${thisWeekStart} – ${thisWeekEnd}`}
+              description={
+                nextSession
+                  ? `This program has no session in the rest of this week. Next one: ${nextSession.date}${nextSession.sessionName ? ` — ${nextSession.sessionName}` : ""}. See the calendar above for the full schedule.`
+                  : "This program has no session in the rest of this week, and none in the next 30 days either — check the program's phases and sessions, or the calendar above."
+              }
+            />
+          )
         ) : (
           <EmptyState title="No workout plan yet" description="Assign a program above to get started." />
         )

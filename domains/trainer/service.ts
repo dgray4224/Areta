@@ -16,7 +16,7 @@ import {
 } from "@/domains/parameters/service";
 import { calculateNutritionParameters } from "@/domains/parameters/nutrition-calc";
 import type { GeneratedParameter } from "@/domains/parameters/types";
-import { getMealPlanForWeek, type MealPlanView } from "@/domains/mealplan/service";
+import { getCurrentMealPlan, type MealPlanView } from "@/domains/mealplan/service";
 import {
   getCurrentWorkoutPlan,
   approveWorkoutPlan,
@@ -266,16 +266,18 @@ export async function getClientHistorySummary(clientId: string): Promise<ActionR
 
   const [weightRes, sleepRes, nutritionRes, recoveryRes, goalsRes, nameById] = await Promise.all([
     supabase
-      .from("weight_logs")
-      .select("id, logged_at, weight, unit")
+      .from("health_metrics")
+      .select("id, started_at, value, unit")
       .eq("user_id", clientId)
-      .order("logged_at", { ascending: false })
+      .eq("metric_type", "weight")
+      .order("started_at", { ascending: false })
       .limit(5),
     supabase
-      .from("sleep_logs")
-      .select("id, date, total_duration_minutes, quality")
+      .from("health_metrics")
+      .select("id, started_at, value, sleep_quality")
       .eq("user_id", clientId)
-      .order("date", { ascending: false })
+      .eq("metric_type", "sleep")
+      .order("started_at", { ascending: false })
       .limit(5),
     supabase
       .from("nutrition_logs")
@@ -301,15 +303,15 @@ export async function getClientHistorySummary(clientId: string): Promise<ActionR
     clientName: nameById.get(clientId) ?? null,
     recentWeightLogs: (weightRes.data ?? []).map((r) => ({
       id: r.id,
-      loggedAt: r.logged_at,
-      weight: r.weight,
-      unit: r.unit,
+      loggedAt: r.started_at,
+      weight: Number(r.value),
+      unit: r.unit as string,
     })),
     recentSleepLogs: (sleepRes.data ?? []).map((r) => ({
       id: r.id,
-      date: r.date,
-      totalDurationMinutes: r.total_duration_minutes,
-      quality: r.quality,
+      date: r.started_at.slice(0, 10),
+      totalDurationMinutes: r.value != null ? Number(r.value) : null,
+      quality: r.sleep_quality,
     })),
     recentNutritionLogs: (nutritionRes.data ?? []).map((r) => ({
       id: r.id,
@@ -404,12 +406,20 @@ export async function getClientNutritionOverview(
     getApprovedParameterValue(clientId, "nutrition", "calorie_target"),
     getApprovedParameterValue(clientId, "nutrition", "protein_target_g"),
     getGeneratedParameters(clientId, "nutrition"),
-    // getMealPlanForWeek, not getActiveMealPlan (status='active' only) —
-    // found in the third code-review pass: generateAndSaveMealPlan always
-    // inserts status:"draft", so getActiveMealPlan could never see a
-    // plan the trainer had just generated, and the Approve action was
-    // unreachable. Matches app/(app)/plan/meals/page.tsx's own pattern.
-    getMealPlanForWeek(clientId, undefined, supabase),
+    // getCurrentMealPlan (2026-08-07, replacing a plain getMealPlanForWeek
+    // call), not getActiveMealPlan alone -- it tries the exact-today match
+    // first (same as before: still sees a same-day draft immediately,
+    // generateAndSaveMealPlan always inserts status:"draft" so a pure
+    // getActiveMealPlan call would miss it and make the Approve action
+    // unreachable, found in an earlier code-review pass), *then* falls
+    // back to the resilient active-only lookup for any other day this
+    // week -- closing the exact same stale-lookup gap
+    // getCurrentWorkoutPlan already closed on the workout side. A plain
+    // getMealPlanForWeek(clientId, undefined) alone (the prior code) only
+    // ever matched the literal day materialization last ran, so a
+    // trainer-assigned client's real, active plan showed as "no meal
+    // plan" on any other day.
+    getCurrentMealPlan(clientId, supabase),
   ]);
 
   return { ok: true, data: { calorieTarget, proteinTarget, parameters, mealPlan } };
@@ -450,7 +460,7 @@ export async function approveClientNutritionParameters(clientId: string): Promis
 // generate/approve flow) were removed 2026-08-07 when trainer-authored
 // nutrition programs (domains/trainermealprogram/) replaced them as the
 // trainer-managed-client nutrition path, per the confirmed "replace
-// entirely" decision. getMealPlanForWeek above still reads whatever plan
+// entirely" decision. getCurrentMealPlan above still reads whatever plan
 // exists (self-generated or otherwise) for read-only display.
 
 export async function getClientWorkoutOverview(
@@ -567,33 +577,48 @@ export async function addClientWorkoutItem(
 // functions that need requireActiveClient.
 // ---------------------------------------------------------------------------
 
-/** Archives this client's still-current (today-or-future) workout_plans
- * rows that belong to a trainer program they're no longer on -- called
- * right after a program switch or unassign actually commits. Found
- * 2026-08-07: getWorkoutPlanForWeek's exact-today match has no idea
- * which trainer_program_id a row belongs to, only its date, so a
- * leftover 'active' row materialized under the OLD program before the
- * switch keeps getting served as "today's plan" forever -- most visibly
- * when the NEW program hasn't started yet (generateAndSaveFromTrainerProgram
- * no-ops until then, so nothing ever overwrites the stale row). Scoped
- * to today-or-future dates only, same "don't rewrite history" boundary
- * the rest of this file uses (e.g. validateEditableDate) -- what already
- * happened stays untouched. 'archived' (a workout_plans status the
- * schema has allowed since migration 0010 but nothing ever set) is what
- * makes getWorkoutPlanForWeek stop returning the row, without deleting
- * it. */
+/** Archives this client's still-current-or-later workout_plans rows that
+ * belong to a trainer program they're no longer on -- called right after
+ * a program switch or unassign actually commits. Found 2026-08-07:
+ * getWorkoutPlanForWeek's exact-today match has no idea which
+ * trainer_program_id a row belongs to, only its date, so a leftover
+ * 'active' row materialized under the OLD program before the switch
+ * keeps getting served as "today's plan" forever -- most visibly when
+ * the NEW program hasn't started yet (generateAndSaveFromTrainerProgram
+ * no-ops until then, so nothing ever overwrites the stale row).
+ *
+ * Boundary is the **Sunday of the current calendar week**, not literal
+ * today -- found via a second, related bug the same day: a row's
+ * week_start is stamped to whatever anchor date generation used
+ * (materializeWeek's own doc comment), which can fall a day or two
+ * *before* today while its actual day-of-week content still covers
+ * today/tomorrow (e.g. anchored Thursday, still describes this Friday
+ * and Saturday). A literal `>= today` comparison on week_start let that
+ * row slip through unarchived, so getActiveWorkoutPlan's own
+ * this-calendar-week-scoped fallback (see that function's fix, same
+ * date) kept finding it and serving old-program content as current.
+ * Widening to the week's own Sunday still respects "don't rewrite
+ * history" at the right granularity -- workout_plans rows are weekly
+ * units, not daily ones, so a genuinely bygone *earlier week* stays
+ * untouched, but nothing still-relevant to the current week can slip
+ * past this filter by having an earlier-in-the-week anchor date.
+ * 'archived' (a workout_plans status the schema has allowed since
+ * migration 0010 but nothing ever set) is what makes
+ * getWorkoutPlanForWeek/getActiveWorkoutPlan stop returning the row,
+ * without deleting it. */
 async function archiveStaleTrainerProgramPlans(
   clientId: string,
   trainerProgramId: string,
   supabase: SupabaseClient<Database>
 ): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
+  const thisWeekStart = sundayOfWeekContaining(today);
   await supabase
     .from("workout_plans")
     .update({ status: "archived" })
     .eq("user_id", clientId)
     .eq("trainer_program_id", trainerProgramId)
-    .gte("week_start", today)
+    .gte("week_start", thisWeekStart)
     .neq("status", "archived");
 }
 

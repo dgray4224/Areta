@@ -7,6 +7,7 @@ import type { ActionResult } from "@/platform/auth/actions";
 import { getApprovedParameterValue } from "@/domains/parameters/service";
 import { resolveMealProgramPhase } from "@/domains/trainermealprogram/phase-resolution";
 import { getMealPortionRows } from "@/domains/trainermealprogram/portions";
+import { getWeekDates } from "@/platform/ui/week-dates";
 import type { NutritionOverride } from "@/domains/trainermealprogram/types";
 
 function todayIso(): string {
@@ -187,20 +188,29 @@ export async function resyncAssignedMealClients(
  * domains/trainer/service.ts's own archiveStaleTrainerProgramPlans (see
  * that function's doc comment for the full "why archive, not delete"
  * reasoning: getMealPlanForWeek et al. already treat 'archived' as
- * invisible without destroying history). Only touches today-or-later
- * weeks, same as the workout side -- past weeks are real history of what
- * the client actually ate, not something a program switch should erase. */
+ * invisible without destroying history, and why the boundary is the
+ * Sunday of the current calendar week, not literal today -- a row's
+ * week_start can anchor a day or two before today while still describing
+ * today/tomorrow's content). Not currently exploitable on the nutrition
+ * side specifically -- materializeCurrentMealWeek only ever anchors at
+ * literal "today," never an earlier day in the week, unlike the workout
+ * side's "push weeks live" -- but kept in parity anyway so this doesn't
+ * quietly regress the moment nutrition grows an equivalent bulk-ahead
+ * materialization feature. Only touches this-week-or-later, same as the
+ * workout side -- a genuinely bygone earlier week is real history of
+ * what the client actually ate, not something a program switch should
+ * erase. */
 export async function archiveStaleTrainerMealPlans(
   clientId: string,
   trainerMealProgramId: string,
   supabase: SupabaseClient<Database>
 ): Promise<void> {
-  const today = todayIso();
+  const thisWeekStart = getWeekDates(todayIso())[0];
   await supabase
     .from("meal_plans")
     .update({ status: "archived" })
     .eq("user_id", clientId)
     .eq("trainer_meal_program_id", trainerMealProgramId)
-    .gte("week_start", today)
+    .gte("week_start", thisWeekStart)
     .neq("status", "archived");
 }
