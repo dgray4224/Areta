@@ -63,9 +63,10 @@ function convertLoggedWeight(weight: number, loggedUnit: "lb" | "kg", targetUnit
 async function writeGeneratedParameters(
   userId: string,
   domain: string,
-  parameters: GeneratedParameter[]
+  parameters: GeneratedParameter[],
+  client?: SupabaseClient<Database>
 ): Promise<ActionResult> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { error } = await supabase.from("generated_parameters").upsert(
     parameters.map((param) => ({
       user_id: userId,
@@ -110,9 +111,10 @@ export type NutritionCalculationBaseInputs = Omit<NutritionParameterInputs, "tar
  * long-range goal timeline).
  */
 export async function getNutritionCalculationBaseInputs(
-  userId: string
+  userId: string,
+  client?: SupabaseClient<Database>
 ): Promise<NutritionCalculationBaseInputs> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
 
   const [{ data: profile }, { data: responses }, { data: latestWeightLog }] = await Promise.all([
     supabase.from("profiles").select("units").eq("id", userId).single(),
@@ -154,9 +156,12 @@ export async function getNutritionCalculationBaseInputs(
  * static onboarding value is what makes this a *recalculation from
  * observed outcomes* (rule 23) rather than a one-time estimate.
  */
-export async function generateNutritionParameters(userId: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const baseInputs = await getNutritionCalculationBaseInputs(userId);
+export async function generateNutritionParameters(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
+  const baseInputs = await getNutritionCalculationBaseInputs(userId, supabase);
 
   const { data: domain } = await supabase
     .from("domains")
@@ -187,14 +192,17 @@ export async function generateNutritionParameters(userId: string): Promise<Actio
     };
   }
 
-  return writeGeneratedParameters(userId, "nutrition", parameters);
+  return writeGeneratedParameters(userId, "nutrition", parameters, supabase);
 }
 
 /** Recomputes exercise parameters from the Exercise onboarding step's
  * answers. Unlike nutrition, there's no logged-data override yet — phase
  * length/archetype are direct stated inputs, not derived from a trend. */
-export async function generateExerciseParameters(userId: string): Promise<ActionResult> {
-  const supabase = await createClient();
+export async function generateExerciseParameters(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
   const { data: responses } = await supabase
     .from("onboarding_responses")
     .select("exercise")
@@ -224,7 +232,7 @@ export async function generateExerciseParameters(userId: string): Promise<Action
     };
   }
 
-  return writeGeneratedParameters(userId, "exercise", parameters);
+  return writeGeneratedParameters(userId, "exercise", parameters, supabase);
 }
 
 export async function getGeneratedParameters(
@@ -305,8 +313,12 @@ export async function approveGeneratedParameters(
 /** Approves all currently-generated parameters for a domain as-is, without
  * per-field edits — used by weekly regeneration, where the user approves
  * the week's plan as a bundle rather than re-reviewing every number. */
-export async function approveAllGeneratedParameters(userId: string, domain: string): Promise<ActionResult> {
-  const supabase = await createClient();
+export async function approveAllGeneratedParameters(
+  userId: string,
+  domain: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
   const { error } = await supabase
     .from("generated_parameters")
     .update({ approved: true, approved_at: new Date().toISOString() })

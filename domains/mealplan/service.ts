@@ -29,9 +29,10 @@ function normalizeKeywords(list: string[] | undefined | null): string[] {
  */
 export async function generateAndSaveMealPlan(
   userId: string,
-  options?: { extraExcludeKeywords?: string[] }
+  options?: { extraExcludeKeywords?: string[] },
+  client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
 
   // A client with an active trainer-assigned nutrition program (2026-08-07,
   // mirrors domains/workoutplan/service.ts#generateAndSaveWorkoutPlan's own
@@ -57,8 +58,8 @@ export async function generateAndSaveMealPlan(
   }
 
   const [calorieTarget, proteinTarget] = await Promise.all([
-    getApprovedParameterValue(userId, "nutrition", "calorie_target"),
-    getApprovedParameterValue(userId, "nutrition", "protein_target_g"),
+    getApprovedParameterValue(userId, "nutrition", "calorie_target", supabase),
+    getApprovedParameterValue(userId, "nutrition", "protein_target_g", supabase),
   ]);
 
   if (calorieTarget === null || proteinTarget === null) {
@@ -72,7 +73,7 @@ export async function generateAndSaveMealPlan(
     .single();
   const nutrition = (responses?.nutrition ?? {}) as NutritionInput;
 
-  const recipes = await getAllRecipes();
+  const recipes = await getAllRecipes(supabase);
   const planningRecipes: RecipeForPlanning[] = recipes.map((r) => ({
     id: r.id,
     name: r.name,
@@ -146,8 +147,8 @@ export async function generateAndSaveMealPlan(
   return { ok: true, data: { warnings } };
 }
 
-export async function approveMealPlan(userId: string): Promise<ActionResult> {
-  const supabase = await createClient();
+export async function approveMealPlan(userId: string, client?: SupabaseClient<Database>): Promise<ActionResult> {
+  const supabase = client ?? (await createClient());
   const weekStart = currentWeekStart();
   const { error } = await supabase
     .from("meal_plans")
