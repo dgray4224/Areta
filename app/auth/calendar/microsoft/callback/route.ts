@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { requireUser } from "@/platform/auth/session";
 import { getCalendarProvider } from "@/platform/calendar/get-provider";
 import { upsertConnection } from "@/domains/calendar/connections-service";
+import { resolveOrigin } from "@/platform/http/resolve-origin";
 
 const STATE_COOKIE = "calendar_oauth_state";
 
@@ -10,7 +11,8 @@ const STATE_COOKIE = "calendar_oauth_state";
  * state-cookie verification shape as the Google callback. */
 export async function GET(request: NextRequest) {
   const user = await requireUser();
-  const { searchParams, origin } = new URL(request.url);
+  const origin = resolveOrigin(request);
+  const { searchParams } = new URL(request.url);
 
   const cookieStore = await cookies();
   const expectedState = cookieStore.get(STATE_COOKIE)?.value;
