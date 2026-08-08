@@ -33,7 +33,6 @@ describe("optionalStringValue", () => {
     // Left un-normalized, the form silently refuses to submit with no
     // visible error (see NutritionForm/LearningForm history).
     const nutritionResult = nutritionSchema.safeParse({
-      cookingAbility: optionalStringValue(""),
       trackingPreference: optionalStringValue(""),
     });
     expect(nutritionResult.success).toBe(true);
@@ -45,7 +44,7 @@ describe("optionalStringValue", () => {
   });
 
   it("still rejects an unrelated invalid enum value", () => {
-    const result = nutritionSchema.safeParse({ cookingAbility: "expert" });
+    const result = nutritionSchema.safeParse({ trackingPreference: "obsessive" });
     expect(result.success).toBe(false);
   });
 });

@@ -62,8 +62,13 @@ export const goalSchema = z.object({
   knownObstacles: z.string().optional(),
 });
 
+/** Goals became skippable in the 2026-08-07 onboarding consolidation —
+ * an empty array is a valid submission (e.g. a trainer signing up to
+ * coach, not to be coached). transformOnboarding already has a
+ * no-goals mission fallback, and V1's health domains no longer derive
+ * from picking a goal (see deriveActiveDomains). */
 export const goalsStepSchema = z.object({
-  goals: z.array(goalSchema).min(1, "Add at least one goal"),
+  goals: z.array(goalSchema),
 });
 
 export type Goal = z.infer<typeof goalSchema>;

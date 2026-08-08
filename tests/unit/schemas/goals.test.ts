@@ -27,8 +27,8 @@ describe("goalSchema", () => {
 });
 
 describe("goalsStepSchema", () => {
-  it("requires at least one goal", () => {
-    expect(goalsStepSchema.safeParse({ goals: [] }).success).toBe(false);
+  it("accepts an empty goal list (goals are skippable since the 2026-08-07 consolidation)", () => {
+    expect(goalsStepSchema.safeParse({ goals: [] }).success).toBe(true);
   });
 
   it("accepts a list of valid goals", () => {
