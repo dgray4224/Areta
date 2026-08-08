@@ -40,9 +40,13 @@ async function createFixture(email: string, complete: boolean): Promise<string> 
           units: "imperial",
           wakeTime: "07:00",
           bedTime: "23:00",
-          weeklyReviewDay: "sunday",
-          groceryDay: "saturday",
-          mealPrepDay: "sunday",
+          // 0 = Sunday .. 6 = Saturday, matches domains/identity/schema.ts
+          // and the profiles.* smallint columns' check constraints — day
+          // names here previously produced "invalid input syntax for type
+          // smallint" the moment this fixture data hit writeOnboardingOutput.
+          weeklyReviewDay: 0,
+          groceryDay: 6,
+          mealPrepDay: 0,
         },
         goals: [],
         nutrition: {
