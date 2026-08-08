@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getUser } from "@/platform/auth/session";
 import { LogoMark } from "@/platform/ui/Logo";
 import { Reveal } from "@/platform/ui/Reveal";
+import { AuroraBackground } from "@/platform/ui/AuroraBackground";
 import { TargetIcon, LeafIcon, DumbbellIcon, ScheduleIcon } from "@/platform/ui/marketing-icons";
 
 const PILLARS = [
@@ -74,11 +75,7 @@ export default async function RootPage() {
 
       {/* Hero */}
       <section className="relative isolate overflow-hidden">
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
-          <div className="animate-aurora-a absolute -top-32 -left-24 h-[28rem] w-[28rem] rounded-full bg-brand/30 blur-[100px] dark:bg-brand/20" />
-          <div className="animate-aurora-b absolute top-10 -right-32 h-[26rem] w-[26rem] rounded-full bg-accent/25 blur-[100px] dark:bg-accent/20" />
-          <div className="animate-aurora-c absolute top-64 left-1/3 h-[22rem] w-[22rem] rounded-full bg-hero/10 blur-[100px] dark:bg-hero/30" />
-        </div>
+        <AuroraBackground size="hero" />
 
         <div className="mx-auto max-w-3xl px-6 pt-20 pb-24 text-center sm:pt-28 sm:pb-32">
           <Reveal>
