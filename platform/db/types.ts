@@ -1355,6 +1355,36 @@ export type Database = {
         }
         Relationships: []
       }
+      mobile_bridge_codes: {
+        Row: {
+          access_token_encrypted: string
+          code: string
+          created_at: string
+          expires_at: string
+          refresh_token_encrypted: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          access_token_encrypted: string
+          code: string
+          created_at?: string
+          expires_at: string
+          refresh_token_encrypted: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          access_token_encrypted?: string
+          code?: string
+          created_at?: string
+          expires_at?: string
+          refresh_token_encrypted?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       nutrition_logs: {
         Row: {
           calories: number | null
