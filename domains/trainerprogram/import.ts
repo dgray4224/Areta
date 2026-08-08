@@ -173,6 +173,10 @@ async function resolveExerciseId(
     difficulty: ex.difficulty,
     primaryMuscleGroups: ex.primaryMuscleGroups,
     instructions: null,
+    movementPatterns: [],
+    modality: null,
+    limitationTags: [],
+    compound: false,
   });
   warnings.push(`"${ex.exerciseName}" wasn't in your library — added it as a new exercise pending review.`);
   return createResult.data.id;

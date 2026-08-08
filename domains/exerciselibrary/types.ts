@@ -7,6 +7,14 @@ export type Exercise = {
   difficulty: "beginner" | "intermediate" | "advanced";
   primaryMuscleGroups: string[];
   instructions: string | null;
+  /** Goal-first enrichment (migration 0044 columns, backfilled in 0089)
+   * -- what domains/recommendation/* filters and scores on. The legacy
+   * generation path (generate.ts's archetype filtering) ignores these,
+   * so adding them here is purely additive for existing callers. */
+  movementPatterns: string[];
+  modality: "resistance" | "aerobic" | "mobility" | "power" | null;
+  limitationTags: string[];
+  compound: boolean;
 };
 
 export type ExerciseStatus = "active" | "review" | "deprecated";

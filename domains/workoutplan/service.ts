@@ -17,6 +17,8 @@ import {
   getSessionExerciseById,
 } from "@/domains/trainingprogram/service";
 import { isLegacyExerciseShape } from "@/domains/exercise/legacy";
+import type { ExerciseInput } from "@/domains/exercise/schema";
+import { generateGoalFirstPlan } from "@/domains/recommendation/service";
 import { logScheduleEvent, hasActualScheduleEventToday } from "@/platform/scheduling/log-schedule-event";
 import { getWeekDates } from "@/platform/ui/week-dates";
 
@@ -77,16 +79,15 @@ export async function generateAndSaveWorkoutPlan(
   }
 
   const exercise = responses?.exercise ?? {};
-  // TODO(goal-first-training-system Phase 4): this whole archetype/rotation
-  // pipeline is being replaced by domains/recommendation/*. Until that
-  // ships, only users still on the old onboarding shape can generate a
-  // plan here -- everyone re-onboarded in the new goal-first shape gets
-  // this graceful "not ready yet" error instead of a broken plan.
+  // Two generation families behind one entry point (2026-08-07):
+  // legacy archetype-shape users keep the program/rotation pipeline
+  // below, byte-for-byte; everyone onboarded through the current
+  // goal-first Exercise step routes to domains/recommendation/* (the
+  // "Phase 4" engine 0044's schema was built for) -- this closed the
+  // "coming soon" gap where new-shape users could never generate a
+  // workout plan at all.
   if (!isLegacyExerciseShape(exercise) || !exercise.archetype) {
-    return {
-      ok: false,
-      error: "Workout plan generation for the new onboarding is coming soon -- check back shortly.",
-    };
+    return generateAndSaveGoalFirstPlan(userId, exercise as ExerciseInput, sessionsPerWeek, weekStart, supabase);
   }
 
   const archetype = exercise.archetype;
@@ -261,6 +262,109 @@ export async function generateAndSaveWorkoutPlan(
     const { error: itemsError } = await supabase.from("workout_plan_items").insert(items);
     if (itemsError) {
       return { ok: false, error: `Failed to save workout plan items: ${itemsError.message}` };
+    }
+  }
+
+  return { ok: true, data: { warnings } };
+}
+
+/**
+ * Goal-first half of generateAndSaveWorkoutPlan: runs the
+ * recommendation engine, then persists through the same
+ * workout_plans/workout_plan_items shape as the legacy branch --
+ * template_id/template_phase_id tag the plan's source family (0088),
+ * items carry template_slot_id + provenance (0044), and each item's
+ * top-2 runner-up candidates land in workout_plan_item_alternatives.
+ * Not exported: only reachable through generateAndSaveWorkoutPlan,
+ * which already ran the trainer-assignment guard and the approved
+ * sessions_per_week check.
+ */
+async function generateAndSaveGoalFirstPlan(
+  userId: string,
+  exercise: ExerciseInput,
+  sessionsPerWeek: number,
+  weekStart: string,
+  supabase: SupabaseClient<Database>
+): Promise<ActionResult<{ warnings: string[] }>> {
+  const generated = await generateGoalFirstPlan(userId, exercise, sessionsPerWeek, weekStart, supabase);
+  if (!generated.ok) return generated;
+  const { days, extras, warnings, templateId, templatePhaseId, phaseWeekNumber, phaseFocus } = generated.data;
+
+  const { data: plan, error: planError } = await supabase
+    .from("workout_plans")
+    .upsert(
+      {
+        user_id: userId,
+        week_start: weekStart,
+        status: "draft",
+        sessions_per_week: sessionsPerWeek,
+        phase_focus: phaseFocus,
+        program_id: null,
+        program_phase_id: null,
+        template_id: templateId,
+        template_phase_id: templatePhaseId,
+        phase_week_number: phaseWeekNumber,
+      },
+      { onConflict: "user_id,week_start" }
+    )
+    .select("id")
+    .single();
+  if (planError || !plan) {
+    return { ok: false, error: `Failed to save workout plan: ${planError?.message}` };
+  }
+
+  // Regenerating replaces the draft's items; alternates cascade-delete
+  // with their item rows (workout_plan_item_alternatives FK).
+  const { error: deleteError } = await supabase.from("workout_plan_items").delete().eq("workout_plan_id", plan.id);
+  if (deleteError) {
+    return { ok: false, error: `Failed to clear previous plan items: ${deleteError.message}` };
+  }
+
+  const items = days.flatMap((day) =>
+    day.exercises.map((ex, index) => ({
+      workout_plan_id: plan.id,
+      user_id: userId,
+      day_of_week: day.dayOfWeek,
+      session_order: index,
+      exercise_id: ex.exerciseId,
+      sets: ex.sets,
+      reps: ex.reps,
+      duration_minutes: ex.durationMinutes,
+      reps_min: ex.repsMin,
+      reps_max: ex.repsMax,
+      intensity_type: ex.intensityType,
+      intensity_value: ex.intensityValue,
+      cardio_intensity: ex.cardioIntensity,
+      coaching_notes: ex.coachingNotes,
+      substituted: ex.substituted,
+      template_slot_id: extras.get(`${day.dayOfWeek}:${index}`)?.templateSlotId ?? null,
+      provenance: extras.get(`${day.dayOfWeek}:${index}`)?.provenance ?? null,
+    }))
+  );
+
+  if (items.length > 0) {
+    const { data: insertedItems, error: itemsError } = await supabase
+      .from("workout_plan_items")
+      .insert(items)
+      .select("id, day_of_week, session_order");
+    if (itemsError) {
+      return { ok: false, error: `Failed to save workout plan items: ${itemsError.message}` };
+    }
+
+    const alternativeRows = (insertedItems ?? []).flatMap((item) => {
+      const itemExtras = extras.get(`${item.day_of_week}:${item.session_order}`);
+      return (itemExtras?.alternatives ?? []).map((alt) => ({
+        workout_plan_item_id: item.id,
+        exercise_id: alt.exerciseId,
+        rank: alt.rank,
+        score: alt.score,
+      }));
+    });
+    if (alternativeRows.length > 0) {
+      const { error: altError } = await supabase.from("workout_plan_item_alternatives").insert(alternativeRows);
+      // Alternates are an enhancement, not plan content -- surface a
+      // warning rather than failing the whole generation over them.
+      if (altError) warnings.push(`Alternates could not be saved: ${altError.message}`);
     }
   }
 

@@ -42,6 +42,10 @@ export async function getAllExercises(client?: SupabaseClient<Database>): Promis
       difficulty: row.difficulty as Exercise["difficulty"],
       primaryMuscleGroups: row.primary_muscle_groups,
       instructions: row.instructions,
+      movementPatterns: row.movement_patterns,
+      modality: row.modality as Exercise["modality"],
+      limitationTags: row.limitation_tags,
+      compound: row.compound,
     })
   );
 }
@@ -69,6 +73,10 @@ export async function getExercisesByIds(
       difficulty: row.difficulty as Exercise["difficulty"],
       primaryMuscleGroups: row.primary_muscle_groups,
       instructions: row.instructions,
+      movementPatterns: row.movement_patterns,
+      modality: row.modality as Exercise["modality"],
+      limitationTags: row.limitation_tags,
+      compound: row.compound,
     });
   }
   return map;

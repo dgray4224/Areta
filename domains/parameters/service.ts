@@ -7,6 +7,8 @@ import {
   type NutritionParameterInputs,
 } from "@/domains/parameters/nutrition-calc";
 import { calculateExerciseParameters } from "@/domains/parameters/exercise-calc";
+import { calculateGoalFirstExerciseParameters } from "@/domains/parameters/exercise-calc-goalfirst";
+import type { ExerciseInput } from "@/domains/exercise/schema";
 import type { NutritionInput } from "@/domains/nutrition/schema";
 import { isLegacyExerciseShape } from "@/domains/exercise/legacy";
 import type { GeneratedParameter } from "@/domains/parameters/types";
@@ -198,19 +200,20 @@ export async function generateExerciseParameters(userId: string): Promise<Action
     .single();
 
   const exercise = responses?.exercise ?? {};
-  // TODO(goal-first-training-system Phase 4): calculateExerciseParameters
-  // is part of the old archetype-first pipeline being replaced by
-  // domains/recommendation/*. Only meaningful for users still on the old
-  // onboarding shape; new-shape users get "missing inputs" until Phase 4.
-  const legacy = isLegacyExerciseShape(exercise) ? exercise : {};
-
-  const { parameters, missingInputs } = calculateExerciseParameters({
-    archetype: legacy.archetype,
-    experienceLevel: legacy.experienceLevel,
-    trainingPhaseLengthWeeks: legacy.trainingPhaseLengthWeeks,
-    daysPerWeekAvailable: legacy.daysPerWeekAvailable,
-    sessionLengthMinutesAvailable: legacy.sessionLengthMinutesAvailable,
-  });
+  // Two calculators, one output contract (same six parameter ids):
+  // legacy archetype-shape users keep the original calculator; everyone
+  // onboarded through the current goal-first Exercise step goes through
+  // the goal-first one (2026-08-07 -- this closed the "coming soon" gap
+  // where new-shape users could never generate parameters at all).
+  const { parameters, missingInputs } = isLegacyExerciseShape(exercise)
+    ? calculateExerciseParameters({
+        archetype: exercise.archetype,
+        experienceLevel: exercise.experienceLevel,
+        trainingPhaseLengthWeeks: exercise.trainingPhaseLengthWeeks,
+        daysPerWeekAvailable: exercise.daysPerWeekAvailable,
+        sessionLengthMinutesAvailable: exercise.sessionLengthMinutesAvailable,
+      })
+    : calculateGoalFirstExerciseParameters(exercise as ExerciseInput);
 
   if (parameters.length === 0) {
     return {

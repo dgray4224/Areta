@@ -13,6 +13,10 @@ function exercise(overrides: Partial<Exercise>): Exercise {
     difficulty: "beginner",
     primaryMuscleGroups: [],
     instructions: null,
+    movementPatterns: [],
+    modality: null,
+    limitationTags: [],
+    compound: false,
     ...overrides,
   };
 }

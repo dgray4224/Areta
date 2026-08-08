@@ -148,6 +148,10 @@ async function loadExercises(supabase: SupabaseClient<Database>): Promise<Exerci
     difficulty: row.difficulty as Exercise["difficulty"],
     primaryMuscleGroups: row.primary_muscle_groups,
     instructions: row.instructions,
+    movementPatterns: [],
+    modality: null,
+    limitationTags: [],
+    compound: false,
   }));
 }
 

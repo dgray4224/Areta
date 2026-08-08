@@ -722,6 +722,10 @@ function toExercise(row: Database["public"]["Tables"]["exercises"]["Row"]): Exer
     difficulty: row.difficulty as Exercise["difficulty"],
     primaryMuscleGroups: row.primary_muscle_groups,
     instructions: row.instructions,
+    movementPatterns: [],
+    modality: null,
+    limitationTags: [],
+    compound: false,
   };
 }
 

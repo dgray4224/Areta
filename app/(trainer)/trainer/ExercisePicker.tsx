@@ -411,6 +411,10 @@ function NewExerciseInline({
         primaryMuscleGroups: csv(muscleGroups),
         archetypeTags: [],
         instructions: instructions || undefined,
+        movementPatterns: [],
+        modality: null,
+        limitationTags: [],
+        compound: false,
       });
       if (!result.ok) {
         setError(result.error);
@@ -425,6 +429,10 @@ function NewExerciseInline({
         difficulty,
         primaryMuscleGroups: csv(muscleGroups),
         instructions: instructions || null,
+        movementPatterns: [],
+        modality: null,
+        limitationTags: [],
+        compound: false,
       });
     });
   };
