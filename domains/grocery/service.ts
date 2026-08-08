@@ -98,9 +98,10 @@ export type GroceryItemView = {
 
 export async function getGroceryListForWeek(
   userId: string,
-  weekStart = currentWeekStart()
+  weekStart = currentWeekStart(),
+  client?: SupabaseClient<Database>
 ): Promise<GroceryItemView[]> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data: list } = await supabase
     .from("grocery_lists")
     .select("id")
@@ -135,9 +136,10 @@ export async function getGroceryListForWeek(
 export async function toggleGroceryItem(
   userId: string,
   itemId: string,
-  isChecked: boolean
+  isChecked: boolean,
+  client?: SupabaseClient<Database>
 ): Promise<ActionResult> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { error } = await supabase
     .from("grocery_items")
     .update({ is_checked: isChecked })

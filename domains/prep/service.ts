@@ -95,9 +95,10 @@ export type PrepPlanView = {
 
 export async function getPrepPlanForWeek(
   userId: string,
-  weekStart = currentWeekStart()
+  weekStart = currentWeekStart(),
+  client?: SupabaseClient<Database>
 ): Promise<PrepPlanView | null> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data: plan } = await supabase
     .from("prep_plans")
     .select("id, week_start, estimated_minutes, container_count")

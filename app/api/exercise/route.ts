@@ -34,15 +34,24 @@ import type { Database } from "@/platform/db/types";
  * prescription fields together (not an independent single-field update)
  * and needs its own server-side sibling validation
  * (swapWorkoutPlanItemExercise).
+ *
+ * `?date=` (GET/POST) generalizes all of the above from "today" to any
+ * day -- added for the mobile Plan tab's day-detail view, which needs to
+ * edit/swap items on days other than today, the same way /api/nutrition
+ * already supports ?date=. Omitted, every existing today-only caller
+ * (the Exercise tab) is unaffected.
  */
 
-function todayDayOfWeek(): number {
-  return new Date().getUTCDay();
+function todayDateString(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
-function todayUtcRange(): { start: string; end: string } {
-  const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+function dayOfWeekFor(dateString: string): number {
+  return new Date(`${dateString}T00:00:00Z`).getUTCDay();
+}
+
+function utcRangeForDate(dateString: string): { start: string; end: string } {
+  const start = new Date(`${dateString}T00:00:00.000Z`);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   return { start: start.toISOString(), end: end.toISOString() };
 }
@@ -118,8 +127,9 @@ export async function GET(request: NextRequest) {
   }
   const { supabase, userId } = auth;
 
+  const date = request.nextUrl.searchParams.get("date") ?? todayDateString();
   const plan = await getActiveWorkoutPlan(userId, supabase);
-  const dow = todayDayOfWeek();
+  const dow = dayOfWeekFor(date);
   const tomorrowDow = (dow + 1) % 7;
   const todaysItems = plan?.items.filter((item) => item.dayOfWeek === dow) ?? [];
   const tomorrowsItems = plan?.items.filter((item) => item.dayOfWeek === tomorrowDow) ?? [];
@@ -180,7 +190,7 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  const { start, end } = todayUtcRange();
+  const { start, end } = utcRangeForDate(date);
   const { data: workoutRows, error } = await supabase
     .from("health_metrics")
     .select("id, started_at, ended_at, activity_type, total_energy_burned_kcal, total_distance_meters")
@@ -305,12 +315,14 @@ export async function POST(request: NextRequest) {
     reps?: unknown;
     durationMinutes?: unknown;
     sessionId?: unknown;
+    date?: unknown;
   };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  const dayOfWeek = dayOfWeekFor(typeof body.date === "string" ? body.date : todayDateString());
 
   // Four distinct actions share this endpoint: swap to one of the slot's
   // up-to-2 curated alternates (itemId + targetProgramSessionExerciseId),
@@ -321,7 +333,7 @@ export async function POST(request: NextRequest) {
   // workout suggestions"). Checked first since it's a distinct shape from
   // the other three (no itemId/exerciseId at all).
   if (typeof body.sessionId === "string") {
-    const result = await selectAlternativeSessionForToday(userId, todayDayOfWeek(), body.sessionId, supabase);
+    const result = await selectAlternativeSessionForToday(userId, dayOfWeek, body.sessionId, supabase);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
@@ -383,7 +395,7 @@ export async function POST(request: NextRequest) {
 
     const result = typeof body.itemId === "string"
       ? await customizeWorkoutPlanItemExercise(userId, body.itemId, { exerciseId: body.exerciseId, sets, reps, durationMinutes }, supabase)
-      : await addWorkoutPlanItemExercise(userId, todayDayOfWeek(), { exerciseId: body.exerciseId, sets, reps, durationMinutes }, supabase);
+      : await addWorkoutPlanItemExercise(userId, dayOfWeek, { exerciseId: body.exerciseId, sets, reps, durationMinutes }, supabase);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }

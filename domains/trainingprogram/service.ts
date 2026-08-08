@@ -117,6 +117,28 @@ export async function getFirstPhaseId(
   return data?.id ?? null;
 }
 
+/** Every phase in a program, in sequence -- unlike getFirstPhaseId/
+ * getNextPhase's one-at-a-time navigation, this is for the mobile Plan
+ * tab's Program/Phase overview, which shows "Phase 2 of 4" plus what's
+ * ahead, not just where the user currently is. */
+export async function getPhasesForProgram(
+  programId: string,
+  client?: SupabaseClient<Database>
+): Promise<TrainingProgramPhase[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("training_program_phases")
+    .select("*")
+    .eq("program_id", programId)
+    .order("phase_order", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to load program phases: ${error.message}`);
+  }
+
+  return (data ?? []).map(toPhase);
+}
+
 export async function getPhaseById(
   phaseId: string,
   client?: SupabaseClient<Database>
