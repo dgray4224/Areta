@@ -81,7 +81,7 @@ async function main() {
   const { data: phase1, error: phase1Error } = await supabase
     .from("trainer_program_phases")
     .insert({ program_id: program.id, phase_order: 1, name: "Foundation", focus: "Build a consistent training habit and clean technique.", length_weeks: 4, is_final: false })
-    .select("id")
+    .select("id, focus")
     .single();
   if (phase1Error || !phase1) throw new Error(`Failed to create phase 1: ${phase1Error?.message}`);
 
