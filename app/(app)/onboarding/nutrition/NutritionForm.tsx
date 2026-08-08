@@ -8,12 +8,8 @@ import {
   ACTIVITY_LEVELS,
   nutritionSchema,
   type NutritionInput,
-  FOOD_PREFERENCE_SUGGESTIONS,
   ALLERGY_SUGGESTIONS,
   DISLIKED_FOOD_SUGGESTIONS,
-  FAVORITE_MEAL_SUGGESTIONS,
-  GROCERY_STORE_SUGGESTIONS,
-  APPLIANCE_SUGGESTIONS,
 } from "@/domains/nutrition/schema";
 import { saveNutritionStep } from "@/domains/nutrition/service";
 import { StepShell } from "@/platform/ui/StepShell";
@@ -149,21 +145,6 @@ export function NutritionForm({
             </SelectInput>
           </FormField>
         </div>
-
-        <FormField label="Food preferences" htmlFor="foodPreferences">
-          <Controller
-            name="foodPreferences"
-            control={control}
-            render={({ field }) => (
-              <TagPicker
-                id="foodPreferences"
-                suggestions={FOOD_PREFERENCE_SUGGESTIONS}
-                value={field.value ?? []}
-                onChange={field.onChange}
-              />
-            )}
-          />
-        </FormField>
         <FormField label="Allergies" htmlFor="allergies">
           <Controller
             name="allergies"
@@ -192,21 +173,6 @@ export function NutritionForm({
             )}
           />
         </FormField>
-        <FormField label="Favorite meals" htmlFor="favoriteMeals">
-          <Controller
-            name="favoriteMeals"
-            control={control}
-            render={({ field }) => (
-              <TagPicker
-                id="favoriteMeals"
-                suggestions={FAVORITE_MEAL_SUGGESTIONS}
-                value={field.value ?? []}
-                onChange={field.onChange}
-              />
-            )}
-          />
-        </FormField>
-
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Meals per day" htmlFor="mealsPerDay" error={errors.mealsPerDay?.message}>
             <TextInput
@@ -217,82 +183,10 @@ export function NutritionForm({
               {...register("mealsPerDay", { setValueAs: optionalNumberValue })}
             />
           </FormField>
-          <FormField label="Cooking ability" htmlFor="cookingAbility" error={errors.cookingAbility?.message}>
-            <SelectInput
-              id="cookingAbility"
-              {...register("cookingAbility", { setValueAs: optionalStringValue })}
-            >
-              <option value="">—</option>
-              <option value="beginner">Beginner</option>
-              <option value="intermediate">Intermediate</option>
-              <option value="advanced">Advanced</option>
-            </SelectInput>
-          </FormField>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <FormField
-            label="Prep time per week (minutes)"
-            htmlFor="availablePrepTimeMinutes"
-            hint="Total time for your weekly meal-prep session (e.g. Sunday), not per day"
-          >
-            <TextInput
-              id="availablePrepTimeMinutes"
-              type="number"
-              min={0}
-              {...register("availablePrepTimeMinutes", { setValueAs: optionalNumberValue })}
-            />
-          </FormField>
-          <FormField
-            label="Household servings"
-            htmlFor="householdServings"
-            hint="How many people each meal should feed"
-          >
-            <TextInput
-              id="householdServings"
-              type="number"
-              min={1}
-              {...register("householdServings", { setValueAs: optionalNumberValue })}
-            />
-          </FormField>
         </div>
-
-        <FormField label="Grocery store(s)" htmlFor="groceryStores">
-          <Controller
-            name="groceryStores"
-            control={control}
-            render={({ field }) => (
-              <TagPicker
-                id="groceryStores"
-                suggestions={GROCERY_STORE_SUGGESTIONS}
-                value={field.value ?? []}
-                onChange={field.onChange}
-              />
-            )}
-          />
-        </FormField>
-        <FormField
-          label="Weekly grocery budget"
-          htmlFor="budget"
-          hint="Roughly how much you want to spend on groceries per week"
-        >
-          <TextInput id="budget" {...register("budget")} />
-        </FormField>
-        <FormField label="Appliances available" htmlFor="appliances">
-          <Controller
-            name="appliances"
-            control={control}
-            render={({ field }) => (
-              <TagPicker
-                id="appliances"
-                suggestions={APPLIANCE_SUGGESTIONS}
-                value={field.value ?? []}
-                onChange={field.onChange}
-              />
-            )}
-          />
-        </FormField>
-
         <div className="grid grid-cols-2 gap-4">
           <FormField
             label="Meal-logging detail"

@@ -103,7 +103,7 @@ export function GoalsForm({
           </div>
           {fields.length === 0 ? (
             <p className="mt-3 text-sm text-neutral-500">
-              Pick at least one area above to get started.
+              Optional — pick an area to set a goal, or continue without one (you can add goals later).
             </p>
           ) : null}
         </div>
@@ -196,7 +196,7 @@ export function GoalsForm({
           disabled={isPending}
           className="w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
         >
-          {isPending ? "Saving…" : "Continue"}
+          {isPending ? "Saving…" : fields.length === 0 ? "Continue without a goal" : "Continue"}
         </button>
       </form>
     </StepShell>

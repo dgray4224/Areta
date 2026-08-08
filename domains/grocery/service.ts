@@ -1,5 +1,7 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/platform/db/types";
 import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
 import { getMealPlanForWeek } from "@/domains/mealplan/service";
@@ -10,15 +12,15 @@ function currentWeekStart(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export async function generateAndSaveGroceryList(userId: string): Promise<ActionResult> {
+export async function generateAndSaveGroceryList(userId: string, client?: SupabaseClient<Database>): Promise<ActionResult> {
   const weekStart = currentWeekStart();
-  const plan = await getMealPlanForWeek(userId, weekStart);
+  const plan = await getMealPlanForWeek(userId, weekStart, client);
   if (!plan || plan.items.length === 0) {
     return { ok: false, error: "Generate and approve a meal plan first." };
   }
 
   const recipeIds = [...new Set(plan.items.map((i) => i.recipeId))];
-  const recipes = await getRecipesByIds(recipeIds);
+  const recipes = await getRecipesByIds(recipeIds, client);
 
   const needs: IngredientNeed[] = [];
   for (const item of plan.items) {
@@ -35,7 +37,7 @@ export async function generateAndSaveGroceryList(userId: string): Promise<Action
     }
   }
 
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data: inventoryRows } = await supabase
     .from("inventory_items")
     .select("name, quantity, unit")

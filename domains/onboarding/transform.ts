@@ -9,33 +9,30 @@ import type {
 import type { DomainKey, Goal } from "@/domains/goals/schema";
 import type { ExerciseInput } from "@/domains/exercise/schema";
 
-/** The onboarding sequence is per-user: Nutrition/Recovery/Learning only
- * appear when the user actually picked that area as a goal category, so a
- * user with e.g. only a Family goal never sees the Nutrition questionnaire.
- * V1 is health-only (see domains/goals/schema.ts V1_DOMAIN_KEYS) — picking
- * "health" unconditionally unlocks Nutrition/Exercise. The individual
- * domain checks stay alongside `wantsHealth` (not replaced by it) so a
- * future phase reintroducing fine-grained pillar chips needs no changes
- * here.
+/** The onboarding sequence, consolidated (2026-08-07) to only the steps
+ * whose answers actually drive nutrition/workout recommendations:
+ * Identity -> Goals (skippable) -> Nutrition -> Exercise -> Review.
+ *
+ * - Nutrition/Exercise no longer gate on picking a "Health" goal — V1 is
+ *   health-only anyway, so the gate only created a way to accidentally
+ *   skip the two steps the plan generators depend on. Goals itself
+ *   became skippable in the same pass (a trainer signing up to coach,
+ *   not to be coached, has no personal goal to state).
+ * - Recovery was dropped as a step: every field except `restrictions`
+ *   was write-only, and the Exercise step's own injury triage
+ *   (injuryStatus/limitationTags/prohibitedMovements/
+ *   clinicianRestrictions) is what the recommendation engine actually
+ *   consumes. The recovery schema/service/API stay dormant for old data.
+ * - Learning was dropped: unreachable in V1 (no "learning" goal chip
+ *   exists) and every field was write-only.
  *
  * Sleep and Coaching are deliberately never onboarding steps: Sleep's
  * target bedtime/wake are already covered by Identity's wake/bedtime
  * fields (everything else sleep-related is asked contextually later, see
  * domains/prompts), and Coaching lives in Settings -> Personalization,
  * defaulted rather than asked. */
-export function effectiveSteps(goals: Goal[], exercise?: ExerciseInput | null): OnboardingStepKey[] {
-  const domains = new Set(goals.map((g) => g.domainKey));
-  const wantsHealth = domains.has("health");
-  const steps: OnboardingStepKey[] = ["identity", "goals"];
-  if (wantsHealth || domains.has("nutrition")) steps.push("nutrition");
-  if (wantsHealth || domains.has("exercise")) steps.push("exercise");
-  // Q7's injury/limitation triage also gates Recovery on -- not just
-  // picking a Recovery goal directly -- so real clinical detail has
-  // somewhere to go once a user flags something in the Exercise step.
-  const needsRecoveryFromExerciseTriage = Boolean(exercise?.injuryStatus && exercise.injuryStatus !== "no");
-  if (domains.has("recovery") || needsRecoveryFromExerciseTriage) steps.push("recovery");
-  if (domains.has("learning")) steps.push("learning");
-  return steps;
+export function effectiveSteps(_goals: Goal[], _exercise?: ExerciseInput | null): OnboardingStepKey[] {
+  return ["identity", "goals", "nutrition", "exercise"];
 }
 
 /** Progress-bar position and "Back" target for a step page, computed from
@@ -67,7 +64,7 @@ export function firstIncompleteStep(responses: OnboardingResponses): OnboardingS
  * goals/phases/weekly-outcomes records.
  */
 export function transformOnboarding(responses: OnboardingResponses): OnboardingOutput {
-  const { identity, goals, recovery } = responses;
+  const { identity, goals, recovery, exercise } = responses;
 
   const activeDomains = deriveActiveDomains(goals, recovery);
   const rankedGoals = rankGoals(goals);
@@ -91,7 +88,7 @@ export function transformOnboarding(responses: OnboardingResponses): OnboardingO
 
   const dailyCheckinFields = deriveDailyCheckinFields(activeDomains);
 
-  const knownConstraints = deriveKnownConstraints(goals, recovery);
+  const knownConstraints = deriveKnownConstraints(goals, recovery, exercise);
 
   // Coaching preferences are no longer an onboarding step (see
   // effectiveSteps) — these defaults are what every account starts with,
@@ -119,25 +116,15 @@ export function transformOnboarding(responses: OnboardingResponses): OnboardingO
 
 function deriveActiveDomains(
   goals: OnboardingResponses["goals"],
-  recovery: OnboardingResponses["recovery"]
+  _recovery: OnboardingResponses["recovery"]
 ): DomainKey[] {
-  const domains = new Set<DomainKey>();
+  // V1's health pillars are always active — the Nutrition/Exercise steps
+  // are always part of onboarding now (see effectiveSteps), so their
+  // parameter engines (which look up a `domains` row by specific key,
+  // e.g. "nutrition") must find one even for a user who skipped Goals.
+  const domains = new Set<DomainKey>(["nutrition", "exercise", "sleep"]);
   for (const goal of goals) {
-    if (goal.domainKey === "health") {
-      // V1's single bundled "Health" goal fans out into its constituent
-      // pillars here so nutrition/exercise's parameter engines (which look
-      // up a `domains` row by specific key, e.g. "nutrition") keep working
-      // unchanged — see write-output.ts for the corresponding goal->domain
-      // link resolution.
-      domains.add("nutrition");
-      domains.add("exercise");
-      domains.add("sleep");
-    } else {
-      domains.add(goal.domainKey);
-    }
-  }
-  if (recovery && !recovery.skipped) {
-    domains.add("recovery");
+    if (goal.domainKey !== "health") domains.add(goal.domainKey);
   }
   return Array.from(domains);
 }
@@ -166,7 +153,8 @@ function deriveDailyCheckinFields(activeDomains: DomainKey[]): string[] {
 
 function deriveKnownConstraints(
   goals: OnboardingResponses["goals"],
-  recovery: OnboardingResponses["recovery"]
+  recovery: OnboardingResponses["recovery"],
+  exercise?: OnboardingResponses["exercise"]
 ): string[] {
   const constraints: string[] = [];
   for (const goal of goals) {
@@ -174,6 +162,11 @@ function deriveKnownConstraints(
       constraints.push(goal.constraints);
     }
   }
+  // The Exercise step's injury triage is the clinical-detail home now
+  // that Recovery is no longer a step; old accounts' recovery
+  // restrictions still count.
+  if (exercise?.clinicianRestrictions) constraints.push(exercise.clinicianRestrictions);
+  if (exercise?.prohibitedMovements) constraints.push(exercise.prohibitedMovements);
   if (recovery && !recovery.skipped && recovery.restrictions) {
     constraints.push(recovery.restrictions);
   }

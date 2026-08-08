@@ -81,9 +81,6 @@ export const founderNutrition: NutritionInput = nutritionSchema.parse({
   height: 69, // 5'9"
   currentWeight: 220,
   targetWeight: 200,
-  favoriteMeals: ["Breakfast"],
-  groceryStores: ["Costco"],
-  cookingAbility: "intermediate",
   trackingPreference: "simple",
   proteinTargetGrams: 170,
   mealsPerDay: 3,

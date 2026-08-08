@@ -42,21 +42,13 @@ describe("transformOnboarding", () => {
     expect(output.rankedGoals.map((g) => g.priority)).toEqual([1, 2, 3]);
   });
 
-  it("includes recovery in active domains and check-in fields when not skipped", () => {
+  it("still surfaces a recovery goal as an active domain (recovery is no longer its own step)", () => {
     const output = transformOnboarding(founderResponses);
+    // founderResponses includes a recovery-domain goal, which flows
+    // through as a domain even though the Recovery step was cut in the
+    // 2026-08-07 consolidation.
     expect(output.activeDomains).toContain("recovery");
     expect(output.dailyCheckinFields).toContain("recovery");
-  });
-
-  it("excludes recovery from active domains and check-in fields when skipped", () => {
-    const skippedResponses: OnboardingResponses = {
-      ...founderResponses,
-      recovery: { skipped: true },
-      goals: founderResponses.goals.filter((g) => g.domainKey !== "recovery"),
-    };
-    const output = transformOnboarding(skippedResponses);
-    expect(output.activeDomains).not.toContain("recovery");
-    expect(output.dailyCheckinFields).not.toContain("recovery");
   });
 
   it("expands a single 'health' goal into nutrition/exercise/sleep active domains for downstream tracking (not an onboarding step)", () => {
@@ -92,7 +84,10 @@ describe("transformOnboarding", () => {
     const output = transformOnboarding(minimalResponses);
     expect(output.mission).toContain("Alex");
     expect(output.rankedGoals).toHaveLength(0);
-    expect(output.activeDomains).toHaveLength(0);
+    // V1 health pillars are always active even with no goals -- the
+    // Nutrition/Exercise steps always run, so their parameter engines
+    // must find their domains rows (2026-08-07 consolidation).
+    expect(output.activeDomains).toEqual(expect.arrayContaining(["nutrition", "exercise", "sleep"]));
   });
 
   it("always applies personalization defaults, since coaching is no longer an onboarding step", () => {
@@ -113,51 +108,18 @@ describe("transformOnboarding", () => {
 });
 
 describe("effectiveSteps", () => {
-  it("includes nutrition, recovery, and learning when goals exist in those domains", () => {
-    expect(effectiveSteps(founderGoals)).toEqual([
-      "identity",
-      "goals",
-      "nutrition",
-      "recovery",
-      "learning",
-    ]);
+  it("is the fixed consolidated sequence regardless of goals (2026-08-07)", () => {
+    expect(effectiveSteps(founderGoals)).toEqual(["identity", "goals", "nutrition", "exercise"]);
+    expect(effectiveSteps([])).toEqual(["identity", "goals", "nutrition", "exercise"]);
   });
 
-  it("omits domain-specific steps entirely when no goal targets them", () => {
-    const nonModuleGoals = founderGoals.map((g) => ({ ...g, domainKey: "family" as const }));
-    expect(effectiveSteps(nonModuleGoals)).toEqual(["identity", "goals"]);
+  it("no longer gates a Recovery step on injury triage -- the Exercise step owns injury detail now", () => {
+    expect(effectiveSteps(founderGoals, { injuryStatus: "yes" })).not.toContain("recovery");
+    expect(effectiveSteps(founderGoals, { injuryStatus: "unsure" })).not.toContain("recovery");
   });
 
-  it("includes only the domain-specific steps that apply", () => {
-    const mixedGoals = [
-      { ...founderGoals[0], domainKey: "nutrition" as const },
-      { ...founderGoals[1], domainKey: "family" as const },
-    ];
-    expect(effectiveSteps(mixedGoals)).toEqual(["identity", "goals", "nutrition"]);
-  });
-
-  it("a single 'health' goal unlocks nutrition and exercise as onboarding steps (V1 bundling); sleep stays a tracked domain without a step", () => {
-    const healthGoal = [{ ...founderGoals[0], domainKey: "health" as const }];
-    expect(effectiveSteps(healthGoal)).toEqual(["identity", "goals", "nutrition", "exercise"]);
-  });
-
-  it("gates recovery on the Exercise step's injury triage even with no recovery goal", () => {
-    const healthGoal = [{ ...founderGoals[0], domainKey: "health" as const }];
-    expect(effectiveSteps(healthGoal, { injuryStatus: "yes" })).toEqual([
-      "identity",
-      "goals",
-      "nutrition",
-      "exercise",
-      "recovery",
-    ]);
-    expect(effectiveSteps(healthGoal, { injuryStatus: "unsure" })).toContain("recovery");
-  });
-
-  it("does not gate recovery on when injuryStatus is 'no' or unanswered", () => {
-    const healthGoal = [{ ...founderGoals[0], domainKey: "health" as const }];
-    expect(effectiveSteps(healthGoal, { injuryStatus: "no" })).not.toContain("recovery");
-    expect(effectiveSteps(healthGoal, null)).not.toContain("recovery");
-    expect(effectiveSteps(healthGoal)).not.toContain("recovery");
+  it("never includes the removed learning step", () => {
+    expect(effectiveSteps(founderGoals)).not.toContain("learning");
   });
 });
 
@@ -165,13 +127,13 @@ describe("stepPosition", () => {
   it("computes stepIndex/totalSteps/backHref from the effective sequence", () => {
     expect(stepPosition("nutrition", founderGoals)).toEqual({
       stepIndex: 3,
-      totalSteps: 6,
+      totalSteps: 5, // 4 steps + review
       backHref: "/onboarding/goals",
     });
-    expect(stepPosition("learning", founderGoals)).toEqual({
-      stepIndex: 5,
-      totalSteps: 6,
-      backHref: "/onboarding/recovery",
+    expect(stepPosition("exercise", founderGoals)).toEqual({
+      stepIndex: 4,
+      totalSteps: 5,
+      backHref: "/onboarding/nutrition",
     });
   });
 
@@ -192,7 +154,7 @@ describe("firstIncompleteStep", () => {
     expect(firstIncompleteStep(founderResponses)).toBeNull();
   });
 
-  it("skips domain-specific steps that don't apply to the user's goals", () => {
+  it("always requires nutrition and exercise regardless of goal domains (2026-08-07)", () => {
     const nonModuleResponses: OnboardingResponses = {
       ...founderResponses,
       goals: founderGoals.map((g) => ({ ...g, domainKey: "family" as const })),
@@ -201,6 +163,6 @@ describe("firstIncompleteStep", () => {
     expect(firstIncompleteStep(nonModuleResponses)).toBe("goals");
     expect(
       firstIncompleteStep({ ...nonModuleResponses, completedSteps: ["identity", "goals"] })
-    ).toBeNull();
+    ).toBe("nutrition");
   });
 });

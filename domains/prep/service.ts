@@ -1,5 +1,7 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/platform/db/types";
 import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
 import { getMealPlanForWeek } from "@/domains/mealplan/service";
@@ -13,15 +15,15 @@ function currentWeekStart(): string {
 const OVEN_PATTERN = /oven|bake|roast|preheat/i;
 const CARB_PATTERN = /rice|quinoa|pasta|potato|oats?|tortilla|bread|noodle/i;
 
-export async function generateAndSavePrepPlan(userId: string): Promise<ActionResult> {
+export async function generateAndSavePrepPlan(userId: string, client?: SupabaseClient<Database>): Promise<ActionResult> {
   const weekStart = currentWeekStart();
-  const plan = await getMealPlanForWeek(userId, weekStart);
+  const plan = await getMealPlanForWeek(userId, weekStart, client);
   if (!plan || plan.items.length === 0) {
     return { ok: false, error: "Generate and approve a meal plan first." };
   }
 
   const recipeIds = [...new Set(plan.items.map((i) => i.recipeId))];
-  const recipes = await getRecipesByIds(recipeIds);
+  const recipes = await getRecipesByIds(recipeIds, client);
 
   const uniqueRecipes: PrepRecipeInfo[] = recipeIds
     .map((id) => recipes.get(id))
@@ -39,7 +41,7 @@ export async function generateAndSavePrepPlan(userId: string): Promise<ActionRes
 
   const result = generatePrepPlan({ uniqueRecipes, totalMealCount: plan.items.length });
 
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data: prepPlan, error: planError } = await supabase
     .from("prep_plans")
     .upsert(

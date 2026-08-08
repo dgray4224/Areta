@@ -4,10 +4,12 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { confirmOnboarding } from "@/domains/onboarding/orchestrator";
+import { getPlanReadiness, type PlanReadiness } from "@/domains/onboarding/generate-plans";
 import type { OnboardingOutput, OnboardingResponses } from "@/domains/onboarding/types";
 import { DOMAIN_LABELS } from "@/domains/goals/schema";
 import { StepShell } from "@/platform/ui/StepShell";
 import { FormField, TextInput, TextArea } from "@/platform/ui/FormField";
+import { PlanSetupPrompt } from "./PlanSetupPrompt";
 
 const CHECKIN_FIELD_OPTIONS = ["weight", "sleep", "nutrition", "recovery", "learning"];
 
@@ -28,6 +30,7 @@ export function ReviewForm({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [planReadiness, setPlanReadiness] = useState<PlanReadiness | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [output, setOutput] = useState<OnboardingOutput>(initialOutput);
 
@@ -64,7 +67,11 @@ export function ReviewForm({
         setServerError(result.error);
         return;
       }
-      router.push("/dashboard");
+      // Instead of dropping the user on the dashboard with no plans,
+      // offer to generate + load everything in one tap (2026-08-07) —
+      // readiness fetched here so the prompt can warn about missing
+      // inputs before the user commits.
+      setPlanReadiness(await getPlanReadiness(userId));
     });
   };
 
@@ -203,6 +210,7 @@ export function ReviewForm({
           {isPending ? "Activating…" : "Approve and activate"}
         </button>
       </div>
+      {planReadiness ? <PlanSetupPrompt userId={userId} readiness={planReadiness} /> : null}
     </StepShell>
   );
 }
