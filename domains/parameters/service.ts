@@ -1,5 +1,7 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/platform/db/types";
 import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
 import {
@@ -225,8 +227,12 @@ export async function generateExerciseParameters(userId: string): Promise<Action
   return writeGeneratedParameters(userId, "exercise", parameters);
 }
 
-export async function getGeneratedParameters(userId: string, domain: string): Promise<StoredParameter[]> {
-  const supabase = await createClient();
+export async function getGeneratedParameters(
+  userId: string,
+  domain: string,
+  client?: SupabaseClient<Database>
+): Promise<StoredParameter[]> {
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("generated_parameters")
     .select("*")
@@ -316,9 +322,10 @@ export async function approveAllGeneratedParameters(userId: string, domain: stri
 export async function getApprovedParameterValue(
   userId: string,
   domain: string,
-  name: string
+  name: string,
+  client?: SupabaseClient<Database>
 ): Promise<number | null> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data } = await supabase
     .from("generated_parameters")
     .select("value, approved")

@@ -69,8 +69,8 @@ export async function generateAndSaveWorkoutPlan(
   }
 
   const [sessionsPerWeek, parameters, { data: responses }] = await Promise.all([
-    getApprovedParameterValue(userId, "exercise", "sessions_per_week"),
-    getGeneratedParameters(userId, "exercise"),
+    getApprovedParameterValue(userId, "exercise", "sessions_per_week", supabase),
+    getGeneratedParameters(userId, "exercise", supabase),
     supabase.from("onboarding_responses").select("exercise").eq("user_id", userId).single(),
   ]);
 
@@ -97,7 +97,7 @@ export async function generateAndSaveWorkoutPlan(
   const primaryFocusParam = parameters.find((p) => p.id === "primary_focus" && p.approved);
   const legacyPhaseFocus = typeof primaryFocusParam?.value === "string" ? primaryFocusParam.value : null;
 
-  const exercises = await getAllExercises();
+  const exercises = await getAllExercises(supabase);
 
   const [candidates, { data: lastPlanRow }, { data: historyRows }] = await Promise.all([
     getEligibleProgramCandidates(archetype, supabase),
