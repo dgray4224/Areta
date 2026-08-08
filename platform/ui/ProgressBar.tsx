@@ -9,10 +9,7 @@ export function ProgressBar({ current, total }: { current: number; total: number
         <span>{pct}%</span>
       </div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
-        <div
-          className="h-full rounded-full bg-neutral-900 transition-all dark:bg-neutral-100"
-          style={{ width: `${pct}%` }}
-        />
+        <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

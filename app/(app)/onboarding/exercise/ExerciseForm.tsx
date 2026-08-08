@@ -28,6 +28,7 @@ import { saveExerciseStep } from "@/domains/exercise/service";
 import { StepShell } from "@/platform/ui/StepShell";
 import { FormField, TextInput, TextArea, SelectInput, optionalStringValue } from "@/platform/ui/FormField";
 import { TagPicker, chipBase, chipSelected, chipUnselected } from "@/platform/ui/TagPicker";
+import { Button } from "@/platform/ui/Button";
 
 const SUB_STEP_COUNT = 8;
 
@@ -308,30 +309,18 @@ export function ExerciseForm({
 
         <div className="flex gap-3">
           {subStep > 0 ? (
-            <button
-              type="button"
-              onClick={goBack}
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
-            >
+            <Button type="button" variant="secondary" onClick={goBack}>
               Back
-            </button>
+            </Button>
           ) : null}
           {subStep < SUB_STEP_COUNT - 1 ? (
-            <button
-              type="button"
-              onClick={goNext}
-              className="flex-1 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
-            >
+            <Button type="button" variant="primary" onClick={goNext} className="flex-1">
               Next
-            </button>
+            </Button>
           ) : (
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex-1 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-            >
+            <Button type="submit" variant="primary" disabled={isPending} className="flex-1">
               {isPending ? "Saving…" : "Continue"}
-            </button>
+            </Button>
           )}
         </div>
       </form>

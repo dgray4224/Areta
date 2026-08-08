@@ -10,6 +10,7 @@ import { saveGoalsStep } from "@/domains/goals/service";
 import { StepShell } from "@/platform/ui/StepShell";
 import { FormField, TextInput, SelectInput } from "@/platform/ui/FormField";
 import { chipBase, chipSelected, chipUnselected } from "@/platform/ui/TagPicker";
+import { Button } from "@/platform/ui/Button";
 
 const EMPTY_GOAL: GoalsStepInput["goals"][number] = {
   domainKey: "health",
@@ -191,13 +192,9 @@ export function GoalsForm({
 
         {serverError ? <p className="text-sm text-red-600">{serverError}</p> : null}
 
-        <button
-          type="submit"
-          disabled={isPending}
-          className="w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-        >
+        <Button type="submit" variant="primary" disabled={isPending} className="w-full">
           {isPending ? "Saving…" : fields.length === 0 ? "Continue without a goal" : "Continue"}
-        </button>
+        </Button>
       </form>
     </StepShell>
   );

@@ -9,6 +9,7 @@ import type { OnboardingOutput, OnboardingResponses } from "@/domains/onboarding
 import { DOMAIN_LABELS } from "@/domains/goals/schema";
 import { StepShell } from "@/platform/ui/StepShell";
 import { FormField, TextInput, TextArea } from "@/platform/ui/FormField";
+import { Button } from "@/platform/ui/Button";
 import { PlanSetupPrompt } from "./PlanSetupPrompt";
 
 const CHECKIN_FIELD_OPTIONS = ["weight", "sleep", "nutrition", "recovery", "learning"];
@@ -201,14 +202,9 @@ export function ReviewForm({
 
         {serverError ? <p className="text-sm text-red-600">{serverError}</p> : null}
 
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={isPending}
-          className="w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-        >
+        <Button type="button" variant="primary" onClick={onConfirm} disabled={isPending} className="w-full">
           {isPending ? "Activating…" : "Approve and activate"}
-        </button>
+        </Button>
       </div>
       {planReadiness ? <PlanSetupPrompt userId={userId} readiness={planReadiness} /> : null}
     </StepShell>
