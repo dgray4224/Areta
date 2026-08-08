@@ -114,3 +114,32 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
+
+/* Homepage hero background -- three soft brand-colored blobs drifting
+   slowly behind the hero copy (app/page.tsx). Kept to opacity/transform
+   only (cheap to animate, no layout/paint cost) and disabled entirely
+   under prefers-reduced-motion below. */
+@keyframes aurora-drift-a {
+  0%, 100% { transform: translate(-8%, -6%) scale(1); }
+  50% { transform: translate(4%, 6%) scale(1.15); }
+}
+@keyframes aurora-drift-b {
+  0%, 100% { transform: translate(6%, 4%) scale(1); }
+  50% { transform: translate(-6%, -8%) scale(1.1); }
+}
+@keyframes aurora-drift-c {
+  0%, 100% { transform: translate(0%, 8%) scale(1); }
+  50% { transform: translate(-4%, -4%) scale(0.9); }
+}
+
+.animate-aurora-a { animation: aurora-drift-a 22s ease-in-out infinite; }
+.animate-aurora-b { animation: aurora-drift-b 26s ease-in-out infinite; }
+.animate-aurora-c { animation: aurora-drift-c 30s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-aurora-a,
+  .animate-aurora-b,
+  .animate-aurora-c {
+    animation: none;
+  }
+}
