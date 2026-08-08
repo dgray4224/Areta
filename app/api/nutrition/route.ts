@@ -45,16 +45,21 @@ export async function GET(request: NextRequest) {
     supabase
   );
 
-  const plannedMeals = todaysItems.map((item) => ({
-    id: item.id,
-    recipeName: recipeMap.get(item.recipeId)?.name ?? "Unknown recipe",
-    mealType: item.mealType,
-    servings: item.servings,
-    completedAt: item.completedAt,
-    scheduledTime: item.scheduledTime,
-    endTime: item.endTime,
-    notes: item.notes,
-  }));
+  const plannedMeals = todaysItems.map((item) => {
+    const recipe = recipeMap.get(item.recipeId);
+    return {
+      id: item.id,
+      recipeName: recipe?.name ?? "Unknown recipe",
+      cuisine: recipe?.cuisine ?? null,
+      allergens: recipe?.allergens ?? [],
+      mealType: item.mealType,
+      servings: item.servings,
+      completedAt: item.completedAt,
+      scheduledTime: item.scheduledTime,
+      endTime: item.endTime,
+      notes: item.notes,
+    };
+  });
 
   let logs: Awaited<ReturnType<typeof getNutritionLogsForDate>>;
   let totals: Awaited<ReturnType<typeof getNutritionDailyTotals>>;

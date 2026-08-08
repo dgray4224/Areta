@@ -476,6 +476,7 @@ function toRecipe(row: Database["public"]["Tables"]["recipes"]["Row"]): Recipe {
     id: row.id,
     name: row.name,
     mealType: row.meal_type as Recipe["mealType"],
+    cuisine: row.cuisine as Recipe["cuisine"],
     calories: row.calories,
     proteinG: row.protein_g,
     carbsG: row.carbs_g,
@@ -485,9 +486,11 @@ function toRecipe(row: Database["public"]["Tables"]["recipes"]["Row"]): Recipe {
     cookMinutes: row.cook_minutes,
     servings: row.servings,
     dietaryTags: row.dietary_tags,
+    allergens: row.allergens as Recipe["allergens"],
     ingredients: row.ingredients as unknown as Recipe["ingredients"],
     instructions: row.instructions,
     storageInstructions: row.storage_instructions,
+    photoUrl: row.photo_url,
     status: row.status as Recipe["status"],
   };
 }
@@ -522,6 +525,7 @@ export async function createRecipeAsTrainer(input: unknown): Promise<ActionResul
     .insert({
       name: parsed.data.name,
       meal_type: parsed.data.mealType,
+      cuisine: parsed.data.cuisine,
       calories: parsed.data.calories,
       protein_g: parsed.data.proteinG,
       carbs_g: parsed.data.carbsG,
@@ -531,9 +535,11 @@ export async function createRecipeAsTrainer(input: unknown): Promise<ActionResul
       cook_minutes: parsed.data.cookMinutes,
       servings: parsed.data.servings,
       dietary_tags: parsed.data.dietaryTags,
+      allergens: parsed.data.allergens,
       ingredients: parsed.data.ingredients,
       instructions: parsed.data.instructions,
       storage_instructions: parsed.data.storageInstructions || null,
+      photo_url: parsed.data.photoUrl || null,
       status: "review",
       created_by: user.id,
     })

@@ -14,6 +14,10 @@ function toRecipe(row: Database["public"]["Tables"]["recipes"]["Row"]): Recipe {
     id: row.id,
     name: row.name,
     mealType: row.meal_type as Recipe["mealType"],
+    // Every row has been backfilled/required to carry a cuisine since
+    // migration 0096 — the DB column stays nullable only so a future
+    // schema change can't be blocked by an in-flight insert missing it.
+    cuisine: row.cuisine as Recipe["cuisine"],
     calories: row.calories,
     proteinG: row.protein_g,
     carbsG: row.carbs_g,
@@ -23,9 +27,11 @@ function toRecipe(row: Database["public"]["Tables"]["recipes"]["Row"]): Recipe {
     cookMinutes: row.cook_minutes,
     servings: row.servings,
     dietaryTags: row.dietary_tags,
+    allergens: row.allergens as Recipe["allergens"],
     ingredients: row.ingredients as unknown as Ingredient[],
     instructions: row.instructions,
     storageInstructions: row.storage_instructions,
+    photoUrl: row.photo_url,
     status: row.status as RecipeStatus,
   };
 }
@@ -95,6 +101,7 @@ function toInsertRow(parsed: ReturnType<typeof recipeSchema.parse>) {
   return {
     name: parsed.name,
     meal_type: parsed.mealType,
+    cuisine: parsed.cuisine,
     calories: parsed.calories,
     protein_g: parsed.proteinG,
     carbs_g: parsed.carbsG,
@@ -104,9 +111,11 @@ function toInsertRow(parsed: ReturnType<typeof recipeSchema.parse>) {
     cook_minutes: parsed.cookMinutes,
     servings: parsed.servings,
     dietary_tags: parsed.dietaryTags,
+    allergens: parsed.allergens,
     ingredients: parsed.ingredients,
     instructions: parsed.instructions,
     storage_instructions: parsed.storageInstructions || null,
+    photo_url: parsed.photoUrl || null,
     status: parsed.status,
   };
 }

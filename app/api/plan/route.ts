@@ -110,17 +110,23 @@ export async function GET(request: NextRequest) {
 
   const byDate = new Map<
     string,
-    { meals: { id: string; mealType: string; recipeName: string; completed: boolean }[]; workouts: { id: string; exerciseName: string; completed: boolean }[] }
+    {
+      meals: { id: string; mealType: string; recipeName: string; cuisine: string | null; allergens: string[]; completed: boolean }[];
+      workouts: { id: string; exerciseName: string; completed: boolean }[];
+    }
   >();
   for (const { weekAnchor, mealPlan, workoutPlan } of resolutions) {
     const weekDates = getWeekDates(weekAnchor);
     for (const i of mealPlan?.items ?? []) {
       const date = weekDates[i.dayOfWeek];
       if (!byDate.has(date)) byDate.set(date, { meals: [], workouts: [] });
+      const recipe = recipes.get(i.recipeId);
       byDate.get(date)!.meals.push({
         id: i.id,
         mealType: i.mealType,
-        recipeName: recipes.get(i.recipeId)?.name ?? "Unknown recipe",
+        recipeName: recipe?.name ?? "Unknown recipe",
+        cuisine: recipe?.cuisine ?? null,
+        allergens: recipe?.allergens ?? [],
         completed: i.completedAt !== null,
       });
     }

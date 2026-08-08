@@ -5,6 +5,7 @@ import { createRecipeAsTrainer } from "@/domains/trainermealprogram/service";
 import { FormField, TextInput, SelectInput, TextArea } from "@/platform/ui/FormField";
 import { Button } from "@/platform/ui/Button";
 import type { Recipe, Ingredient } from "@/domains/recipes/types";
+import { RECIPE_CUISINES } from "@/domains/recipes/schema";
 import type { MealType } from "@/domains/trainermealprogram/types";
 
 const MEAL_TYPE_LABEL: Record<MealType, string> = {
@@ -12,6 +13,17 @@ const MEAL_TYPE_LABEL: Record<MealType, string> = {
   lunch: "Lunch",
   dinner: "Dinner",
   snack: "Snack",
+};
+
+const CUISINE_LABEL: Record<(typeof RECIPE_CUISINES)[number], string> = {
+  american: "American",
+  italian: "Italian",
+  mexican: "Mexican",
+  chinese: "Chinese",
+  japanese: "Japanese",
+  thai: "Thai",
+  indian: "Indian",
+  mediterranean: "Mediterranean",
 };
 
 /**
@@ -163,6 +175,7 @@ function NewRecipeInline({
 }) {
   const [name, setName] = useState("");
   const [recipeMealType, setRecipeMealType] = useState<MealType>(mealType);
+  const [cuisine, setCuisine] = useState<(typeof RECIPE_CUISINES)[number]>("american");
   const [calories, setCalories] = useState("");
   const [proteinG, setProteinG] = useState("");
   const [carbsG, setCarbsG] = useState("");
@@ -199,6 +212,7 @@ function NewRecipeInline({
       const result = await createRecipeAsTrainer({
         name,
         mealType: recipeMealType,
+        cuisine,
         calories: Number(calories),
         proteinG: Number(proteinG),
         carbsG: Number(carbsG),
@@ -207,6 +221,7 @@ function NewRecipeInline({
         prepMinutes: Number(prepMinutes) || 0,
         cookMinutes: Number(cookMinutes) || 0,
         dietaryTags: [],
+        allergens: [],
         ingredients: cleanIngredients,
         instructions: cleanInstructions,
       });
@@ -218,6 +233,7 @@ function NewRecipeInline({
         id: result.data.id,
         name,
         mealType: recipeMealType,
+        cuisine,
         calories: Number(calories),
         proteinG: Number(proteinG),
         carbsG: Number(carbsG),
@@ -227,9 +243,11 @@ function NewRecipeInline({
         cookMinutes: Number(cookMinutes) || 0,
         servings: Number(servings) || 1,
         dietaryTags: [],
+        allergens: [],
         ingredients: cleanIngredients,
         instructions: cleanInstructions,
         storageInstructions: null,
+        photoUrl: null,
         status: "review",
       });
     });
@@ -237,7 +255,7 @@ function NewRecipeInline({
 
   return (
     <div className="space-y-3 rounded-lg border border-dashed border-neutral-300 p-3 dark:border-neutral-700">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <FormField label="Recipe name" htmlFor="new-recipe-name" hint="e.g. Greek yogurt bowl">
           <TextInput id="new-recipe-name" value={name} onChange={(e) => setName(e.target.value)} />
         </FormField>
@@ -251,6 +269,19 @@ function NewRecipeInline({
             <option value="lunch">Lunch</option>
             <option value="dinner">Dinner</option>
             <option value="snack">Snack</option>
+          </SelectInput>
+        </FormField>
+        <FormField label="Cuisine" htmlFor="new-recipe-cuisine">
+          <SelectInput
+            id="new-recipe-cuisine"
+            value={cuisine}
+            onChange={(e) => setCuisine(e.target.value as (typeof RECIPE_CUISINES)[number])}
+          >
+            {RECIPE_CUISINES.map((c) => (
+              <option key={c} value={c}>
+                {CUISINE_LABEL[c]}
+              </option>
+            ))}
           </SelectInput>
         </FormField>
       </div>

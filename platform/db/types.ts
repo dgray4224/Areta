@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       action_events: {
@@ -1949,11 +1974,13 @@ export type Database = {
       }
       recipes: {
         Row: {
+          allergens: string[]
           calories: number
           carbs_g: number
           cook_minutes: number
           created_at: string
           created_by: string | null
+          cuisine: string | null
           dietary_tags: string[]
           fat_g: number
           fiber_g: number | null
@@ -1962,6 +1989,7 @@ export type Database = {
           instructions: string[]
           meal_type: string
           name: string
+          photo_url: string | null
           prep_minutes: number
           protein_g: number
           servings: number
@@ -1969,11 +1997,13 @@ export type Database = {
           storage_instructions: string | null
         }
         Insert: {
+          allergens?: string[]
           calories: number
           carbs_g: number
           cook_minutes?: number
           created_at?: string
           created_by?: string | null
+          cuisine?: string | null
           dietary_tags?: string[]
           fat_g: number
           fiber_g?: number | null
@@ -1982,6 +2012,7 @@ export type Database = {
           instructions?: string[]
           meal_type: string
           name: string
+          photo_url?: string | null
           prep_minutes?: number
           protein_g: number
           servings?: number
@@ -1989,11 +2020,13 @@ export type Database = {
           storage_instructions?: string | null
         }
         Update: {
+          allergens?: string[]
           calories?: number
           carbs_g?: number
           cook_minutes?: number
           created_at?: string
           created_by?: string | null
+          cuisine?: string | null
           dietary_tags?: string[]
           fat_g?: number
           fiber_g?: number | null
@@ -2002,6 +2035,7 @@ export type Database = {
           instructions?: string[]
           meal_type?: string
           name?: string
+          photo_url?: string | null
           prep_minutes?: number
           protein_g?: number
           servings?: number
@@ -4206,6 +4240,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

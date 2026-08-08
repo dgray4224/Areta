@@ -12,6 +12,7 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
   const defaultValues: Partial<RecipeInput> = {
     name: recipe.name,
     mealType: recipe.mealType,
+    cuisine: recipe.cuisine,
     calories: recipe.calories,
     proteinG: recipe.proteinG,
     carbsG: recipe.carbsG,
@@ -21,9 +22,11 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
     cookMinutes: recipe.cookMinutes,
     servings: recipe.servings,
     dietaryTags: recipe.dietaryTags,
+    allergens: recipe.allergens,
     ingredients: recipe.ingredients,
     instructions: recipe.instructions,
     storageInstructions: recipe.storageInstructions ?? undefined,
+    photoUrl: recipe.photoUrl ?? undefined,
     status: recipe.status,
   };
 
