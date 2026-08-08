@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { exportUserData } from "@/domains/account/export-service";
+import { Button } from "@/platform/ui/Button";
 
 export function ExportDataButton({ userId }: { userId: string }) {
   const [isPending, startTransition] = useTransition();
@@ -27,14 +28,9 @@ export function ExportDataButton({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-2">
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={isPending}
-        className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
-      >
+      <Button type="button" variant="secondary" onClick={onClick} disabled={isPending}>
         {isPending ? "Preparing export…" : "Export my data"}
-      </button>
+      </Button>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
     </div>
   );

@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { appleConnectSchema, type AppleConnectInput } from "@/domains/calendar/schema";
 import { connectAppleCalendar } from "@/domains/calendar/connect-actions";
 import { FormField, TextInput } from "@/platform/ui/FormField";
+import { Button } from "@/platform/ui/Button";
 
 /** Apple Calendar has no consent screen — connecting is a credential form,
  * not a redirect. Success is verified with a real CalDAV round-trip inside
@@ -65,13 +66,9 @@ export function AppleConnectForm() {
           />
         </FormField>
         {serverError ? <p className="text-sm text-red-600">{serverError}</p> : null}
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-        >
+        <Button type="submit" variant="primary" disabled={isPending}>
           {isPending ? "Connecting…" : "Connect"}
-        </button>
+        </Button>
       </form>
     </div>
   );

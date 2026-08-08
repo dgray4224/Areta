@@ -14,6 +14,7 @@ import { workScheduleSchema, type WorkScheduleInput } from "@/domains/identity/s
 import { updateWorkSchedule } from "@/domains/identity/service";
 import { FormField, TextInput, TextArea, SelectInput, optionalNumberValue } from "@/platform/ui/FormField";
 import { TagPicker } from "@/platform/ui/TagPicker";
+import { Button } from "@/platform/ui/Button";
 
 export function PersonalizationForm({
   userId,
@@ -139,13 +140,9 @@ function CoachingSection({
           <p className="text-sm text-green-700 dark:text-green-400">Saved.</p>
         ) : null}
 
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-        >
+        <Button type="submit" variant="primary" disabled={isPending}>
           {isPending ? "Saving…" : "Save coaching preferences"}
-        </button>
+        </Button>
       </form>
     </section>
   );
@@ -228,13 +225,9 @@ function WorkScheduleSection({
           <p className="text-sm text-green-700 dark:text-green-400">Saved.</p>
         ) : null}
 
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-        >
+        <Button type="submit" variant="primary" disabled={isPending}>
           {isPending ? "Saving…" : "Save work & school"}
-        </button>
+        </Button>
       </form>
     </section>
   );

@@ -39,9 +39,13 @@ export function ThemePicker() {
             key={option.value}
             type="button"
             onClick={() => onSelect(option.value)}
+            // Brand-colored when selected, not just a bolder neutral -- the
+            // project-wide "active = brand" rule (see platform's nav-links.ts)
+            // applies here too, this was the one place still using a plain
+            // neutral selected-state before this pass.
             className={`rounded-lg border p-4 text-left transition-colors ${
               active
-                ? "border-neutral-900 bg-neutral-100 dark:border-neutral-100 dark:bg-neutral-800"
+                ? "border-brand/40 bg-brand/10"
                 : "border-neutral-200 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
             }`}
           >

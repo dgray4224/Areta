@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { restartOnboarding } from "@/domains/onboarding/restart-action";
+import { Button } from "@/platform/ui/Button";
 
 export function RestartOnboardingButton({ userId }: { userId: string }) {
   const router = useRouter();
@@ -24,13 +25,9 @@ export function RestartOnboardingButton({ userId }: { userId: string }) {
 
   if (!confirming) {
     return (
-      <button
-        type="button"
-        onClick={() => setConfirming(true)}
-        className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
-      >
+      <Button type="button" variant="secondary" onClick={() => setConfirming(true)}>
         Restart onboarding
-      </button>
+      </Button>
     );
   }
 
@@ -52,14 +49,9 @@ export function RestartOnboardingButton({ userId }: { userId: string }) {
         >
           {isPending ? "Clearing…" : "Yes, clear it and start over"}
         </button>
-        <button
-          type="button"
-          onClick={() => setConfirming(false)}
-          disabled={isPending}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
-        >
+        <Button type="button" variant="secondary" onClick={() => setConfirming(false)} disabled={isPending}>
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );

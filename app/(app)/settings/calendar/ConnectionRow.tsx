@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import { disconnectCalendar } from "@/domains/calendar/connect-actions";
 import type { CalendarProviderId } from "@/platform/calendar/types";
 import type { CalendarConnection } from "@/domains/calendar/schema";
+import { Button } from "@/platform/ui/Button";
 
-/** Matches the existing Settings page style (plain neutral borders, no
- * brand-fill pills) rather than the newer Card/Button primitives — Settings
- * is explicitly still Phase 2 in the terracotta rebrand plan, so a new
- * Settings page should stay visually consistent with its neighbors
- * (ProfileForm, RestartOnboardingButton), not introduce a one-off look. */
+/** Non-destructive actions use the shared Button primitive (brand tokens,
+ * no motion) per Settings' Tier 2 treatment. The destructive "Yes,
+ * disconnect" confirm stays a raw red button, matching
+ * RestartOnboardingButton's same deliberate exception. */
 export function ConnectionRow({
   label,
   provider,
@@ -64,32 +64,20 @@ export function ConnectionRow({
               >
                 {isPending ? "Disconnecting…" : "Yes, disconnect"}
               </button>
-              <button
-                type="button"
-                onClick={() => setConfirming(false)}
-                disabled={isPending}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
-              >
+              <Button type="button" variant="secondary" onClick={() => setConfirming(false)} disabled={isPending}>
                 Cancel
-              </button>
+              </Button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setConfirming(true)}
-              className="shrink-0 rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
-            >
+            <Button type="button" variant="secondary" className="shrink-0" onClick={() => setConfirming(true)}>
               Disconnect
-            </button>
+            </Button>
           )
         ) : configured && connectAction ? (
           <form action={connectAction} className="shrink-0">
-            <button
-              type="submit"
-              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
-            >
+            <Button type="submit" variant="primary">
               Connect
-            </button>
+            </Button>
           </form>
         ) : null}
       </div>

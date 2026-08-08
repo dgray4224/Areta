@@ -8,6 +8,7 @@ import { identitySchema, WEEKDAYS, type IdentityInput } from "@/domains/identity
 import { updateProfile } from "@/domains/identity/service";
 import { FormField, TextInput, SelectInput } from "@/platform/ui/FormField";
 import { detectTimezone, getTimezoneOptions } from "@/platform/ui/timezones";
+import { Button } from "@/platform/ui/Button";
 
 export function ProfileForm({
   userId,
@@ -140,13 +141,9 @@ export function ProfileForm({
       {serverError ? <p className="text-sm text-red-600">{serverError}</p> : null}
       {saved && !isPending ? <p className="text-sm text-green-700 dark:text-green-400">Saved.</p> : null}
 
-      <button
-        type="submit"
-        disabled={isPending}
-        className="w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-      >
+      <Button type="submit" variant="primary" disabled={isPending} className="w-full">
         {isPending ? "Saving…" : "Save changes"}
-      </button>
+      </Button>
     </form>
   );
 }
