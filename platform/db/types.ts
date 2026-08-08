@@ -3942,6 +3942,8 @@ export type Database = {
           program_phase_id: string | null
           sessions_per_week: number | null
           status: string
+          template_id: string | null
+          template_phase_id: string | null
           trainer_program_id: string | null
           trainer_program_phase_id: string | null
           updated_at: string
@@ -3957,6 +3959,8 @@ export type Database = {
           program_phase_id?: string | null
           sessions_per_week?: number | null
           status?: string
+          template_id?: string | null
+          template_phase_id?: string | null
           trainer_program_id?: string | null
           trainer_program_phase_id?: string | null
           updated_at?: string
@@ -3972,6 +3976,8 @@ export type Database = {
           program_phase_id?: string | null
           sessions_per_week?: number | null
           status?: string
+          template_id?: string | null
+          template_phase_id?: string | null
           trainer_program_id?: string | null
           trainer_program_phase_id?: string | null
           updated_at?: string
@@ -3991,6 +3997,20 @@ export type Database = {
             columns: ["program_phase_id"]
             isOneToOne: false
             referencedRelation: "training_program_phases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workout_plans_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "program_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workout_plans_template_phase_id_fkey"
+            columns: ["template_phase_id"]
+            isOneToOne: false
+            referencedRelation: "template_phases"
             referencedColumns: ["id"]
           },
           {

@@ -81,6 +81,12 @@ export const CREDIBLE_SOURCE_ALLOWLIST: AllowlistedSource[] = [
     specialty: "broad evidence-based human performance, exercise physiology",
   },
   {
+    domain: "rpstrength.com",
+    organization: "Dr. Mike Israetel / Renaissance Periodization",
+    category: "individual_specialist",
+    specialty: "hypertrophy programming -- originator of the MEV/MAV/MRV volume-landmark framework, verified 2026-08-07",
+  },
+  {
     domain: "gunnarpeterson.com",
     organization: "Gunnar Peterson",
     category: "individual_specialist",
