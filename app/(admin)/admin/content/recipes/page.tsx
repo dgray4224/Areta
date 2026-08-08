@@ -39,8 +39,8 @@ export default async function RecipesAdminPage({
               <Card className="flex items-center justify-between hover:border-brand/40">
                 <div>
                   <p className="font-medium">{recipe.name}</p>
-                  <p className="text-xs text-neutral-500">
-                    {recipe.mealType} · {recipe.calories} cal · {recipe.proteinG}g protein
+                  <p className="text-xs text-neutral-500 capitalize">
+                    {recipe.mealType} · {recipe.cuisine} · {recipe.calories} cal · {recipe.proteinG}g protein
                   </p>
                 </div>
                 <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs capitalize text-neutral-500 dark:border-neutral-700">

@@ -4,7 +4,13 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { recipeScalarSchema, type RecipeScalarInput, type RecipeInput } from "@/domains/recipes/schema";
+import {
+  recipeScalarSchema,
+  RECIPE_CUISINES,
+  RECIPE_ALLERGENS,
+  type RecipeScalarInput,
+  type RecipeInput,
+} from "@/domains/recipes/schema";
 import { createRecipe, updateRecipe } from "@/domains/recipes/service";
 import { csvToArray } from "@/domains/expertregistry/schema";
 import { FormField, TextInput, SelectInput, TextArea, optionalNumberValue } from "@/platform/ui/FormField";
@@ -16,6 +22,29 @@ function csvDefault(values: string[] | undefined): string {
 }
 
 const BLANK_INGREDIENT: Ingredient = { name: "", quantity: 0, unit: "", section: "" };
+
+const CUISINE_LABEL: Record<(typeof RECIPE_CUISINES)[number], string> = {
+  american: "American",
+  italian: "Italian",
+  mexican: "Mexican",
+  chinese: "Chinese",
+  japanese: "Japanese",
+  thai: "Thai",
+  indian: "Indian",
+  mediterranean: "Mediterranean",
+};
+
+const ALLERGEN_LABEL: Record<(typeof RECIPE_ALLERGENS)[number], string> = {
+  milk: "Milk",
+  eggs: "Eggs",
+  fish: "Fish",
+  shellfish: "Shellfish",
+  tree_nuts: "Tree nuts",
+  peanuts: "Peanuts",
+  wheat: "Wheat",
+  soybeans: "Soybeans",
+  sesame: "Sesame",
+};
 
 export function RecipeForm({
   mode,
@@ -44,6 +73,7 @@ export function RecipeForm({
   const scalarDefaultValues: Partial<RecipeScalarInput> = {
     name: defaultValues?.name,
     mealType: defaultValues?.mealType,
+    cuisine: defaultValues?.cuisine,
     calories: defaultValues?.calories,
     proteinG: defaultValues?.proteinG,
     carbsG: defaultValues?.carbsG,
@@ -52,7 +82,9 @@ export function RecipeForm({
     prepMinutes: defaultValues?.prepMinutes,
     cookMinutes: defaultValues?.cookMinutes,
     servings: defaultValues?.servings,
+    allergens: defaultValues?.allergens,
     storageInstructions: defaultValues?.storageInstructions,
+    photoUrl: defaultValues?.photoUrl,
     status: defaultValues?.status,
   };
 
@@ -64,10 +96,12 @@ export function RecipeForm({
     resolver: zodResolver(recipeScalarSchema),
     defaultValues: {
       mealType: "breakfast",
+      cuisine: "american",
       status: "review",
       servings: 1,
       prepMinutes: 0,
       cookMinutes: 0,
+      allergens: [],
       ...scalarDefaultValues,
     },
   });
@@ -120,7 +154,7 @@ export function RecipeForm({
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <FormField label="Name" htmlFor="name" error={errors.name?.message}>
           <TextInput id="name" {...register("name")} />
         </FormField>
@@ -130,6 +164,15 @@ export function RecipeForm({
             <option value="lunch">Lunch</option>
             <option value="dinner">Dinner</option>
             <option value="snack">Snack</option>
+          </SelectInput>
+        </FormField>
+        <FormField label="Cuisine" htmlFor="cuisine" error={errors.cuisine?.message}>
+          <SelectInput id="cuisine" {...register("cuisine")}>
+            {RECIPE_CUISINES.map((c) => (
+              <option key={c} value={c}>
+                {CUISINE_LABEL[c]}
+              </option>
+            ))}
           </SelectInput>
         </FormField>
       </div>
@@ -179,6 +222,22 @@ export function RecipeForm({
           defaultValue={csvDefault(defaultValues?.dietaryTags)}
           {...register("dietaryTags", { setValueAs: csvToArray })}
         />
+      </FormField>
+
+      <FormField
+        label="Allergens"
+        htmlFor="allergens"
+        error={errors.allergens?.message}
+        hint="Check every Big-9 allergen this recipe's ingredients actually contain."
+      >
+        <div className="grid grid-cols-3 gap-2">
+          {RECIPE_ALLERGENS.map((a) => (
+            <label key={a} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" value={a} {...register("allergens")} />
+              {ALLERGEN_LABEL[a]}
+            </label>
+          ))}
+        </div>
       </FormField>
 
       {/* Ingredients — plain component state, not react-hook-form-managed;
@@ -262,6 +321,15 @@ export function RecipeForm({
         hint="Optional"
       >
         <TextArea id="storageInstructions" {...register("storageInstructions")} rows={2} />
+      </FormField>
+
+      <FormField
+        label="Photo URL"
+        htmlFor="photoUrl"
+        error={errors.photoUrl?.message}
+        hint="Optional — no photo pipeline exists yet, so this is a manual paste-in until one does."
+      >
+        <TextInput id="photoUrl" {...register("photoUrl")} />
       </FormField>
 
       <FormField

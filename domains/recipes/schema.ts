@@ -8,6 +8,38 @@ export const ingredientSchema = z.object({
 });
 export type IngredientInput = z.infer<typeof ingredientSchema>;
 
+/** The 8 cuisines Americans most commonly eat, per NRA "Global Palates",
+ * YouGov, and Google search-volume data (see migration
+ * 0096_recipes_cuisine_allergens_photo.sql's comment for the sourcing) —
+ * deliberately not a long tail of every possible cuisine, since this is a
+ * US-first launch. */
+export const RECIPE_CUISINES = [
+  "american",
+  "italian",
+  "mexican",
+  "chinese",
+  "japanese",
+  "thai",
+  "indian",
+  "mediterranean",
+] as const;
+
+/** FDA "Big 9" major food allergens — a fixed vocabulary, not free text
+ * like dietaryTags, so it stays filterable and so the recipe-content
+ * pipeline's allergen cross-check (scripts/recipe-content/validate-spec.ts)
+ * has something checkable to cross-reference ingredient names against. */
+export const RECIPE_ALLERGENS = [
+  "milk",
+  "eggs",
+  "fish",
+  "shellfish",
+  "tree_nuts",
+  "peanuts",
+  "wheat",
+  "soybeans",
+  "sesame",
+] as const;
+
 // No `.default([])` here — see domains/expertregistry/schema.ts's comment
 // on the same pattern: keeping the array's input/output type identical is
 // what lets zodResolver and useForm<RecipeInput>()'s single generic agree.
@@ -16,6 +48,7 @@ const stringArray = z.array(z.string());
 export const recipeSchema = z.object({
   name: z.string().min(1, "Name is required"),
   mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+  cuisine: z.enum(RECIPE_CUISINES),
   calories: z.number().int().min(0),
   proteinG: z.number().min(0),
   carbsG: z.number().min(0),
@@ -25,9 +58,11 @@ export const recipeSchema = z.object({
   cookMinutes: z.number().int().min(0),
   servings: z.number().int().min(1),
   dietaryTags: stringArray,
+  allergens: z.array(z.enum(RECIPE_ALLERGENS)),
   ingredients: z.array(ingredientSchema).min(1, "Add at least one ingredient"),
   instructions: z.array(z.string().min(1, "Step can't be empty")).min(1, "Add at least one step"),
   storageInstructions: z.string().optional(),
+  photoUrl: z.string().url().optional(),
   status: z.enum(["active", "review", "deprecated"]),
 });
 export type RecipeInput = z.infer<typeof recipeSchema>;
