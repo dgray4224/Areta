@@ -22,6 +22,7 @@ import { generateGoalFirstPlan } from "@/domains/recommendation/service";
 import { logScheduleEvent, hasActualScheduleEventToday } from "@/platform/scheduling/log-schedule-event";
 import { getWeekDates, addDays } from "@/platform/ui/week-dates";
 import { todayForUser } from "@/domains/activity-summary/service";
+import { getExercisePickFrequency } from "@/domains/workoutplan/preferences";
 
 /**
  * Generates a fresh weekly workout schedule as a draft from the user's
@@ -200,7 +201,11 @@ export async function generateAndSaveWorkoutPlan(
     if (!programId) {
       warnings.push("No matching training program was available -- generated a general plan for your archetype instead.");
     }
-    const result = generateWorkoutPlan({ sessionsPerWeek, archetype, equipmentAccess, exercises });
+    // Only fetched on this fallback path -- pickWeights only feeds
+    // generateWorkoutPlan's per-exercise round-robin choice, which the
+    // program-based materializeWorkoutPlan branch above doesn't have.
+    const pickWeights = await getExercisePickFrequency(userId, supabase);
+    const result = generateWorkoutPlan({ sessionsPerWeek, archetype, equipmentAccess, exercises, pickWeights });
     days = result.days;
     warnings.push(...result.warnings);
   }

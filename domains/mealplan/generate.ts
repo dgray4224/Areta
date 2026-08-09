@@ -30,6 +30,14 @@ export type MealPlanGenerationInput = {
   preferredCuisines?: RecipeCuisine[];
   recipes: RecipeForPlanning[];
   days?: number;
+  /** recipeId -> how many times the user has explicitly picked it
+   * (domains/mealplan/preferences.ts#getRecipePickFrequency, a bounded
+   * lookback over meal_pick_history) -- an inferred soft nudge, same
+   * weight class as preferredCuisines, applied only as a scoring bonus
+   * AFTER the pool below is already filtered by MAX_USES_PER_WEEK/the
+   * variety gap, so it can influence which eligible recipe wins but can
+   * never bypass those caps. Omitted/empty means no history yet. */
+  pickWeights?: Map<string, number>;
 };
 
 export type PlannedMeal = { mealType: MealType; recipeId: string };
@@ -91,6 +99,14 @@ export function generateMealPlan(input: MealPlanGenerationInput): MealPlanGenera
   // cuisine, small enough that a much-better macro fit outside the
   // preference can still win, keeping this a nudge, not a filter.
   const CUISINE_MISMATCH_PENALTY = 150;
+  const pickWeights = input.pickWeights;
+  // Well below CUISINE_MISMATCH_PENALTY -- pick-history is an inferred
+  // signal (the user chose this once, for some reason), not a stated
+  // preference like preferredCuisines, so it should nudge rather than
+  // dominate. Capped so a recipe picked 20 times doesn't permanently
+  // crowd out everything else once pickWeights exists.
+  const PREFERENCE_WEIGHT_PER_PICK = 10;
+  const PREFERENCE_CAP_PICKS = 6;
 
   const usageCount = new Map<string, number>();
   const recentDays = new Map<string, number>(); // recipeId -> last day used
@@ -129,7 +145,9 @@ export function generateMealPlan(input: MealPlanGenerationInput): MealPlanGenera
       const scoreOf = (r: RecipeForPlanning) => {
         const base = Math.abs(r.calories - slotCalorieTarget) + Math.abs(r.proteinG - slotProteinTarget) * 2;
         const cuisineMismatch = preferredCuisines.length > 0 && !preferredCuisines.includes(r.cuisine);
-        return cuisineMismatch ? base + CUISINE_MISMATCH_PENALTY : base;
+        const withCuisine = cuisineMismatch ? base + CUISINE_MISMATCH_PENALTY : base;
+        const pickCount = Math.min(pickWeights?.get(r.id) ?? 0, PREFERENCE_CAP_PICKS);
+        return withCuisine - pickCount * PREFERENCE_WEIGHT_PER_PICK;
       };
       const chosen = options.reduce((best, r) => (scoreOf(r) < scoreOf(best) ? r : best), options[0]);
 

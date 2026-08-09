@@ -12,6 +12,7 @@ import type { RecipeCuisine } from "@/domains/recipes/types";
 import { logScheduleEvent } from "@/platform/scheduling/log-schedule-event";
 import { getWeekDates } from "@/platform/ui/week-dates";
 import { todayForUser } from "@/domains/activity-summary/service";
+import { getRecipePickFrequency } from "@/domains/mealplan/preferences";
 
 function normalizeKeywords(list: string[] | undefined | null): string[] {
   if (!list) return [];
@@ -71,7 +72,7 @@ export async function generateAndSaveMealPlan(
     .single();
   const nutrition = (responses?.nutrition ?? {}) as NutritionInput;
 
-  const recipes = await getAllRecipes(supabase);
+  const [recipes, pickWeights] = await Promise.all([getAllRecipes(supabase), getRecipePickFrequency(userId, supabase)]);
   const planningRecipes: RecipeForPlanning[] = recipes.map((r) => ({
     id: r.id,
     name: r.name,
@@ -95,6 +96,7 @@ export async function generateAndSaveMealPlan(
     excludeKeywords,
     preferredCuisines: options?.preferredCuisines,
     recipes: planningRecipes,
+    pickWeights,
   });
 
   const weekStart = options?.weekStart ?? (await todayForUser(supabase, userId));

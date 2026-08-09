@@ -140,6 +140,61 @@ describe("generateWorkoutPlan", () => {
     expect(runEntry?.durationMinutes).toBeGreaterThan(0);
     expect(runEntry?.sets).toBeNull();
   });
+
+  describe("pickWeights (frequency-weighting)", () => {
+    // Both general_fitness/bodyweight, so both are eligible together --
+    // input order (bw1 before bw2) is what round-robin selection falls
+    // back to with no history.
+    const TWO_EXERCISES = SAMPLE_EXERCISES.filter((e) => e.id === "bw1" || e.id === "bw2");
+
+    it("reorders the eligible pool so a higher pick count is chosen first", () => {
+      const withoutHistory = generateWorkoutPlan({
+        sessionsPerWeek: 1,
+        archetype: "general_fitness",
+        equipmentAccess: ["Bodyweight only"],
+        exercises: TWO_EXERCISES,
+        exercisesPerSession: 1,
+      });
+      const sessionDay = withoutHistory.days.find((d) => !d.isRestDay);
+      expect(sessionDay?.exercises[0].exerciseId).toBe("bw1"); // input-order fallback, no history
+
+      const withHistory = generateWorkoutPlan({
+        sessionsPerWeek: 1,
+        archetype: "general_fitness",
+        equipmentAccess: ["Bodyweight only"],
+        exercises: TWO_EXERCISES,
+        exercisesPerSession: 1,
+        pickWeights: new Map([["bw2", 5]]),
+      });
+      const historySessionDay = withHistory.days.find((d) => !d.isRestDay);
+      expect(historySessionDay?.exercises[0].exerciseId).toBe("bw2"); // reordered ahead of bw1
+    });
+
+    it("does not let a high pick count bypass the MAX_USES_PER_WEEK cap", () => {
+      const { days } = generateWorkoutPlan({
+        sessionsPerWeek: 4,
+        archetype: "general_fitness",
+        equipmentAccess: ["Bodyweight only"],
+        exercises: TWO_EXERCISES,
+        exercisesPerSession: 1,
+        pickWeights: new Map([["bw2", 100]]), // huge bonus -- would win every session if caps didn't apply
+      });
+
+      const usage = new Map<string, number>();
+      for (const day of days) {
+        for (const ex of day.exercises) usage.set(ex.exerciseId, (usage.get(ex.exerciseId) ?? 0) + 1);
+      }
+      expect(usage.get("bw2")).toBeLessThanOrEqual(2); // still capped
+      expect(usage.get("bw1")).toBeGreaterThan(0); // had to fall back once bw2 hit its cap
+    });
+
+    it("produces identical output whether pickWeights is omitted or an empty Map", () => {
+      const base = { sessionsPerWeek: 3, archetype: "general_fitness", equipmentAccess: ["Bodyweight only", "Dumbbells"], exercises: SAMPLE_EXERCISES };
+      const omitted = generateWorkoutPlan(base);
+      const empty = generateWorkoutPlan({ ...base, pickWeights: new Map() });
+      expect(empty).toEqual(omitted);
+    });
+  });
 });
 
 function hydratedPhase(sessionCount: number): HydratedProgramPhase {
