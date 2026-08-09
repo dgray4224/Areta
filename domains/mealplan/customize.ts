@@ -58,10 +58,18 @@ export async function assignMealPlanDays(
   // generation or an earlier round of this same customization pass) is
   // left untouched here -- this call only ever adds/updates the specific
   // slots it targets.
+  //
+  // activateImmediately: true (2026-08-09) -- without it, customizing a
+  // future week with no existing plan would bootstrap a 'draft' that
+  // nothing ever approves, so the customization would silently never show
+  // up as calendar dots. Same self-service auto-activate policy as the
+  // regenerate-meal-plans cron; harmless no-op for a trainer-assigned
+  // user since generateAndSaveMealPlan's own guard already refuses to run
+  // for them regardless of this flag.
   let warnings: string[] = [];
   const existingPlan = await getMealPlanForWeek(userId, weekStart, supabase);
   if (!existingPlan || existingPlan.items.length === 0) {
-    const generateResult = await generateAndSaveMealPlan(userId, { weekStart }, supabase);
+    const generateResult = await generateAndSaveMealPlan(userId, { weekStart, activateImmediately: true }, supabase);
     if (!generateResult.ok) return generateResult;
     warnings = generateResult.data.warnings;
   }

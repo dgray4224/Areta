@@ -28,8 +28,14 @@ import { getExercisePickFrequency } from "@/domains/workoutplan/preferences";
  * Generates a fresh weekly workout schedule as a draft from the user's
  * approved Exercise parameters, stated equipment access, and the shared
  * exercise library. Mirrors domains/mealplan/service.ts's
- * generateAndSaveMealPlan. Still needs an explicit approve step (see
- * approveWorkoutPlan) before it's "active" (CLAUDE.md rule 10).
+ * generateAndSaveMealPlan. By default still needs an explicit approve step
+ * (see approveWorkoutPlan) before it's "active" (CLAUDE.md rule 10) --
+ * pass `activateImmediately: true` to skip straight to "active" instead,
+ * for the specific self-service call sites (weekly cron refresh,
+ * customize.ts bootstrap-if-missing) where the user has deliberately opted
+ * out of that gate for passive/incidental regeneration. Every other caller
+ * (the web "Generate" button, onboarding, verify scripts) omits it and is
+ * unaffected.
  *
  * Prefers a real, periodized training_programs phase (rotation.ts decides
  * whether to continue the user's current phase, advance to the next one,
@@ -39,11 +45,12 @@ import { getExercisePickFrequency } from "@/domains/workoutplan/preferences";
  */
 export async function generateAndSaveWorkoutPlan(
   userId: string,
-  options?: { weekStart?: string },
+  options?: { weekStart?: string; activateImmediately?: boolean },
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const supabase = client ?? (await createClient());
   const weekStart = options?.weekStart ?? (await todayForUser(supabase, userId));
+  const initialStatus = options?.activateImmediately ? "active" : "draft";
 
   // A client with an active trainer-assigned program (2026-08-06) should
   // never have it silently clobbered by the library generator — both
@@ -86,7 +93,7 @@ export async function generateAndSaveWorkoutPlan(
   // "coming soon" gap where new-shape users could never generate a
   // workout plan at all.
   if (!isLegacyExerciseShape(exercise) || !exercise.archetype) {
-    return generateAndSaveGoalFirstPlan(userId, exercise as ExerciseInput, sessionsPerWeek, weekStart, supabase);
+    return generateAndSaveGoalFirstPlan(userId, exercise as ExerciseInput, sessionsPerWeek, weekStart, initialStatus, supabase);
   }
 
   const archetype = exercise.archetype;
@@ -216,7 +223,7 @@ export async function generateAndSaveWorkoutPlan(
       {
         user_id: userId,
         week_start: weekStart,
-        status: "draft",
+        status: initialStatus,
         sessions_per_week: sessionsPerWeek,
         phase_focus: phaseFocus,
         program_id: programId,
@@ -287,6 +294,7 @@ async function generateAndSaveGoalFirstPlan(
   exercise: ExerciseInput,
   sessionsPerWeek: number,
   weekStart: string,
+  initialStatus: "draft" | "active",
   supabase: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const generated = await generateGoalFirstPlan(userId, exercise, sessionsPerWeek, weekStart, supabase);
@@ -299,7 +307,7 @@ async function generateAndSaveGoalFirstPlan(
       {
         user_id: userId,
         week_start: weekStart,
-        status: "draft",
+        status: initialStatus,
         sessions_per_week: sessionsPerWeek,
         phase_focus: phaseFocus,
         program_id: null,
@@ -477,6 +485,10 @@ export type WorkoutPlanView = {
   phaseFocus: string | null;
   programContext: WorkoutPlanProgramContext | null;
   items: WorkoutPlanItemView[];
+  /** When this plan row was last written (insert or status flip) -- lets
+   * mobile detect "this week's plan changed since I last looked" without
+   * a separate approval/notification table. */
+  updatedAt: string;
 };
 
 export async function getWorkoutPlanForWeek(
@@ -493,7 +505,9 @@ export async function getWorkoutPlanForWeek(
   // done -- see that function's own doc comment in domains/trainer/service.ts.
   const { data: plan } = await supabase
     .from("workout_plans")
-    .select("id, week_start, status, sessions_per_week, phase_focus, program_id, program_phase_id, phase_week_number")
+    .select(
+      "id, week_start, status, sessions_per_week, phase_focus, program_id, program_phase_id, phase_week_number, updated_at"
+    )
     .eq("user_id", userId)
     .eq("week_start", resolvedWeekStart)
     .neq("status", "archived")
@@ -523,6 +537,7 @@ export async function getWorkoutPlanForWeek(
     status: plan.status as WorkoutPlanView["status"],
     sessionsPerWeek: plan.sessions_per_week,
     phaseFocus: plan.phase_focus,
+    updatedAt: plan.updated_at,
     programContext,
     items: (items ?? []).map((i) => ({
       id: i.id,

@@ -11,14 +11,25 @@ function currentWeekStart(): string {
 /**
  * Weekly cron (see vercel.json): for every user whose *active* workout
  * plan's week_start has fallen behind the current week, generates a fresh
- * DRAFT for the current week -- never activates it. CLAUDE.md rule 10
- * ("require approval before changing active plans") is non-negotiable, so
- * this job only makes sure a reviewable draft is waiting; the user's
- * active plan keeps serving exactly what it served before until they
- * approve the draft on the web Workouts page. Without this job, a user
- * could otherwise be stuck replaying an arbitrarily stale plan
- * indefinitely, since generateAndSaveWorkoutPlan previously only ran from
- * a manual button click.
+ * plan for the current week.
+ *
+ * Library (self-service) users: auto-activates directly
+ * (`activateImmediately: true`) rather than leaving an unapproved draft.
+ * This is a deliberate 2026-08-09 policy change from this route's
+ * original "never activates, CLAUDE.md rule 10 is non-negotiable"
+ * behavior -- found while investigating why the Plan tab's calendar dots
+ * only ever showed for one week: this cron's own draft-only output was
+ * never visible anywhere on mobile (no review/approve screen exists
+ * there, only the web Workouts page's ApproveWorkoutPlanButton), so a
+ * self-service mobile-only user's plan silently never advanced past its
+ * first week. Rule 10 governs generating *new* parameters/plans from a
+ * stated outcome (the onboarding translation pipeline) -- this is
+ * refreshing an *already-approved* plan's content for a new week with
+ * the same approved parameters, and the user explicitly chose
+ * auto-activate + an informational "what's new" banner over a second
+ * approval gate for that case. The web app's manual Generate/Approve
+ * button pair, onboarding's one-tap generate-and-approve, and all
+ * trainer-assigned paths are untouched by this change.
  *
  * generateAndSaveWorkoutPlan's upsert (onConflict: user_id,week_start) on
  * workout_plans makes re-running this safe if the cron fires more than
@@ -68,11 +79,15 @@ export async function GET(request: NextRequest) {
   const userIds = [...libraryUserIds, ...trainerUserIds];
 
   const results = await Promise.allSettled([
-    ...libraryUserIds.map((userId) => generateAndSaveWorkoutPlan(userId, undefined, supabase)),
+    // weekStart intentionally omitted here (not the UTC-based
+    // currentWeekStart() above, only used for the staleness query) --
+    // generateAndSaveWorkoutPlan resolves its own timezone-correct
+    // todayForUser internally when omitted.
+    ...libraryUserIds.map((userId) => generateAndSaveWorkoutPlan(userId, { activateImmediately: true }, supabase)),
     ...trainerUserIds.map((userId) => generateAndSaveFromTrainerProgram(userId, supabase)),
   ]);
 
-  const draftsGenerated = results.filter((r) => r.status === "fulfilled" && r.value.ok).length;
+  const generated = results.filter((r) => r.status === "fulfilled" && r.value.ok).length;
   const failures: { userId: string; error: string }[] = [];
   results.forEach((r, i) => {
     if (r.status === "rejected") {
@@ -82,5 +97,5 @@ export async function GET(request: NextRequest) {
     }
   });
 
-  return NextResponse.json({ checked: userIds.length, draftsGenerated, failures });
+  return NextResponse.json({ checked: userIds.length, generated, failures });
 }

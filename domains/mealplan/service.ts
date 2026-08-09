@@ -23,12 +23,24 @@ function normalizeKeywords(list: string[] | undefined | null): string[] {
  * Generates a fresh 7-day meal plan as a draft from the user's approved
  * nutrition parameters, preferences, and the shared recipe library. Does
  * not require re-approval of the plan's contents beyond the parameters it
- * was built from — but the plan itself still needs an explicit approve
- * step (see approveMealPlan) before it's "active" (CLAUDE.md rule 10).
+ * was built from — but by default the plan itself still needs an explicit
+ * approve step (see approveMealPlan) before it's "active" (CLAUDE.md rule
+ * 10). Pass `activateImmediately: true` to skip straight to "active"
+ * instead, for the specific self-service call sites (weekly cron refresh,
+ * customize.ts bootstrap-if-missing) where the user has deliberately opted
+ * out of that gate for passive/incidental regeneration — mirrors
+ * domains/workoutplan/service.ts#generateAndSaveWorkoutPlan's identical
+ * param. Every other caller (the web "Generate" button, onboarding, verify
+ * scripts) omits it and is unaffected.
  */
 export async function generateAndSaveMealPlan(
   userId: string,
-  options?: { weekStart?: string; extraExcludeKeywords?: string[]; preferredCuisines?: RecipeCuisine[] },
+  options?: {
+    weekStart?: string;
+    extraExcludeKeywords?: string[];
+    preferredCuisines?: RecipeCuisine[];
+    activateImmediately?: boolean;
+  },
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const supabase = client ?? (await createClient());
@@ -107,7 +119,7 @@ export async function generateAndSaveMealPlan(
       {
         user_id: userId,
         week_start: weekStart,
-        status: "draft",
+        status: options?.activateImmediately ? "active" : "draft",
         calorie_target: calorieTarget,
         protein_target: proteinTarget,
       },
@@ -212,6 +224,11 @@ export type MealPlanView = {
    * "this is what I assigned" from "this is the client's own plan." */
   trainerMealProgramId: string | null;
   items: MealPlanItemView[];
+  /** When this plan row was last written (insert or status flip) -- lets
+   * mobile detect "this week's plan changed since I last looked" without
+   * a separate approval/notification table. Mirrors
+   * domains/workoutplan/service.ts#WorkoutPlanView's identical field. */
+  updatedAt: string;
 };
 
 export async function getMealPlanForWeek(
@@ -223,7 +240,7 @@ export async function getMealPlanForWeek(
   const resolvedWeekStart = weekStart ?? (await todayForUser(supabase, userId));
   const { data: plan } = await supabase
     .from("meal_plans")
-    .select("id, week_start, status, calorie_target, protein_target, trainer_meal_program_id")
+    .select("id, week_start, status, calorie_target, protein_target, trainer_meal_program_id, updated_at")
     .eq("user_id", userId)
     .eq("week_start", resolvedWeekStart)
     .maybeSingle();
@@ -249,6 +266,7 @@ export async function getMealPlanForWeek(
     calorieTarget: plan.calorie_target,
     proteinTarget: plan.protein_target,
     trainerMealProgramId: plan.trainer_meal_program_id,
+    updatedAt: plan.updated_at,
     items: (items ?? []).map((i) => ({
       id: i.id,
       dayOfWeek: i.day_of_week,
