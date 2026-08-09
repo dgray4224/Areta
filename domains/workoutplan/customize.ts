@@ -4,7 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
-import { generateAndSaveWorkoutPlan, getWorkoutPlanForWeek, type CustomizeExerciseInput } from "@/domains/workoutplan/service";
+import {
+  generateAndSaveWorkoutPlan,
+  getWorkoutPlanForWeek,
+  workoutPlanExistsForWeek,
+  type CustomizeExerciseInput,
+} from "@/domains/workoutplan/service";
 
 /**
  * Backs the mobile "Customize this week" workout flow -- distinct from
@@ -32,9 +37,15 @@ async function bootstrapIfMissing(
   weekStart: string,
   supabase: SupabaseClient<Database>
 ): Promise<{ ok: true; warnings: string[] } | { ok: false; error: string }> {
-  const existingPlan = await getWorkoutPlanForWeek(userId, weekStart, supabase);
-  if (existingPlan && existingPlan.items.length > 0) return { ok: true, warnings: [] };
-  const generateResult = await generateAndSaveWorkoutPlan(userId, { weekStart }, supabase);
+  if (await workoutPlanExistsForWeek(userId, weekStart, supabase)) return { ok: true, warnings: [] };
+  // activateImmediately: true (2026-08-09) -- mirrors
+  // domains/mealplan/customize.ts's identical bootstrap fix: without it,
+  // customizing a future week with no existing plan would bootstrap a
+  // 'draft' nothing ever approves, so the customization would silently
+  // never show up as calendar dots. Harmless no-op for a trainer-assigned
+  // user since generateAndSaveWorkoutPlan's own guard already refuses to
+  // run for them regardless of this flag.
+  const generateResult = await generateAndSaveWorkoutPlan(userId, { weekStart, activateImmediately: true }, supabase);
   if (!generateResult.ok) return generateResult;
   return { ok: true, warnings: generateResult.data.warnings };
 }

@@ -169,7 +169,8 @@ export async function GET(request: NextRequest) {
   // request (it always will for the plain week view; a month-grid
   // request only includes it if today falls inside the requested range).
   const todaysWeekAnchor = getWeekDates(today)[0];
-  const thisWeekWorkoutPlan = resolutions.find((r) => r.weekAnchor === todaysWeekAnchor)?.workoutPlan ?? null;
+  const thisWeekResolution = resolutions.find((r) => r.weekAnchor === todaysWeekAnchor) ?? null;
+  const thisWeekWorkoutPlan = thisWeekResolution?.workoutPlan ?? null;
   const weekTrainingFocus = thisWeekWorkoutPlan
     ? classifyWeeklyTrainingFocus(thisWeekWorkoutPlan.items, exercises)
     : null;
@@ -182,6 +183,13 @@ export async function GET(request: NextRequest) {
     phaseFocus: firstWorkoutPlan?.phaseFocus ?? null,
     programContext: firstWorkoutPlan?.programContext ?? null,
     weekTrainingFocus,
+    // Only ever "this calendar week" (matches weekTrainingFocus's own
+    // scoping above) -- lets mobile's "what's new" banner detect a
+    // passive weekly-cron refresh without a separate notification table.
+    // Null when a month-grid request's range doesn't include today, or
+    // when there's simply no active plan for this week yet.
+    thisWeekMealPlanUpdatedAt: thisWeekResolution?.mealPlan?.updatedAt ?? null,
+    thisWeekWorkoutPlanUpdatedAt: thisWeekWorkoutPlan?.updatedAt ?? null,
     days,
   });
 }
