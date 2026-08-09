@@ -30,3 +30,13 @@ export function formatShortDate(iso: string): string {
 }
 
 export const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** How many consecutive weeks (current + this many more) self-service
+ * meal/workout plans should stay generated & active for at all times
+ * (2026-08-09) -- "a rolling month," so a user who grocery-shops every
+ * 1-4 weeks always has real plan/grocery content that far ahead, not
+ * `weeksMissingPlan` gaps. One shared definition -- both
+ * domains/mealplan/approve-flow.ts#ensureMealPlanWeeksAhead and
+ * domains/workoutplan/service.ts#ensureWorkoutPlanWeeksAhead, plus both
+ * regenerate-*-plans crons, import this rather than each hardcoding 4. */
+export const SELF_SERVICE_WEEKS_AHEAD = 4;

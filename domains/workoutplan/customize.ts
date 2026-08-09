@@ -4,7 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
-import { generateAndSaveWorkoutPlan, getWorkoutPlanForWeek, type CustomizeExerciseInput } from "@/domains/workoutplan/service";
+import {
+  generateAndSaveWorkoutPlan,
+  getWorkoutPlanForWeek,
+  workoutPlanExistsForWeek,
+  type CustomizeExerciseInput,
+} from "@/domains/workoutplan/service";
 
 /**
  * Backs the mobile "Customize this week" workout flow -- distinct from
@@ -32,8 +37,7 @@ async function bootstrapIfMissing(
   weekStart: string,
   supabase: SupabaseClient<Database>
 ): Promise<{ ok: true; warnings: string[] } | { ok: false; error: string }> {
-  const existingPlan = await getWorkoutPlanForWeek(userId, weekStart, supabase);
-  if (existingPlan && existingPlan.items.length > 0) return { ok: true, warnings: [] };
+  if (await workoutPlanExistsForWeek(userId, weekStart, supabase)) return { ok: true, warnings: [] };
   // activateImmediately: true (2026-08-09) -- mirrors
   // domains/mealplan/customize.ts's identical bootstrap fix: without it,
   // customizing a future week with no existing plan would bootstrap a

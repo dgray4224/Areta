@@ -154,13 +154,20 @@ async function seedApprovedNutritionParams(userId: string): Promise<void> {
  * matter for this script's assertions. */
 async function seedStaleActivePlan(table: "meal_plans" | "workout_plans", userId: string): Promise<void> {
   const staleWeekStart = weekStartOffset(-2);
-  const base =
+  const { error } =
     table === "meal_plans"
-      ? { calorie_target: 2000, protein_target: 150 }
-      : { sessions_per_week: 4 };
-  const { error } = await supabase
-    .from(table)
-    .upsert({ user_id: userId, week_start: staleWeekStart, status: "active", ...base }, { onConflict: "user_id,week_start" });
+      ? await supabase
+          .from("meal_plans")
+          .upsert(
+            { user_id: userId, week_start: staleWeekStart, status: "active", calorie_target: 2000, protein_target: 150 },
+            { onConflict: "user_id,week_start" }
+          )
+      : await supabase
+          .from("workout_plans")
+          .upsert(
+            { user_id: userId, week_start: staleWeekStart, status: "active", sessions_per_week: 4 },
+            { onConflict: "user_id,week_start" }
+          );
   if (error) throw new Error(`seedStaleActivePlan(${table}): ${error.message}`);
 }
 
@@ -260,6 +267,93 @@ async function main() {
       `Expected assignWorkoutPlanExerciseDays's bootstrap to land 'active', got "${bootstrappedWorkoutPlan?.status}"`
     );
     console.log("PASS: assignWorkoutPlanExerciseDays's bootstrap-if-missing on a future week lands 'active' directly.");
+
+    // --- Scenarios 4-6: rolling-month look-ahead (ensureMealPlanWeeksAhead
+    // / ensureWorkoutPlanWeeksAhead) -- separate fresh fixture user, since
+    // the first fixture already has weeks 0/1/3 populated from scenarios
+    // 1-3 above and would muddy a clean "4 weeks from nothing" assertion.
+    const userId2 = await createFixtureUser("verify-plan-autoactivate-fixture-2@areta.local");
+    fixtureIds.push(userId2);
+    await seedOnboarding(userId2);
+    await seedApprovedSessionsPerWeek(userId2);
+    await seedApprovedNutritionParams(userId2);
+    console.log(`Second fixture user created: ${userId2}`);
+
+    const weekOffsets = [0, 1, 2, 3].map((n) => weekStartOffset(n));
+
+    const { ensureMealPlanWeeksAhead } = await import("@/domains/mealplan/approve-flow");
+    const ensureMealResult = await ensureMealPlanWeeksAhead(userId2, 4, supabase);
+    assert(ensureMealResult.ok, `ensureMealPlanWeeksAhead failed: ${!ensureMealResult.ok ? ensureMealResult.error : ""}`);
+    assert(
+      ensureMealResult.data.generatedWeeks.length === 4,
+      `Expected 4 generated weeks from a blank slate, got ${ensureMealResult.data.generatedWeeks.length}: ${JSON.stringify(ensureMealResult.data.generatedWeeks)}`
+    );
+    for (const weekStart of weekOffsets) {
+      const plan = await getMealPlanForWeek(userId2, weekStart, supabase);
+      assert(plan?.status === "active", `Expected week ${weekStart} to be 'active', got "${plan?.status}"`);
+      const { data: groceryRow } = await supabase
+        .from("grocery_lists")
+        .select("id")
+        .eq("user_id", userId2)
+        .eq("week_start", weekStart)
+        .maybeSingle();
+      assert(groceryRow !== null, `Expected a grocery_lists row for week ${weekStart}`);
+      const { data: prepRow } = await supabase
+        .from("prep_plans")
+        .select("id")
+        .eq("user_id", userId2)
+        .eq("week_start", weekStart)
+        .maybeSingle();
+      assert(prepRow !== null, `Expected a prep_plans row for week ${weekStart}`);
+    }
+    console.log("PASS: ensureMealPlanWeeksAhead(4) on a blank slate generates all 4 weeks active, each with its own grocery + prep list.");
+
+    // Re-run on the SAME 4 weeks, after manually customizing one of them --
+    // asserts nothing gets regenerated (0 weeks in generatedWeeks this
+    // time) and the customization survives.
+    const { data: recipeRow2, error: recipeError2 } = await supabase
+      .from("recipes")
+      .select("id")
+      .eq("status", "active")
+      .eq("meal_type", "dinner")
+      .limit(1)
+      .single();
+    if (recipeError2 || !recipeRow2) throw new Error(`Failed to find a fixture dinner recipe: ${recipeError2?.message}`);
+    const customizedWeek = weekOffsets[2];
+    const { assignMealPlanDays: assignMealPlanDays2 } = await import("@/domains/mealplan/customize");
+    const customizeResult = await assignMealPlanDays2(
+      userId2,
+      { weekStart: customizedWeek, recipeId: recipeRow2.id, mealType: "dinner", daysOfWeek: [3] },
+      supabase
+    );
+    assert(customizeResult.ok, `assignMealPlanDays (re-customize) failed: ${!customizeResult.ok ? customizeResult.error : ""}`);
+
+    const ensureMealResult2 = await ensureMealPlanWeeksAhead(userId2, 4, supabase);
+    assert(ensureMealResult2.ok, `ensureMealPlanWeeksAhead (2nd run) failed: ${!ensureMealResult2.ok ? ensureMealResult2.error : ""}`);
+    assert(
+      ensureMealResult2.data.generatedWeeks.length === 0,
+      `Expected 0 newly-generated weeks on a re-run where all 4 already exist, got ${JSON.stringify(ensureMealResult2.data.generatedWeeks)}`
+    );
+    const customizedPlanAfter = await getMealPlanForWeek(userId2, customizedWeek, supabase);
+    const wednesdayDinner = customizedPlanAfter?.items.find((i) => i.dayOfWeek === 3 && i.mealType === "dinner");
+    assert(
+      wednesdayDinner?.recipeId === recipeRow2.id,
+      `Expected the customized Wednesday dinner to survive ensureMealPlanWeeksAhead's re-run, got recipeId "${wednesdayDinner?.recipeId}"`
+    );
+    console.log("PASS: ensureMealPlanWeeksAhead never re-touches a week that already exists -- a customization survives a re-run.");
+
+    const { ensureWorkoutPlanWeeksAhead } = await import("@/domains/workoutplan/service");
+    const ensureWorkoutResult = await ensureWorkoutPlanWeeksAhead(userId2, 4, supabase);
+    assert(ensureWorkoutResult.ok, `ensureWorkoutPlanWeeksAhead failed: ${!ensureWorkoutResult.ok ? ensureWorkoutResult.error : ""}`);
+    assert(
+      ensureWorkoutResult.data.generatedWeeks.length === 4,
+      `Expected 4 generated workout weeks from a blank slate, got ${ensureWorkoutResult.data.generatedWeeks.length}: ${JSON.stringify(ensureWorkoutResult.data.generatedWeeks)}`
+    );
+    for (const weekStart of weekOffsets) {
+      const plan = await getWorkoutPlanForWeek(userId2, weekStart, supabase);
+      assert(plan?.status === "active", `Expected workout week ${weekStart} to be 'active', got "${plan?.status}"`);
+    }
+    console.log("PASS: ensureWorkoutPlanWeeksAhead(4) on a blank slate generates all 4 weeks active, in chronological order.");
 
     console.log("\nAll assertions passed.");
   } finally {

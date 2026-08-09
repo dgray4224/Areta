@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServerEnv } from "@/platform/env.server";
 import { createAdminClient } from "@/platform/supabase/admin";
 import { materializeCurrentMealWeek } from "@/domains/trainermealprogram/materialize";
-import { generateAndSaveMealPlan } from "@/domains/mealplan/service";
+import { ensureMealPlanWeeksAhead } from "@/domains/mealplan/approve-flow";
+import { SELF_SERVICE_WEEKS_AHEAD } from "@/platform/ui/week-dates";
 
 function currentWeekStart(): string {
   return new Date().toISOString().slice(0, 10);
@@ -25,10 +26,13 @@ function currentWeekStart(): string {
  * Library (self-service) users (2026-08-09, closes a real gap -- this
  * route used to be scoped to trainer-assigned clients only, meaning
  * self-service meal plans had *no* weekly regeneration at all): mirrors
- * the workout cron's stale-active-plan query, and like that cron's
- * library half now also auto-activates directly
- * (`activateImmediately: true`) rather than leaving an unapproved draft
- * -- see regenerate-workout-plans/route.ts's doc comment for the full
+ * the workout cron's stale-active-plan query (only used to decide *which*
+ * users to run this for), and calls `ensureMealPlanWeeksAhead` to keep a
+ * rolling `SELF_SERVICE_WEEKS_AHEAD`-week window generated & active per
+ * user -- auto-activating directly rather than leaving an unapproved
+ * draft, and never touching a week that already has real content (so a
+ * week the user already customized ahead of time survives untouched) --
+ * see regenerate-workout-plans/route.ts's doc comment for the full
  * rationale (same 2026-08-09 policy decision, applied identically to
  * both domains).
  */
@@ -59,11 +63,10 @@ export async function GET(request: NextRequest) {
   const userIds = [...libraryUserIds, ...trainerUserIds];
 
   const results = await Promise.allSettled([
-    // weekStart intentionally omitted here (not the UTC-based
-    // currentWeekStart() above, only used for the staleness query) --
-    // generateAndSaveMealPlan resolves its own timezone-correct
-    // todayForUser internally when omitted.
-    ...libraryUserIds.map((userId) => generateAndSaveMealPlan(userId, { activateImmediately: true }, supabase)),
+    // ensureMealPlanWeeksAhead resolves its own timezone-correct
+    // todayForUser internally -- the UTC-based currentWeekStart() above is
+    // only used for the staleness query that decides who to run this for.
+    ...libraryUserIds.map((userId) => ensureMealPlanWeeksAhead(userId, SELF_SERVICE_WEEKS_AHEAD, supabase)),
     ...trainerUserIds.map((clientId) => materializeCurrentMealWeek(clientId, supabase)),
   ]);
 

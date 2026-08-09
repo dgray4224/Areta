@@ -26,6 +26,22 @@ export type MealDayAssignmentInput = {
   daysOfWeek: number[];
 };
 
+/** "Does a real meal plan already exist for this exact week" -- shared by
+ * assignMealPlanDays's bootstrap-if-missing below and
+ * domains/mealplan/approve-flow.ts#ensureMealPlanWeeksAhead's per-week
+ * skip check, so this rule (a plan row with zero items doesn't count as
+ * "existing," matching a partial/failed prior generation) only lives in
+ * one place. */
+export async function mealPlanExistsForWeek(
+  userId: string,
+  weekStart: string,
+  client?: SupabaseClient<Database>
+): Promise<boolean> {
+  const supabase = client ?? (await createClient());
+  const plan = await getMealPlanForWeek(userId, weekStart, supabase);
+  return plan !== null && plan.items.length > 0;
+}
+
 /**
  * Assigns one recipe to one or more days of one week for a given meal
  * type. Never regenerates a week that already has items -- only
@@ -67,8 +83,7 @@ export async function assignMealPlanDays(
   // user since generateAndSaveMealPlan's own guard already refuses to run
   // for them regardless of this flag.
   let warnings: string[] = [];
-  const existingPlan = await getMealPlanForWeek(userId, weekStart, supabase);
-  if (!existingPlan || existingPlan.items.length === 0) {
+  if (!(await mealPlanExistsForWeek(userId, weekStart, supabase))) {
     const generateResult = await generateAndSaveMealPlan(userId, { weekStart, activateImmediately: true }, supabase);
     if (!generateResult.ok) return generateResult;
     warnings = generateResult.data.warnings;

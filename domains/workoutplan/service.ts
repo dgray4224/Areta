@@ -562,6 +562,65 @@ export async function getWorkoutPlanForWeek(
   };
 }
 
+/** "Does a real workout plan already exist for this exact week" -- shared
+ * by domains/workoutplan/customize.ts's bootstrapIfMissing and
+ * ensureWorkoutPlanWeeksAhead below's per-week skip check, so this rule (a
+ * plan row with zero items doesn't count as "existing," matching a
+ * partial/failed prior generation) only lives in one place. Lives here
+ * rather than in customize.ts so customize.ts can import it without a
+ * circular dependency (customize.ts already imports getWorkoutPlanForWeek
+ * from this file). Mirrors domains/mealplan/customize.ts#mealPlanExistsForWeek. */
+export async function workoutPlanExistsForWeek(
+  userId: string,
+  weekStart: string,
+  client?: SupabaseClient<Database>
+): Promise<boolean> {
+  const supabase = client ?? (await createClient());
+  const plan = await getWorkoutPlanForWeek(userId, weekStart, supabase);
+  return plan !== null && plan.items.length > 0;
+}
+
+/**
+ * Keeps `weekCount` consecutive weeks (current + `weekCount - 1` more)
+ * generated & active for a self-service user, WITHOUT ever touching a week
+ * that already has real content -- the non-destructive counterpart to
+ * generateAndSaveWorkoutPlanWeeks above, which unconditionally overwrites
+ * every week in its range and so is only safe for the old "regenerate N
+ * weeks from scratch" bulk button, not a passive rolling-ahead cron that
+ * must never clobber a week the user already customized. Mirrors
+ * domains/mealplan/approve-flow.ts#ensureMealPlanWeeksAhead.
+ *
+ * "Stale" and "missing" collapse into the same case here: checking
+ * workoutPlanExistsForWeek at each of the `weekCount` exact week-starts
+ * naturally catches a stale current-week plan too. Weeks are still
+ * generated in chronological order -- resolveProgression reads the
+ * immediately prior week's active plan to decide phase advancement, same
+ * reason generateAndSaveWorkoutPlanWeeks approves before generating the
+ * next week; activateImmediately: true here gets the same effect directly.
+ */
+export async function ensureWorkoutPlanWeeksAhead(
+  userId: string,
+  weekCount: number,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ generatedWeeks: string[]; warnings: string[] }>> {
+  const supabase = client ?? (await createClient());
+  const startWeek = await todayForUser(supabase, userId);
+  const generatedWeeks: string[] = [];
+  const warnings: string[] = [];
+
+  for (let i = 0; i < weekCount; i++) {
+    const weekStart = i === 0 ? startWeek : addDays(startWeek, i * 7);
+    if (await workoutPlanExistsForWeek(userId, weekStart, supabase)) continue;
+
+    const generateResult = await generateAndSaveWorkoutPlan(userId, { weekStart, activateImmediately: true }, supabase);
+    if (!generateResult.ok) return generateResult;
+    warnings.push(...generateResult.data.warnings);
+    generatedWeeks.push(weekStart);
+  }
+
+  return { ok: true, data: { generatedWeeks, warnings } };
+}
+
 async function loadProgramContext(
   programId: string | null,
   programPhaseId: string | null,
