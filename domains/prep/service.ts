@@ -7,10 +7,7 @@ import type { ActionResult } from "@/platform/auth/actions";
 import { getMealPlanForWeek } from "@/domains/mealplan/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
 import { generatePrepPlan, type PrepRecipeInfo } from "@/domains/prep/generate";
-
-function currentWeekStart(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayForUser } from "@/domains/activity-summary/service";
 
 const OVEN_PATTERN = /oven|bake|roast|preheat/i;
 const CARB_PATTERN = /rice|quinoa|pasta|potato|oats?|tortilla|bread|noodle/i;
@@ -30,7 +27,7 @@ export async function generateAndSavePrepPlan(userId: string, client?: SupabaseC
     .order("week_start", { ascending: false })
     .limit(1)
     .maybeSingle();
-  const weekStart = activePlanRow?.week_start ?? currentWeekStart();
+  const weekStart = activePlanRow?.week_start ?? (await todayForUser(supabase, userId));
   const plan = await getMealPlanForWeek(userId, weekStart, supabase);
   if (!plan || plan.items.length === 0) {
     return { ok: false, error: "Generate and approve a meal plan first." };
@@ -108,15 +105,16 @@ export type PrepPlanView = {
 
 export async function getPrepPlanForWeek(
   userId: string,
-  weekStart = currentWeekStart(),
+  weekStart?: string,
   client?: SupabaseClient<Database>
 ): Promise<PrepPlanView | null> {
   const supabase = client ?? (await createClient());
+  const resolvedWeekStart = weekStart ?? (await todayForUser(supabase, userId));
   const { data: plan } = await supabase
     .from("prep_plans")
     .select("id, week_start, estimated_minutes, container_count")
     .eq("user_id", userId)
-    .eq("week_start", weekStart)
+    .eq("week_start", resolvedWeekStart)
     .maybeSingle();
 
   if (!plan) return null;

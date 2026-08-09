@@ -15,6 +15,20 @@ export async function resolveTimezone(supabase: SupabaseClient<Database>, userId
   return profile?.time_zone ?? DEFAULT_TIMEZONE;
 }
 
+/** This user's current local calendar day (YYYY-MM-DD), per
+ * `profiles.time_zone` -- the timezone-aware replacement for the
+ * `new Date().toISOString().slice(0, 10)` pattern copy-pasted across
+ * mealplan/workoutplan/grocery/prep service.ts and app/api/plan/route.ts
+ * (all UTC, silently wrong for any user not in UTC -- e.g. showing
+ * tomorrow's date as "today" for the back half of the day in a negative
+ * UTC offset). Not just for the Plan tab's "today" cell -- also feeds
+ * dates written to nutrition_logs/schedule_events on completion, where a
+ * wrong calendar day corrupts real user data, not just a display label. */
+export async function todayForUser(supabase: SupabaseClient<Database>, userId: string): Promise<string> {
+  const timezone = await resolveTimezone(supabase, userId);
+  return localDateString(new Date(), timezone);
+}
+
 async function recomputeForDayAndTimezone(
   supabase: SupabaseClient<Database>,
   userId: string,
