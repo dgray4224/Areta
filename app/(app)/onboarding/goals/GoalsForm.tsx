@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { goalsStepSchema, type GoalsStepInput } from "@/domains/goals/schema";
-import { V1_DOMAIN_KEYS, DOMAIN_LABELS } from "@/domains/goals/schema";
+import { V1_DOMAIN_KEYS, DOMAIN_LABELS, GOAL_TARGET_METRIC_TYPES } from "@/domains/goals/schema";
 import { saveGoalsStep } from "@/domains/goals/service";
 import { StepShell } from "@/platform/ui/StepShell";
 import { FormField, TextInput, SelectInput } from "@/platform/ui/FormField";
@@ -23,7 +23,26 @@ const EMPTY_GOAL: GoalsStepInput["goals"][number] = {
   priority: 3,
   confidence: 3,
   knownObstacles: "",
+  targetMetricType: undefined,
+  targetValue: undefined,
+  targetDirection: undefined,
 };
+
+/** Labels for the closed set of metrics the weekly-review engine's
+ * goal-trajectory projection can track (domains/review/trajectory.ts). */
+const GOAL_TARGET_METRIC_LABELS: Record<(typeof GOAL_TARGET_METRIC_TYPES)[number], string> = {
+  weight_lb: "Weight (lb)",
+  calorie_adherence_pct: "Calorie adherence (%)",
+  protein_adherence_pct: "Protein adherence (%)",
+  task_completion_pct: "Task completion (%)",
+  learning_minutes_weekly: "Learning minutes / week",
+};
+
+/** react-hook-form quirk: a native `<select>`'s empty option always comes
+ * through as `""`, which fails these optional zod enum/number fields
+ * (`.optional()` accepts `undefined`, not `""`) — `setValueAs` normalizes
+ * the sentinel back to `undefined` before validation runs. */
+const emptyStringToUndefined = (v: string) => (v === "" ? undefined : v);
 
 export function GoalsForm({
   userId,
@@ -175,6 +194,48 @@ export function GoalsForm({
                 ))}
               </SelectInput>
             </FormField>
+
+            <div className="rounded-md border border-neutral-200 p-3 dark:border-neutral-800">
+              <p className="text-sm font-medium">Track progress toward a number? (optional)</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                Lets your weekly review show whether you're on pace to hit this by your target date.
+              </p>
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                <FormField label="Metric" htmlFor={`goals.${index}.targetMetricType`}>
+                  <SelectInput
+                    id={`goals.${index}.targetMetricType`}
+                    {...register(`goals.${index}.targetMetricType`, { setValueAs: emptyStringToUndefined })}
+                  >
+                    <option value="">No target</option>
+                    {GOAL_TARGET_METRIC_TYPES.map((key) => (
+                      <option key={key} value={key}>
+                        {GOAL_TARGET_METRIC_LABELS[key]}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </FormField>
+                <FormField label="Target value" htmlFor={`goals.${index}.targetValue`}>
+                  <TextInput
+                    id={`goals.${index}.targetValue`}
+                    type="number"
+                    step="any"
+                    {...register(`goals.${index}.targetValue`, {
+                      setValueAs: (v) => (v === "" ? undefined : Number(v)),
+                    })}
+                  />
+                </FormField>
+                <FormField label="Direction" htmlFor={`goals.${index}.targetDirection`}>
+                  <SelectInput
+                    id={`goals.${index}.targetDirection`}
+                    {...register(`goals.${index}.targetDirection`, { setValueAs: emptyStringToUndefined })}
+                  >
+                    <option value="">—</option>
+                    <option value="increase">Increase</option>
+                    <option value="decrease">Decrease</option>
+                  </SelectInput>
+                </FormField>
+              </div>
+            </div>
           </div>
         ))}
 

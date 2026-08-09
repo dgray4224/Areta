@@ -1,5 +1,10 @@
 import type { WeeklyMetrics } from "@/domains/review/metrics";
 import { MOTIVATION_QUOTES } from "@/domains/motivation/quotes";
+import type { CorrelationFinding } from "@/domains/review/correlations";
+import type { AchievementFacts } from "@/domains/review/achievements";
+import type { GoalTrajectory } from "@/domains/review/trajectory";
+import type { StreakFacts } from "@/domains/review/streaks";
+import type { ExperimentOutcome } from "@/domains/review/experiments";
 
 export type WeeklyReviewContext = {
   weekStart: string;
@@ -19,6 +24,22 @@ export type WeeklyReviewContext = {
   } | null;
   recentMemories: { type: string; content: string; evidence: string | null }[];
   previousWeekPriorities: string[];
+  /** This user's own metrics history (excluding the current week),
+   * most-recent-first — CLAUDE.md §9's "relevant historical comparison"
+   * was in the original weekly-context spec but never actually passed
+   * until now (only priority titles were). Lets the model make real
+   * cross-week callbacks ("3rd week in a row X happened") instead of
+   * only ever seeing one week at a time. */
+  weeklyMetricsHistory: { weekStart: string; metrics: WeeklyMetrics }[];
+  correlationFindings: CorrelationFinding[];
+  achievements: AchievementFacts;
+  goalTrajectories: GoalTrajectory[];
+  streaks: StreakFacts;
+  experimentOutcomes: ExperimentOutcome[];
+  /** This week's answers to the lightweight interview step (mobile-only
+   * for now), keyed by question id — see review-screens/InterviewStep on
+   * the mobile side. Empty object if none answered yet. */
+  interviewAnswers: Record<string, string>;
   motivationQuoteBank: { id: string; quote: string; author: string; themes: string[] }[];
 };
 

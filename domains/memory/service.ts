@@ -2,15 +2,21 @@
 
 import { createMemorySchema, type Memory } from "@/domains/memory/schema";
 import { createClient } from "@/platform/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
-export async function createMemory(userId: string, input: unknown): Promise<ActionResult<{ id: string }>> {
+export async function createMemory(
+  userId: string,
+  input: unknown,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ id: string }>> {
   const parsed = createMemorySchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("memories")
     .insert({
@@ -29,8 +35,12 @@ export async function createMemory(userId: string, input: unknown): Promise<Acti
   return { ok: true, data: { id: data.id } };
 }
 
-export async function getRecentMemories(userId: string, limit = 20): Promise<Memory[]> {
-  const supabase = await createClient();
+export async function getRecentMemories(
+  userId: string,
+  limit = 20,
+  client?: SupabaseClient<Database>
+): Promise<Memory[]> {
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("memories")
     .select("id, type, content, evidence, confidence, created_at, last_confirmed_at, review_date, user_confirmed")

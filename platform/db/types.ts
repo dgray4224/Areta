@@ -851,6 +851,8 @@ export type Database = {
       }
       goals: {
         Row: {
+          baseline_recorded_at: string | null
+          baseline_value: number | null
           confidence: number | null
           constraints: string | null
           created_at: string
@@ -863,11 +865,16 @@ export type Database = {
           status: string
           success_criteria: string | null
           target_date: string | null
+          target_direction: string | null
+          target_metric_type: string | null
+          target_value: number | null
           updated_at: string
           user_id: string
           why: string | null
         }
         Insert: {
+          baseline_recorded_at?: string | null
+          baseline_value?: number | null
           confidence?: number | null
           constraints?: string | null
           created_at?: string
@@ -880,11 +887,16 @@ export type Database = {
           status?: string
           success_criteria?: string | null
           target_date?: string | null
+          target_direction?: string | null
+          target_metric_type?: string | null
+          target_value?: number | null
           updated_at?: string
           user_id: string
           why?: string | null
         }
         Update: {
+          baseline_recorded_at?: string | null
+          baseline_value?: number | null
           confidence?: number | null
           constraints?: string | null
           created_at?: string
@@ -897,6 +909,9 @@ export type Database = {
           status?: string
           success_criteria?: string | null
           target_date?: string | null
+          target_direction?: string | null
+          target_metric_type?: string | null
+          target_value?: number | null
           updated_at?: string
           user_id?: string
           why?: string | null
@@ -1735,6 +1750,7 @@ export type Database = {
       profiles: {
         Row: {
           admin_role: string | null
+          avatar_url: string | null
           bed_time: string | null
           created_at: string
           full_name: string | null
@@ -1756,6 +1772,7 @@ export type Database = {
         }
         Insert: {
           admin_role?: string | null
+          avatar_url?: string | null
           bed_time?: string | null
           created_at?: string
           full_name?: string | null
@@ -1777,6 +1794,7 @@ export type Database = {
         }
         Update: {
           admin_role?: string | null
+          avatar_url?: string | null
           bed_time?: string | null
           created_at?: string
           full_name?: string | null
@@ -2107,8 +2125,15 @@ export type Database = {
           accepted: boolean | null
           confidence: number | null
           created_at: string
+          evaluated_at: string | null
+          expected_direction: string | null
+          expected_metric: string | null
           field: string
+          followed: boolean | null
           id: string
+          outcome_classification: string | null
+          outcome_metric_after: number | null
+          outcome_metric_before: number | null
           previous_value: Json | null
           proposed_value: Json | null
           reason: string
@@ -2119,8 +2144,15 @@ export type Database = {
           accepted?: boolean | null
           confidence?: number | null
           created_at?: string
+          evaluated_at?: string | null
+          expected_direction?: string | null
+          expected_metric?: string | null
           field: string
+          followed?: boolean | null
           id?: string
+          outcome_classification?: string | null
+          outcome_metric_after?: number | null
+          outcome_metric_before?: number | null
           previous_value?: Json | null
           proposed_value?: Json | null
           reason: string
@@ -2131,8 +2163,15 @@ export type Database = {
           accepted?: boolean | null
           confidence?: number | null
           created_at?: string
+          evaluated_at?: string | null
+          expected_direction?: string | null
+          expected_metric?: string | null
           field?: string
+          followed?: boolean | null
           id?: string
+          outcome_classification?: string | null
+          outcome_metric_after?: number | null
+          outcome_metric_before?: number | null
           previous_value?: Json | null
           proposed_value?: Json | null
           reason?: string

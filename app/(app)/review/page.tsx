@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/platform/auth/session";
+import { createClient } from "@/platform/supabase/server";
 import { getOrCreateWeeklyReview } from "@/domains/review/service";
-import { GenerateBriefButton } from "./GenerateBriefButton";
+
+const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export default async function ReviewPage() {
   const user = await requireUser();
@@ -13,6 +15,21 @@ export default async function ReviewPage() {
   }
 
   const m = review.metrics;
+
+  // No manual "generate" trigger anywhere (web or mobile) — the weekly
+  // cron (app/api/cron/generate-weekly-reviews) is the only thing that
+  // generates a brief, on the user's own weekly_review_day. Just tell
+  // them which day that is.
+  const supabase = await createClient();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("weekly_review_day")
+    .eq("id", user.id)
+    .maybeSingle();
+  const reviewDayLabel =
+    profile?.weekly_review_day !== null && profile?.weekly_review_day !== undefined
+      ? WEEKDAY_LABELS[profile.weekly_review_day]
+      : null;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
@@ -56,11 +73,17 @@ export default async function ReviewPage() {
             </div>
             <div>
               <dt className="text-neutral-500">Pain trend</dt>
-              <dd className="capitalize">{m.painTrend.replace("_", " ")}</dd>
+              <dd className="capitalize">
+                {m.painTrend.replace("_", " ")}
+                {m.averagePainThisWeek !== null ? ` (avg ${m.averagePainThisWeek})` : ""}
+              </dd>
             </div>
             <div>
               <dt className="text-neutral-500">Swelling trend</dt>
-              <dd className="capitalize">{m.swellingTrend.replace("_", " ")}</dd>
+              <dd className="capitalize">
+                {m.swellingTrend.replace("_", " ")}
+                {m.averageSwellingThisWeek !== null ? ` (avg ${m.averageSwellingThisWeek})` : ""}
+              </dd>
             </div>
             <div>
               <dt className="text-neutral-500">Learning</dt>
@@ -80,12 +103,16 @@ export default async function ReviewPage() {
         </section>
       ) : null}
 
-      <section>
-        <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
+      <section className="rounded-lg border border-dashed border-neutral-300 p-4 text-sm text-neutral-600 dark:border-neutral-700 dark:text-neutral-400">
+        <p>
           Areta uses what it has learned about you over time, along with the metrics above, to
           write next week&apos;s plan.
         </p>
-        <GenerateBriefButton userId={user.id} />
+        <p className="mt-2">
+          {reviewDayLabel
+            ? `Your weekly brief generates automatically every ${reviewDayLabel} — check back then.`
+            : "Your weekly brief generates automatically on your weekly review day (set in Settings)."}
+        </p>
       </section>
     </div>
   );

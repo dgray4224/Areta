@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MOTIVATION_QUOTE_IDS } from "@/domains/motivation/quotes";
+import { EXPECTED_METRIC_KEYS } from "@/domains/review/experiments";
 
 /**
  * The AI-generated portion of CLAUDE.md §10's WeeklyOperatingBrief.
@@ -10,9 +11,26 @@ import { MOTIVATION_QUOTE_IDS } from "@/domains/motivation/quotes";
  * AI only for interpretation/generation of the qualitative narrative).
  * Recovery plan, learning plan, appointments, and daily schedule
  * generation aren't built yet — see README known gaps.
+ *
+ * v2: adds headlineInsight/correlationNarrative/achievementNote (the
+ * "eye-opening, cross-domain, self-referential" engine redesign) and
+ * expectedMetric/expectedDirection on each proposed change (closed-loop
+ * experiment tracking, CLAUDE.md §8) — see this feature's plan doc.
  */
 export const weeklyBriefSchema = z.object({
+  /** The single most eye-opening, specific finding this week — rendered
+   * as the hero/lead, ahead of executiveSummary. Required (not optional)
+   * so forced tool-use can't silently omit it the way an optional field
+   * sometimes does. */
+  headlineInsight: z.string(),
   executiveSummary: z.string(),
+  /** Plain-language read of the strongest cross-domain correlation found
+   * in this user's own multi-week history, or null if none was strong
+   * enough to report (never invent one). */
+  correlationNarrative: z.string().nullable(),
+  /** Personal-best / streak / biggest-jump framing, or null if nothing
+   * genuinely stands out this week (never manufacture praise). */
+  achievementNote: z.string().nullable(),
   whatWorked: z.array(z.string()),
   whatNeedsImprovement: z.array(z.string()),
   progress: z.array(
@@ -44,6 +62,13 @@ export const weeklyBriefSchema = z.object({
       // safety-critical (unlike the numeric parameters the engine itself
       // computes), so a sensible default beats failing the whole brief.
       confidence: z.number().min(0).max(1).optional().default(0.7),
+      /** Turns this change into a falsifiable one-week hypothesis that
+       * next week's brief checks against the real measured outcome
+       * (domains/review/experiments.ts). Optional — not every change maps
+       * cleanly onto one deterministic metric; an unset pair just means
+       * this recommendation is never evaluated. */
+      expectedMetric: z.enum(EXPECTED_METRIC_KEYS).optional(),
+      expectedDirection: z.enum(["increase", "decrease", "improve", "stabilize"]).optional(),
     })
   ),
   risks: z.array(

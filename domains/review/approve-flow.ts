@@ -1,6 +1,8 @@
 "use server";
 
 import { createClient } from "@/platform/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { reviewWeekStart, todayIso } from "@/domains/review/dates";
 import type { WeeklyBrief } from "@/domains/review/brief-schema";
@@ -28,10 +30,11 @@ import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve
  */
 export async function approveWeeklyReview(
   userId: string,
-  rejectedRecommendationIds: string[]
+  rejectedRecommendationIds: string[],
+  client?: SupabaseClient<Database>
 ): Promise<ActionResult> {
-  const weekStart = reviewWeekStart();
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
+  const weekStart = await reviewWeekStart(supabase, userId);
 
   const { data: review } = await supabase
     .from("weekly_reviews")
@@ -53,17 +56,20 @@ export async function approveWeeklyReview(
     .eq("weekly_review_id", review.id);
 
   await Promise.all(
-    (recommendations ?? []).map((rec) =>
-      supabase
-        .from("recommendations")
-        .update({ accepted: !rejectedRecommendationIds.includes(rec.id) })
-        .eq("id", rec.id)
-    )
+    (recommendations ?? []).map((rec) => {
+      const accepted = !rejectedRecommendationIds.includes(rec.id);
+      // `followed` is a v1 proxy for CLAUDE.md §8's real behavioral
+      // follow-through tracking (e.g. "followed 4 of 5") — true partial
+      // adherence per-recommendation isn't instrumented yet, so approval
+      // time is the only signal available: accepting a recommendation
+      // here is treated as the user intending to follow it.
+      return supabase.from("recommendations").update({ accepted, followed: accepted }).eq("id", rec.id);
+    })
   );
 
-  const paramResult = await generateNutritionParameters(userId);
+  const paramResult = await generateNutritionParameters(userId, supabase);
   if (paramResult.ok) {
-    await approveAllGeneratedParameters(userId, "nutrition");
+    await approveAllGeneratedParameters(userId, "nutrition", supabase);
   }
 
   const { data: personalization } = await supabase
@@ -72,17 +78,21 @@ export async function approveWeeklyReview(
     .eq("user_id", userId)
     .maybeSingle();
 
-  const mealPlanResult = await generateAndSaveMealPlan(userId, {
-    extraExcludeKeywords: ((personalization?.never_recommend as string[] | null) ?? []).map((s) =>
-      s.toLowerCase()
-    ),
-  });
+  const mealPlanResult = await generateAndSaveMealPlan(
+    userId,
+    {
+      extraExcludeKeywords: ((personalization?.never_recommend as string[] | null) ?? []).map((s) =>
+        s.toLowerCase()
+      ),
+    },
+    supabase
+  );
   if (mealPlanResult.ok) {
-    await approveMealPlanAndGenerateDownstream(userId);
+    await approveMealPlanAndGenerateDownstream(userId, supabase);
   }
 
   const brief = review.brief as WeeklyBrief;
-  const today = todayIso();
+  const today = await todayIso(supabase, userId);
 
   await supabase
     .from("weekly_outcomes")
