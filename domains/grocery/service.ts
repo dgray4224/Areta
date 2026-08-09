@@ -15,20 +15,32 @@ import { todayForUser } from "@/domains/activity-summary/service";
  * domains/mealplan/service.ts#approveMealPlan's own fix: this runs
  * immediately after approval as part of approveMealPlanAndGenerateDownstream,
  * for whatever week that approval just targeted (today, or a future week
- * generated ahead of time via generateAndSaveMealPlanWeeks).
+ * generated ahead of time via generateAndSaveMealPlanWeeks). That
+ * "most recently active" resolution is only a fallback now -- pass
+ * `weekStart` explicitly when regenerating for a specific week (e.g.
+ * domains/mealplan/customize.ts#assignMealPlanDays editing a future or
+ * past week's picks) so this never silently regenerates *today's* list
+ * instead of the week actually being edited.
  */
-export async function generateAndSaveGroceryList(userId: string, client?: SupabaseClient<Database>): Promise<ActionResult> {
+export async function generateAndSaveGroceryList(
+  userId: string,
+  client?: SupabaseClient<Database>,
+  weekStart?: string
+): Promise<ActionResult> {
   const supabase = client ?? (await createClient());
-  const { data: activePlanRow } = await supabase
-    .from("meal_plans")
-    .select("week_start")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .order("week_start", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const weekStart = activePlanRow?.week_start ?? (await todayForUser(supabase, userId));
-  const plan = await getMealPlanForWeek(userId, weekStart, supabase);
+  let resolvedWeekStart = weekStart;
+  if (!resolvedWeekStart) {
+    const { data: activePlanRow } = await supabase
+      .from("meal_plans")
+      .select("week_start")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .order("week_start", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    resolvedWeekStart = activePlanRow?.week_start ?? (await todayForUser(supabase, userId));
+  }
+  const plan = await getMealPlanForWeek(userId, resolvedWeekStart, supabase);
   if (!plan || plan.items.length === 0) {
     return { ok: false, error: "Generate and approve a meal plan first." };
   }
@@ -61,7 +73,7 @@ export async function generateAndSaveGroceryList(userId: string, client?: Supaba
   const { data: list, error: listError } = await supabase
     .from("grocery_lists")
     .upsert(
-      { user_id: userId, meal_plan_id: plan.id, week_start: weekStart, status: "active" },
+      { user_id: userId, meal_plan_id: plan.id, week_start: resolvedWeekStart, status: "active" },
       { onConflict: "user_id,week_start" }
     )
     .select("id")

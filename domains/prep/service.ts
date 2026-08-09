@@ -15,20 +15,29 @@ const CARB_PATTERN = /rice|quinoa|pasta|potato|oats?|tortilla|bread|noodle/i;
 /**
  * Operates on whichever meal plan was most recently made active, not a
  * hardcoded "this week" -- same fix and reasoning as
- * domains/grocery/service.ts#generateAndSaveGroceryList.
+ * domains/grocery/service.ts#generateAndSaveGroceryList, including the
+ * optional `weekStart` override for regenerating a specific (non-active)
+ * week's prep plan after an edit.
  */
-export async function generateAndSavePrepPlan(userId: string, client?: SupabaseClient<Database>): Promise<ActionResult> {
+export async function generateAndSavePrepPlan(
+  userId: string,
+  client?: SupabaseClient<Database>,
+  weekStart?: string
+): Promise<ActionResult> {
   const supabase = client ?? (await createClient());
-  const { data: activePlanRow } = await supabase
-    .from("meal_plans")
-    .select("week_start")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .order("week_start", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const weekStart = activePlanRow?.week_start ?? (await todayForUser(supabase, userId));
-  const plan = await getMealPlanForWeek(userId, weekStart, supabase);
+  let resolvedWeekStart = weekStart;
+  if (!resolvedWeekStart) {
+    const { data: activePlanRow } = await supabase
+      .from("meal_plans")
+      .select("week_start")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .order("week_start", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    resolvedWeekStart = activePlanRow?.week_start ?? (await todayForUser(supabase, userId));
+  }
+  const plan = await getMealPlanForWeek(userId, resolvedWeekStart, supabase);
   if (!plan || plan.items.length === 0) {
     return { ok: false, error: "Generate and approve a meal plan first." };
   }
@@ -58,7 +67,7 @@ export async function generateAndSavePrepPlan(userId: string, client?: SupabaseC
       {
         user_id: userId,
         meal_plan_id: plan.id,
-        week_start: weekStart,
+        week_start: resolvedWeekStart,
         estimated_minutes: result.estimatedMinutes,
         container_count: result.containerCount,
         status: "active",
