@@ -19,6 +19,7 @@ import type { Exercise } from "@/domains/exerciselibrary/types";
 import type { ExerciseInput } from "@/domains/exercise/schema";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/platform/db/types";
+import { todayForUser } from "@/domains/activity-summary/service";
 
 /**
  * Bearer-token-authenticated read/write endpoint for the mobile Exercise
@@ -41,10 +42,6 @@ import type { Database } from "@/platform/db/types";
  * already supports ?date=. Omitted, every existing today-only caller
  * (the Exercise tab) is unaffected.
  */
-
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function dayOfWeekFor(dateString: string): number {
   return new Date(`${dateString}T00:00:00Z`).getUTCDay();
@@ -127,8 +124,8 @@ export async function GET(request: NextRequest) {
   }
   const { supabase, userId } = auth;
 
-  const date = request.nextUrl.searchParams.get("date") ?? todayDateString();
-  const plan = await getActiveWorkoutPlan(userId, supabase);
+  const date = request.nextUrl.searchParams.get("date") ?? (await todayForUser(supabase, userId));
+  const plan = await getActiveWorkoutPlan(userId, supabase, date);
   const dow = dayOfWeekFor(date);
   const tomorrowDow = (dow + 1) % 7;
   const todaysItems = plan?.items.filter((item) => item.dayOfWeek === dow) ?? [];
@@ -322,7 +319,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const dayOfWeek = dayOfWeekFor(typeof body.date === "string" ? body.date : todayDateString());
+  const dayOfWeek = dayOfWeekFor(typeof body.date === "string" ? body.date : await todayForUser(supabase, userId));
 
   // Four distinct actions share this endpoint: swap to one of the slot's
   // up-to-2 curated alternates (itemId + targetProgramSessionExerciseId),
