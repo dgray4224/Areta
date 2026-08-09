@@ -11,10 +11,7 @@ import type { NutritionInput } from "@/domains/nutrition/schema";
 import type { RecipeCuisine } from "@/domains/recipes/types";
 import { logScheduleEvent } from "@/platform/scheduling/log-schedule-event";
 import { getWeekDates } from "@/platform/ui/week-dates";
-
-function currentWeekStart(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayForUser } from "@/domains/activity-summary/service";
 
 function normalizeKeywords(list: string[] | undefined | null): string[] {
   if (!list) return [];
@@ -100,7 +97,7 @@ export async function generateAndSaveMealPlan(
     recipes: planningRecipes,
   });
 
-  const weekStart = options?.weekStart ?? currentWeekStart();
+  const weekStart = options?.weekStart ?? (await todayForUser(supabase, userId));
 
   const { data: plan, error: planError } = await supabase
     .from("meal_plans")
@@ -217,15 +214,16 @@ export type MealPlanView = {
 
 export async function getMealPlanForWeek(
   userId: string,
-  weekStart = currentWeekStart(),
+  weekStart?: string,
   client?: SupabaseClient<Database>
 ): Promise<MealPlanView | null> {
   const supabase = client ?? (await createClient());
+  const resolvedWeekStart = weekStart ?? (await todayForUser(supabase, userId));
   const { data: plan } = await supabase
     .from("meal_plans")
     .select("id, week_start, status, calorie_target, protein_target, trainer_meal_program_id")
     .eq("user_id", userId)
-    .eq("week_start", weekStart)
+    .eq("week_start", resolvedWeekStart)
     .maybeSingle();
 
   if (!plan) return null;
@@ -281,7 +279,7 @@ export async function getActiveMealPlan(
   // today -- fixed anyway since /api/nutrition/route.ts already depends
   // on this function, and the same gap would silently reappear the
   // moment such a feature is added).
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await todayForUser(supabase, userId);
   const weekDates = getWeekDates(today);
   const { data: plan } = await supabase
     .from("meal_plans")
@@ -385,7 +383,7 @@ export async function setMealPlanItemCompleted(
     return { ok: false, error: "Recipe not found for this meal plan item" };
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await todayForUser(supabase, userId);
   const { data: log, error: logError } = await supabase
     .from("nutrition_logs")
     .insert({

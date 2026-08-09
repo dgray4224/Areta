@@ -7,10 +7,7 @@ import type { ActionResult } from "@/platform/auth/actions";
 import { getMealPlanForWeek } from "@/domains/mealplan/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
 import { generateGroceryList, type IngredientNeed } from "@/domains/grocery/generate";
-
-function currentWeekStart(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayForUser } from "@/domains/activity-summary/service";
 
 /**
  * Operates on whichever meal plan was most recently made active, not a
@@ -30,7 +27,7 @@ export async function generateAndSaveGroceryList(userId: string, client?: Supaba
     .order("week_start", { ascending: false })
     .limit(1)
     .maybeSingle();
-  const weekStart = activePlanRow?.week_start ?? currentWeekStart();
+  const weekStart = activePlanRow?.week_start ?? (await todayForUser(supabase, userId));
   const plan = await getMealPlanForWeek(userId, weekStart, supabase);
   if (!plan || plan.items.length === 0) {
     return { ok: false, error: "Generate and approve a meal plan first." };
@@ -114,15 +111,16 @@ export type GroceryItemView = {
 
 export async function getGroceryListForWeek(
   userId: string,
-  weekStart = currentWeekStart(),
+  weekStart?: string,
   client?: SupabaseClient<Database>
 ): Promise<GroceryItemView[]> {
   const supabase = client ?? (await createClient());
+  const resolvedWeekStart = weekStart ?? (await todayForUser(supabase, userId));
   const { data: list } = await supabase
     .from("grocery_lists")
     .select("id")
     .eq("user_id", userId)
-    .eq("week_start", weekStart)
+    .eq("week_start", resolvedWeekStart)
     .maybeSingle();
 
   if (!list) return [];

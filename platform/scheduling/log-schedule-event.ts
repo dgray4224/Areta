@@ -1,9 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/platform/db/types";
-
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayForUser } from "@/domains/activity-summary/service";
 
 /**
  * Best-effort upsert into schedule_events (see migrations 0026/0027) --
@@ -31,9 +28,13 @@ function todayDateString(): string {
  * behavior is the stronger signal and must never be downgraded back to a
  * guess. "actual" writes never need that check; they always win.
  *
- * date defaults to today (server-side, UTC) -- right for every "planned"
- * caller, since the scheduling action itself is happening right now. The
- * HealthKit "actual" path passes an explicit date instead: a synced
+ * date defaults to the user's local today (per profiles.time_zone, via
+ * todayForUser) -- right for every "planned" caller, since the scheduling
+ * action itself is happening right now. Was UTC-server-clock-based until
+ * 2026-08-09: since this table's whole purpose is learning per-day-of-week
+ * routine timing, a planned action taken late in the evening in a
+ * negative UTC offset was silently misfiled under the wrong calendar day.
+ * The HealthKit "actual" path passes an explicit date instead: a synced
  * workout can be from earlier today, or catch up late for a prior day, so
  * it must be dated by when the workout actually happened (in the user's
  * own timezone), not by when the sync request happened to run.
@@ -49,15 +50,16 @@ export async function logScheduleEvent(
   scheduledTime: string,
   client: SupabaseClient<Database>,
   source: "planned" | "actual",
-  date: string = todayDateString()
+  date?: string
 ): Promise<void> {
+  const resolvedDate = date ?? (await todayForUser(client, userId));
   const { error } = await client.from("schedule_events").upsert(
     {
       user_id: userId,
       kind,
       label,
       reference_id: referenceId,
-      date,
+      date: resolvedDate,
       scheduled_time: scheduledTime,
       source,
     },
@@ -77,13 +79,14 @@ export async function hasActualScheduleEventToday(
   label: string,
   client: SupabaseClient<Database>
 ): Promise<boolean> {
+  const today = await todayForUser(client, userId);
   const { data } = await client
     .from("schedule_events")
     .select("source")
     .eq("user_id", userId)
     .eq("kind", kind)
     .eq("label", label)
-    .eq("date", todayDateString())
+    .eq("date", today)
     .maybeSingle();
   return data?.source === "actual";
 }

@@ -6,6 +6,7 @@ import { classifyWeeklyTrainingFocus } from "@/domains/workoutplan/training-focu
 import { getRecipesByIds } from "@/domains/recipes/service";
 import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { getWeekDates } from "@/platform/ui/week-dates";
+import { todayForUser } from "@/domains/activity-summary/service";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/platform/db/types";
 
@@ -25,10 +26,6 @@ import type { Database } from "@/platform/db/types";
  * a time -- getMealPlanForWeek/getWorkoutPlanForWeek are exact-week
  * lookups, there's no single query across week boundaries.
  */
-
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function addDays(dateStr: string, days: number): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
@@ -80,14 +77,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing or invalid bearer token" }, { status: 401 });
   }
   const { supabase, userId } = auth;
+  const today = await todayForUser(supabase, userId);
 
   const params = request.nextUrl.searchParams;
   const explicitStart = params.get("start");
   const explicitEnd = params.get("end");
   const weekAnchorParam = params.get("week");
 
-  const rangeStart = explicitStart ?? getWeekDates(weekAnchorParam ?? todayDateString())[0];
-  const rangeEnd = explicitEnd ?? getWeekDates(weekAnchorParam ?? todayDateString())[6];
+  const rangeStart = explicitStart ?? getWeekDates(weekAnchorParam ?? today)[0];
+  const rangeEnd = explicitEnd ?? getWeekDates(weekAnchorParam ?? today)[6];
 
   // Every Sunday-aligned week that overlaps [rangeStart, rangeEnd] --
   // e.g. a month grid's 5-6 weeks, or just one for the plain week view.
@@ -170,7 +168,7 @@ export async function GET(request: NextRequest) {
   // only computed when that week's resolution actually landed in this
   // request (it always will for the plain week view; a month-grid
   // request only includes it if today falls inside the requested range).
-  const todaysWeekAnchor = getWeekDates(todayDateString())[0];
+  const todaysWeekAnchor = getWeekDates(today)[0];
   const thisWeekWorkoutPlan = resolutions.find((r) => r.weekAnchor === todaysWeekAnchor)?.workoutPlan ?? null;
   const weekTrainingFocus = thisWeekWorkoutPlan
     ? classifyWeeklyTrainingFocus(thisWeekWorkoutPlan.items, exercises)

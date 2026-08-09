@@ -21,10 +21,7 @@ import type { ExerciseInput } from "@/domains/exercise/schema";
 import { generateGoalFirstPlan } from "@/domains/recommendation/service";
 import { logScheduleEvent, hasActualScheduleEventToday } from "@/platform/scheduling/log-schedule-event";
 import { getWeekDates, addDays } from "@/platform/ui/week-dates";
-
-function currentWeekStart(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayForUser } from "@/domains/activity-summary/service";
 
 /**
  * Generates a fresh weekly workout schedule as a draft from the user's
@@ -45,7 +42,7 @@ export async function generateAndSaveWorkoutPlan(
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const supabase = client ?? (await createClient());
-  const weekStart = options?.weekStart ?? currentWeekStart();
+  const weekStart = options?.weekStart ?? (await todayForUser(supabase, userId));
 
   // A client with an active trainer-assigned program (2026-08-06) should
   // never have it silently clobbered by the library generator — both
@@ -417,7 +414,7 @@ export async function generateAndSaveWorkoutPlanWeeks(
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const supabase = client ?? (await createClient());
-  const startWeek = weekStart ?? currentWeekStart();
+  const startWeek = weekStart ?? (await todayForUser(supabase, userId));
   const warnings: string[] = [];
 
   for (let i = 0; i < weeks; i++) {
@@ -479,10 +476,11 @@ export type WorkoutPlanView = {
 
 export async function getWorkoutPlanForWeek(
   userId: string,
-  weekStart = currentWeekStart(),
+  weekStart?: string,
   client?: SupabaseClient<Database>
 ): Promise<WorkoutPlanView | null> {
   const supabase = client ?? (await createClient());
+  const resolvedWeekStart = weekStart ?? (await todayForUser(supabase, userId));
   // Excludes 'archived' (found 2026-08-07): this is an exact date match
   // with no other filter, so a stale row a trainer-program switch left
   // behind for today's date would otherwise still surface here as "the"
@@ -492,7 +490,7 @@ export async function getWorkoutPlanForWeek(
     .from("workout_plans")
     .select("id, week_start, status, sessions_per_week, phase_focus, program_id, program_phase_id, phase_week_number")
     .eq("user_id", userId)
-    .eq("week_start", weekStart)
+    .eq("week_start", resolvedWeekStart)
     .neq("status", "archived")
     .maybeSingle();
 
@@ -580,7 +578,7 @@ export async function getActiveWorkoutPlan(
   // rather than honestly empty. Scoping the fallback to this calendar
   // week preserves the original intent (a plan generated on a different
   // day *within the same week* still resolves) without reaching past it.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await todayForUser(supabase, userId);
   const weekDates = getWeekDates(today);
   const { data: plan } = await supabase
     .from("workout_plans")
