@@ -33,6 +33,19 @@ function currentLanIPv4Addresses(): string[] {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: currentLanIPv4Addresses(),
+  images: {
+    // Recipe photos live in the `recipe-photos` Supabase Storage bucket
+    // (see scripts/backfill-recipe-photos.ts), served from this project's
+    // own Supabase host -- greenfield, no other remote image host is used
+    // anywhere in the app yet.
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "eqzrvidshghwvbycdvqi.supabase.co",
+        pathname: "/storage/v1/object/public/recipe-photos/**",
+      },
+    ],
+  },
 };
 
 export default nextConfig;
