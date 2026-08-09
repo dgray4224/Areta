@@ -49,6 +49,23 @@ export const DOMAIN_LABELS: Record<DomainKey, string> = {
  * fine-grained categories or other life areas — no data model change. */
 export const V1_DOMAIN_KEYS: readonly DomainKey[] = ["health"];
 
+/** Closed enum of `WeeklyMetrics` fields (domains/review/metrics.ts) a
+ * goal can set a numeric target against, for the weekly-review engine's
+ * goal-trajectory projection (domains/review/trajectory.ts). Deliberately
+ * not a free-form/custom formula — never parsed out of `outcome`/
+ * `successCriteria`'s free text. A goal that leaves these unset simply
+ * never gets a trajectory card. Defined here (not in domains/review) since
+ * goals is the more foundational domain — review depends on goals, not
+ * the other way around. */
+export const GOAL_TARGET_METRIC_TYPES = [
+  "weight_lb",
+  "calorie_adherence_pct",
+  "protein_adherence_pct",
+  "task_completion_pct",
+  "learning_minutes_weekly",
+] as const;
+export type GoalTargetMetricType = (typeof GOAL_TARGET_METRIC_TYPES)[number];
+
 export const goalSchema = z.object({
   domainKey: z.enum(DOMAIN_KEYS),
   outcome: z.string().min(1, "Describe the outcome you want"),
@@ -60,6 +77,13 @@ export const goalSchema = z.object({
   priority: z.number().int().min(1).max(5),
   confidence: z.number().int().min(1).max(5),
   knownObstacles: z.string().optional(),
+  /** Optional numeric target — lets the weekly-review engine project a
+   * trajectory against `targetDate`. All three must be set together for
+   * a trajectory to be computed (enforced by the form UI, not this
+   * schema, since partial input during typing is normal). */
+  targetMetricType: z.enum(GOAL_TARGET_METRIC_TYPES).optional(),
+  targetValue: z.number().optional(),
+  targetDirection: z.enum(["increase", "decrease"]).optional(),
 });
 
 /** Goals became skippable in the 2026-08-07 onboarding consolidation —

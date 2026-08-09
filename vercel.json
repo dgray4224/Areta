@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/regenerate-meal-plans",
       "schedule": "5 6 * * 1"
+    },
+    {
+      "path": "/api/cron/generate-weekly-reviews",
+      "schedule": "0 12 * * *"
     }
   ]
 }

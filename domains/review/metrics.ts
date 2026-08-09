@@ -26,6 +26,11 @@ export type WeeklyMetrics = {
   recoveryLoggingDays: number;
   painTrend: Trend;
   swellingTrend: Trend;
+  /** Numeric weekly averages alongside the categorical trends above —
+   * needed by domains/review/correlations.ts, which correlates real
+   * numbers across domains, not first-half/second-half trend labels. */
+  averagePainThisWeek: number | null;
+  averageSwellingThisWeek: number | null;
   learningMinutes: number;
   taskCompletionPercent: number | null;
   missedTaskReasons: string[];
@@ -157,6 +162,8 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
     recoveryLoggingDays,
     painTrend: trendFromSeries(painValues),
     swellingTrend: trendFromSeries(swellingValues),
+    averagePainThisWeek: average(painValues),
+    averageSwellingThisWeek: average(swellingValues),
     learningMinutes,
     taskCompletionPercent,
     missedTaskReasons,

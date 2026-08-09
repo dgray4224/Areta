@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       action_events: {
@@ -455,6 +430,51 @@ export type Database = {
         }
         Relationships: []
       }
+      exercise_pick_history: {
+        Row: {
+          day_of_week: number
+          exercise_id: string
+          id: string
+          picked_at: string
+          session_id: string | null
+          user_id: string
+          week_start: string
+        }
+        Insert: {
+          day_of_week: number
+          exercise_id: string
+          id?: string
+          picked_at?: string
+          session_id?: string | null
+          user_id: string
+          week_start: string
+        }
+        Update: {
+          day_of_week?: number
+          exercise_id?: string
+          id?: string
+          picked_at?: string
+          session_id?: string | null
+          user_id?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exercise_pick_history_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exercise_pick_history_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "program_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exercise_progressions: {
         Row: {
           exercise_id: string
@@ -831,6 +851,8 @@ export type Database = {
       }
       goals: {
         Row: {
+          baseline_recorded_at: string | null
+          baseline_value: number | null
           confidence: number | null
           constraints: string | null
           created_at: string
@@ -843,11 +865,16 @@ export type Database = {
           status: string
           success_criteria: string | null
           target_date: string | null
+          target_direction: string | null
+          target_metric_type: string | null
+          target_value: number | null
           updated_at: string
           user_id: string
           why: string | null
         }
         Insert: {
+          baseline_recorded_at?: string | null
+          baseline_value?: number | null
           confidence?: number | null
           constraints?: string | null
           created_at?: string
@@ -860,11 +887,16 @@ export type Database = {
           status?: string
           success_criteria?: string | null
           target_date?: string | null
+          target_direction?: string | null
+          target_metric_type?: string | null
+          target_value?: number | null
           updated_at?: string
           user_id: string
           why?: string | null
         }
         Update: {
+          baseline_recorded_at?: string | null
+          baseline_value?: number | null
           confidence?: number | null
           constraints?: string | null
           created_at?: string
@@ -877,6 +909,9 @@ export type Database = {
           status?: string
           success_criteria?: string | null
           target_date?: string | null
+          target_direction?: string | null
+          target_metric_type?: string | null
+          target_value?: number | null
           updated_at?: string
           user_id?: string
           why?: string | null
@@ -1203,6 +1238,44 @@ export type Database = {
             columns: ["source_id"]
             isOneToOne: false
             referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meal_pick_history: {
+        Row: {
+          day_of_week: number
+          id: string
+          meal_type: string
+          picked_at: string
+          recipe_id: string
+          user_id: string
+          week_start: string
+        }
+        Insert: {
+          day_of_week: number
+          id?: string
+          meal_type: string
+          picked_at?: string
+          recipe_id: string
+          user_id: string
+          week_start: string
+        }
+        Update: {
+          day_of_week?: number
+          id?: string
+          meal_type?: string
+          picked_at?: string
+          recipe_id?: string
+          user_id?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meal_pick_history_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "recipes"
             referencedColumns: ["id"]
           },
         ]
@@ -1677,6 +1750,7 @@ export type Database = {
       profiles: {
         Row: {
           admin_role: string | null
+          avatar_url: string | null
           bed_time: string | null
           created_at: string
           full_name: string | null
@@ -1698,6 +1772,7 @@ export type Database = {
         }
         Insert: {
           admin_role?: string | null
+          avatar_url?: string | null
           bed_time?: string | null
           created_at?: string
           full_name?: string | null
@@ -1719,6 +1794,7 @@ export type Database = {
         }
         Update: {
           admin_role?: string | null
+          avatar_url?: string | null
           bed_time?: string | null
           created_at?: string
           full_name?: string | null
@@ -2049,8 +2125,15 @@ export type Database = {
           accepted: boolean | null
           confidence: number | null
           created_at: string
+          evaluated_at: string | null
+          expected_direction: string | null
+          expected_metric: string | null
           field: string
+          followed: boolean | null
           id: string
+          outcome_classification: string | null
+          outcome_metric_after: number | null
+          outcome_metric_before: number | null
           previous_value: Json | null
           proposed_value: Json | null
           reason: string
@@ -2061,8 +2144,15 @@ export type Database = {
           accepted?: boolean | null
           confidence?: number | null
           created_at?: string
+          evaluated_at?: string | null
+          expected_direction?: string | null
+          expected_metric?: string | null
           field: string
+          followed?: boolean | null
           id?: string
+          outcome_classification?: string | null
+          outcome_metric_after?: number | null
+          outcome_metric_before?: number | null
           previous_value?: Json | null
           proposed_value?: Json | null
           reason: string
@@ -2073,8 +2163,15 @@ export type Database = {
           accepted?: boolean | null
           confidence?: number | null
           created_at?: string
+          evaluated_at?: string | null
+          expected_direction?: string | null
+          expected_metric?: string | null
           field?: string
+          followed?: boolean | null
           id?: string
+          outcome_classification?: string | null
+          outcome_metric_after?: number | null
+          outcome_metric_before?: number | null
           previous_value?: Json | null
           proposed_value?: Json | null
           reason?: string
@@ -4240,9 +4337,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

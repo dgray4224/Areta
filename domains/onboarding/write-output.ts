@@ -92,6 +92,14 @@ export async function writeOnboardingOutput(
         priority: goal.priority,
         confidence: goal.confidence,
         known_obstacles: goal.knownObstacles ?? null,
+        // Goal-trajectory target (all three optional, set together by the
+        // Goals step's UI) — baseline_value/baseline_recorded_at are left
+        // null here since a brand-new onboarding user has no logged
+        // history yet to sample a baseline from; trajectory.ts falls back
+        // to the first available weekly_reviews history point instead.
+        target_metric_type: goal.targetMetricType ?? null,
+        target_value: goal.targetValue ?? null,
+        target_direction: goal.targetDirection ?? null,
       })
       .select("id, outcome")
       .single();

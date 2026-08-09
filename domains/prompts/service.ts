@@ -22,7 +22,7 @@ function daysAgoIso(days: number): string {
 
 export async function getActivePrompt(userId: string): Promise<ActivePrompt | null> {
   const supabase = await createClient();
-  const today = todayIso();
+  const today = await todayIso(supabase, userId);
   const lookbackStart = daysAgoIso(LOOKBACK_DAYS);
   const sleepLookbackStart = daysAgoIso(SLEEP_LOOKBACK_DAYS);
   const cooldownStart = new Date();
