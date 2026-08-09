@@ -6,8 +6,38 @@ import { createClient } from "@/platform/supabase/server";
 import type { ActionResult } from "@/platform/auth/actions";
 import { getMealPlanForWeek } from "@/domains/mealplan/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
-import { generateGroceryList, type IngredientNeed } from "@/domains/grocery/generate";
+import { generateGroceryList, type IngredientNeed, type GroceryItemDraft } from "@/domains/grocery/generate";
 import { todayForUser } from "@/domains/activity-summary/service";
+import { addDays } from "@/platform/ui/week-dates";
+
+/** Ingredient needs for one week's already-loaded meal plan, scaled by
+ * each item's servings -- shared by generateAndSaveGroceryList (single
+ * week, materialized) and getConsolidatedGroceryList (N weeks, read-only)
+ * so both feed the same downstream generateGroceryList dedup/inventory
+ * logic identically. */
+async function gatherIngredientNeeds(
+  plan: NonNullable<Awaited<ReturnType<typeof getMealPlanForWeek>>>,
+  supabase: SupabaseClient<Database>
+): Promise<IngredientNeed[]> {
+  const recipeIds = [...new Set(plan.items.map((i) => i.recipeId))];
+  const recipes = await getRecipesByIds(recipeIds, supabase);
+
+  const needs: IngredientNeed[] = [];
+  for (const item of plan.items) {
+    const recipe = recipes.get(item.recipeId);
+    if (!recipe) continue;
+    for (const ingredient of recipe.ingredients) {
+      needs.push({
+        name: ingredient.name,
+        quantity: ingredient.quantity * item.servings,
+        unit: ingredient.unit,
+        section: ingredient.section,
+        recipeName: recipe.name,
+      });
+    }
+  }
+  return needs;
+}
 
 /**
  * Operates on whichever meal plan was most recently made active, not a
@@ -45,23 +75,7 @@ export async function generateAndSaveGroceryList(
     return { ok: false, error: "Generate and approve a meal plan first." };
   }
 
-  const recipeIds = [...new Set(plan.items.map((i) => i.recipeId))];
-  const recipes = await getRecipesByIds(recipeIds, supabase);
-
-  const needs: IngredientNeed[] = [];
-  for (const item of plan.items) {
-    const recipe = recipes.get(item.recipeId);
-    if (!recipe) continue;
-    for (const ingredient of recipe.ingredients) {
-      needs.push({
-        name: ingredient.name,
-        quantity: ingredient.quantity * item.servings,
-        unit: ingredient.unit,
-        section: ingredient.section,
-        recipeName: recipe.name,
-      });
-    }
-  }
+  const needs = await gatherIngredientNeeds(plan, supabase);
 
   const { data: inventoryRows } = await supabase
     .from("inventory_items")
@@ -157,6 +171,67 @@ export async function getGroceryListForWeek(
     neededFor: i.needed_for,
     isChecked: i.is_checked,
   }));
+}
+
+const MAX_CONSOLIDATED_WEEKS = 8;
+
+export type ConsolidatedGroceryList = {
+  weeksIncluded: string[];
+  /** Weeks in the requested span that had no meal plan (or an empty one)
+   * -- surfaced so the UI can say "not included" rather than silently
+   * under-counting. */
+  weeksMissingPlan: string[];
+  items: GroceryItemDraft[];
+};
+
+/**
+ * Read-only, non-persisted grocery view spanning `weekCount` weeks
+ * starting at `weekStart` -- the per-visit "I shop every N weeks"
+ * control (Grocery & Prep tab), not a saved preference and not a new
+ * grocery_lists row (that table's unique(user_id, week_start) stays
+ * exactly as it is; this never writes anything). Merges every included
+ * week's ingredient needs into one flat array and reuses the same
+ * generateGroceryList dedup/inventory-subtraction pure function
+ * generateAndSaveGroceryList already uses for a single week, so
+ * consolidation behavior is identical to what a normal week's list
+ * already does, just over a wider ingredient set.
+ *
+ * Deliberately does not attempt perishability splitting (e.g. "buy
+ * produce next week instead") -- a known v1 simplification, not an
+ * oversight; the merged totals are a straight sum across the span.
+ */
+export async function getConsolidatedGroceryList(
+  userId: string,
+  weekStart: string,
+  weekCount: number,
+  client?: SupabaseClient<Database>
+): Promise<ConsolidatedGroceryList> {
+  const supabase = client ?? (await createClient());
+  const clampedWeeks = Math.min(Math.max(Math.round(weekCount), 1), MAX_CONSOLIDATED_WEEKS);
+
+  const weeksIncluded: string[] = [];
+  const weeksMissingPlan: string[] = [];
+  const allNeeds: IngredientNeed[] = [];
+
+  for (let i = 0; i < clampedWeeks; i++) {
+    const week = i === 0 ? weekStart : addDays(weekStart, i * 7);
+    const plan = await getMealPlanForWeek(userId, week, supabase);
+    if (!plan || plan.items.length === 0) {
+      weeksMissingPlan.push(week);
+      continue;
+    }
+    weeksIncluded.push(week);
+    allNeeds.push(...(await gatherIngredientNeeds(plan, supabase)));
+  }
+
+  const { data: inventoryRows } = await supabase
+    .from("inventory_items")
+    .select("name, quantity, unit")
+    .eq("user_id", userId);
+
+  const items = generateGroceryList(allNeeds, inventoryRows ?? []);
+
+  return { weeksIncluded, weeksMissingPlan, items };
 }
 
 export async function toggleGroceryItem(
