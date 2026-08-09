@@ -36,6 +36,15 @@ export type WorkoutPlanGenerationInput = {
   exercises: Exercise[];
   exercisesPerSession?: number;
   days?: number;
+  /** exerciseId -> how many times the user has explicitly assigned it
+   * (domains/workoutplan/preferences.ts#getExercisePickFrequency). Unlike
+   * generateMealPlan's scored selection, this generator's slot choice is
+   * a round-robin index into `eligible`, so there's no scoreOf to add a
+   * bonus term to -- instead the eligible pool is reordered
+   * (higher-pick-count first, stable sort) before round-robin selection,
+   * leaving the existing cap/variety filtering completely untouched.
+   * Omitted/empty leaves output byte-identical to today. */
+  pickWeights?: Map<string, number>;
 };
 
 export type WorkoutPlanGenerationResult = {
@@ -80,6 +89,14 @@ export function generateWorkoutPlan(input: WorkoutPlanGenerationInput): WorkoutP
     warnings.push(
       `Only ${eligible.length} exercise${eligible.length === 1 ? "" : "s"} matched your archetype and equipment access, so sessions repeat ${eligible.length === 1 ? "it" : "them"} to reach a full ${exercisesPerSession}-exercise workout — add equipment access in your Exercise settings for more variety.`
     );
+  }
+
+  if (input.pickWeights && input.pickWeights.size > 0) {
+    const pickWeights = input.pickWeights;
+    // Stable sort -- anything with equal (usually zero) pick counts keeps
+    // its existing relative order, so a brand-new user with no history
+    // sees byte-identical output to before this feature existed.
+    eligible = [...eligible].sort((a, b) => (pickWeights.get(b.id) ?? 0) - (pickWeights.get(a.id) ?? 0));
   }
 
   const sessionsPerWeek = Math.min(Math.max(input.sessionsPerWeek, 0), days);

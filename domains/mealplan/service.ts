@@ -12,6 +12,7 @@ import type { RecipeCuisine } from "@/domains/recipes/types";
 import { logScheduleEvent } from "@/platform/scheduling/log-schedule-event";
 import { getWeekDates } from "@/platform/ui/week-dates";
 import { todayForUser } from "@/domains/activity-summary/service";
+import { getRecipePickFrequency } from "@/domains/mealplan/preferences";
 
 function normalizeKeywords(list: string[] | undefined | null): string[] {
   if (!list) return [];
@@ -71,7 +72,7 @@ export async function generateAndSaveMealPlan(
     .single();
   const nutrition = (responses?.nutrition ?? {}) as NutritionInput;
 
-  const recipes = await getAllRecipes(supabase);
+  const [recipes, pickWeights] = await Promise.all([getAllRecipes(supabase), getRecipePickFrequency(userId, supabase)]);
   const planningRecipes: RecipeForPlanning[] = recipes.map((r) => ({
     id: r.id,
     name: r.name,
@@ -95,6 +96,7 @@ export async function generateAndSaveMealPlan(
     excludeKeywords,
     preferredCuisines: options?.preferredCuisines,
     recipes: planningRecipes,
+    pickWeights,
   });
 
   const weekStart = options?.weekStart ?? (await todayForUser(supabase, userId));
@@ -264,23 +266,33 @@ export async function getMealPlanForWeek(
 
 export async function getActiveMealPlan(
   userId: string,
-  client?: SupabaseClient<Database>
+  client?: SupabaseClient<Database>,
+  referenceDate?: string
 ): Promise<MealPlanView | null> {
   const supabase = client ?? (await createClient());
 
-  // Bounded to the Sun-Sat week containing today -- same fix as
-  // domains/workoutplan/service.ts#getActiveWorkoutPlan (2026-08-07,
-  // found investigating a real report on that side): an unbounded "most
-  // recent active row by week_start" would silently surface a
-  // far-future week's real content as "this week's plan" the moment
-  // anything ever materializes several weeks of meal_plans ahead of
-  // schedule for one user (no trainer-side "push weeks live" equivalent
-  // exists for nutrition yet, so this can't actually happen in practice
-  // today -- fixed anyway since /api/nutrition/route.ts already depends
-  // on this function, and the same gap would silently reappear the
-  // moment such a feature is added).
-  const today = await todayForUser(supabase, userId);
-  const weekDates = getWeekDates(today);
+  // Bounded to the Sun-Sat week containing referenceDate (today, if
+  // omitted) -- same fix as domains/workoutplan/service.ts#
+  // getActiveWorkoutPlan (2026-08-07, found investigating a real report
+  // on that side): an unbounded "most recent active row by week_start"
+  // would silently surface a far-future week's real content as "this
+  // week's plan" the moment anything ever materializes several weeks of
+  // meal_plans ahead of schedule for one user (no trainer-side "push
+  // weeks live" equivalent exists for nutrition yet, so this can't
+  // actually happen in practice today -- fixed anyway since
+  // /api/nutrition/route.ts already depends on this function, and the
+  // same gap would silently reappear the moment such a feature is
+  // added). The optional `referenceDate` param (2026-08-09) closes a
+  // related gap: /api/nutrition's `?date=` support let a caller ask for
+  // any day, but this always resolved "the active plan for TODAY's
+  // week" regardless -- requesting a date outside the current week
+  // (e.g. the Plan tab's Calendar sub-tab tapping a past/future date)
+  // silently found nothing even when a real plan existed for that
+  // week, while /api/plan/route.ts's own week resolution (unaffected,
+  // always took an explicit week) found it fine. Every existing caller
+  // omits this and is unaffected.
+  const resolvedReferenceDate = referenceDate ?? (await todayForUser(supabase, userId));
+  const weekDates = getWeekDates(resolvedReferenceDate);
   const { data: plan } = await supabase
     .from("meal_plans")
     .select("id, week_start, status, calorie_target, protein_target")

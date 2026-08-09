@@ -9,6 +9,7 @@ import {
 } from "@/domains/mealplan/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
 import { logNutrition, getNutritionLogsForDate, getNutritionDailyTotals } from "@/domains/nutrition/log-service";
+import { todayForUser } from "@/domains/activity-summary/service";
 
 /**
  * Bearer-token-authenticated read/write endpoint for the mobile Nutrition
@@ -21,10 +22,6 @@ import { logNutrition, getNutritionLogsForDate, getNutritionDailyTotals } from "
  * setMealPlanItemCompleted.
  */
 
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function dayOfWeekFor(dateString: string): number {
   return new Date(`${dateString}T00:00:00Z`).getUTCDay();
 }
@@ -36,9 +33,9 @@ export async function GET(request: NextRequest) {
   }
   const { supabase, userId } = auth;
 
-  const date = request.nextUrl.searchParams.get("date") ?? todayDateString();
+  const date = request.nextUrl.searchParams.get("date") ?? (await todayForUser(supabase, userId));
 
-  const plan = await getActiveMealPlan(userId, supabase);
+  const plan = await getActiveMealPlan(userId, supabase, date);
   const dow = dayOfWeekFor(date);
   const todaysItems = plan?.items.filter((item) => item.dayOfWeek === dow) ?? [];
   const recipeMap = await getRecipesByIds(

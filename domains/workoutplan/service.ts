@@ -22,6 +22,7 @@ import { generateGoalFirstPlan } from "@/domains/recommendation/service";
 import { logScheduleEvent, hasActualScheduleEventToday } from "@/platform/scheduling/log-schedule-event";
 import { getWeekDates, addDays } from "@/platform/ui/week-dates";
 import { todayForUser } from "@/domains/activity-summary/service";
+import { getExercisePickFrequency } from "@/domains/workoutplan/preferences";
 
 /**
  * Generates a fresh weekly workout schedule as a draft from the user's
@@ -200,7 +201,11 @@ export async function generateAndSaveWorkoutPlan(
     if (!programId) {
       warnings.push("No matching training program was available -- generated a general plan for your archetype instead.");
     }
-    const result = generateWorkoutPlan({ sessionsPerWeek, archetype, equipmentAccess, exercises });
+    // Only fetched on this fallback path -- pickWeights only feeds
+    // generateWorkoutPlan's per-exercise round-robin choice, which the
+    // program-based materializeWorkoutPlan branch above doesn't have.
+    const pickWeights = await getExercisePickFrequency(userId, supabase);
+    const result = generateWorkoutPlan({ sessionsPerWeek, archetype, equipmentAccess, exercises, pickWeights });
     days = result.days;
     warnings.push(...result.warnings);
   }
@@ -561,25 +566,30 @@ async function loadProgramContext(
 
 export async function getActiveWorkoutPlan(
   userId: string,
-  client?: SupabaseClient<Database>
+  client?: SupabaseClient<Database>,
+  referenceDate?: string
 ): Promise<WorkoutPlanView | null> {
   const supabase = client ?? (await createClient());
 
-  // Bounded to the Sun-Sat week containing today (found 2026-08-07 while
-  // investigating a real report of a not-yet-started trainer program
-  // showing real exercise content): an unbounded "most recent active row
-  // by week_start" silently picks up whatever the *furthest-future*
-  // pushed-live week is once "push weeks live" has materialized several
-  // weeks ahead (workout_plans.week_start is stamped per-anchor-date at
-  // generation time, so several future rows can coexist as 'active'
-  // simultaneously) -- showing that far-future week's real content as if
-  // it were "this week's plan" is worse than the "no plan" gap this
-  // function was originally written to close, since it's actively wrong
-  // rather than honestly empty. Scoping the fallback to this calendar
-  // week preserves the original intent (a plan generated on a different
-  // day *within the same week* still resolves) without reaching past it.
-  const today = await todayForUser(supabase, userId);
-  const weekDates = getWeekDates(today);
+  // Bounded to the Sun-Sat week containing referenceDate (today, if
+  // omitted; found 2026-08-07 while investigating a real report of a
+  // not-yet-started trainer program showing real exercise content): an
+  // unbounded "most recent active row by week_start" silently picks up
+  // whatever the *furthest-future* pushed-live week is once "push weeks
+  // live" has materialized several weeks ahead (workout_plans.week_start
+  // is stamped per-anchor-date at generation time, so several future
+  // rows can coexist as 'active' simultaneously) -- showing that
+  // far-future week's real content as if it were "this week's plan" is
+  // worse than the "no plan" gap this function was originally written
+  // to close, since it's actively wrong rather than honestly empty.
+  // Scoping the fallback to this calendar week preserves the original
+  // intent (a plan generated on a different day *within the same week*
+  // still resolves) without reaching past it. The optional
+  // `referenceDate` param (2026-08-09) closes a related gap -- see
+  // domains/mealplan/service.ts#getActiveMealPlan's identical note;
+  // every existing caller omits this and is unaffected.
+  const resolvedReferenceDate = referenceDate ?? (await todayForUser(supabase, userId));
+  const weekDates = getWeekDates(resolvedReferenceDate);
   const { data: plan } = await supabase
     .from("workout_plans")
     .select("id, week_start, status, sessions_per_week, phase_focus")
@@ -906,33 +916,49 @@ export async function customizeWorkoutPlanItemExercise(
 
 /**
  * Inserts a brand-new plan item into today's session (Exercise tab
- * "add exercise" flow), rather than replacing an existing one -- same
- * free-form library access as customizeWorkoutPlanItemExercise, appended
- * at the end of today's exercise order instead of overwriting a slot.
- * Not scoped to "just today": workout_plan_items are keyed by
- * day_of_week within the current active plan, so this reappears every
- * calendar day that maps to today's day_of_week until the plan's next
- * weekly regeneration -- the same lifetime the existing swap/customize
- * paths already have, not a new persistence model.
+ * "add exercise" flow, and now the Plan tab Calendar sub-tab's inline
+ * day panel -- see PlanDayDetail's "Add exercise" affordance), rather
+ * than replacing an existing one -- same free-form library access as
+ * customizeWorkoutPlanItemExercise, appended at the end of the day's
+ * exercise order instead of overwriting a slot. Not scoped to "just
+ * today": workout_plan_items are keyed by day_of_week within the
+ * resolved plan, so this reappears every calendar day that maps to the
+ * same day_of_week until the plan's next weekly regeneration -- the
+ * same lifetime the existing swap/customize paths already have, not a
+ * new persistence model.
+ *
+ * Resolves the plan bounded to the Sun-Sat week containing
+ * `referenceDate` (today, if omitted) -- previously resolved "whichever
+ * plan is most recently active" regardless of `dayOfWeek`'s actual
+ * week, which silently targeted the wrong week's plan for any caller
+ * outside the current week (found 2026-08-09 alongside the identical
+ * fix to getActiveMealPlan/getActiveWorkoutPlan -- the Calendar
+ * sub-tab's day panel is the first caller that can request an
+ * arbitrary day; the Exercise tab's own "today" caller is unaffected).
  */
 export async function addWorkoutPlanItemExercise(
   userId: string,
   dayOfWeek: number,
   input: CustomizeExerciseInput,
-  client?: SupabaseClient<Database>
+  client?: SupabaseClient<Database>,
+  referenceDate?: string
 ): Promise<ActionResult<WorkoutPlanItemView>> {
   const supabase = client ?? (await createClient());
+  const resolvedReferenceDate = referenceDate ?? (await todayForUser(supabase, userId));
+  const weekDates = getWeekDates(resolvedReferenceDate);
 
   const { data: plan, error: planError } = await supabase
     .from("workout_plans")
     .select("id")
     .eq("user_id", userId)
     .eq("status", "active")
+    .gte("week_start", weekDates[0])
+    .lte("week_start", weekDates[6])
     .order("week_start", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (planError) return { ok: false, error: planError.message };
-  if (!plan) return { ok: false, error: "No active workout plan found." };
+  if (!plan) return { ok: false, error: "No active workout plan found for that week." };
 
   const { data: exerciseRow, error: exerciseError } = await supabase
     .from("exercises")

@@ -114,4 +114,67 @@ describe("generateMealPlan", () => {
       expect(count).toBeLessThanOrEqual(2);
     }
   });
+
+  describe("pickWeights (frequency-weighting)", () => {
+    const A = recipe({ id: "pw-a", mealType: "breakfast", calories: 400, proteinG: 25 });
+    const B = recipe({ id: "pw-b", mealType: "breakfast", calories: 420, proteinG: 25 });
+
+    it("a macro-worse recipe with a higher pick count wins over an untouched better-fit recipe", () => {
+      const withoutHistory = generateMealPlan({
+        days: 1,
+        calorieTarget: 400,
+        proteinTarget: 25,
+        mealsPerDay: 1,
+        excludeKeywords: [],
+        recipes: [A, B],
+      });
+      expect(withoutHistory.days[0].meals[0].recipeId).toBe("pw-a"); // closer macro fit wins with no history
+
+      const withHistory = generateMealPlan({
+        days: 1,
+        calorieTarget: 400,
+        proteinTarget: 25,
+        mealsPerDay: 1,
+        excludeKeywords: [],
+        recipes: [A, B],
+        pickWeights: new Map([["pw-b", 3]]),
+      });
+      expect(withHistory.days[0].meals[0].recipeId).toBe("pw-b"); // pick-history bonus flips the choice
+    });
+
+    it("does not let a high pick count bypass the MAX_USES_PER_WEEK cap", () => {
+      const { days } = generateMealPlan({
+        days: 3,
+        calorieTarget: 400,
+        proteinTarget: 25,
+        mealsPerDay: 1,
+        excludeKeywords: [],
+        recipes: [A, B],
+        pickWeights: new Map([["pw-b", 100]]), // huge bonus -- would win every day if caps didn't apply
+      });
+
+      const bCount = days.filter((d) => d.meals[0].recipeId === "pw-b").length;
+      expect(bCount).toBeLessThanOrEqual(2); // still capped, same as the uses-per-week test above
+      expect(days.some((d) => d.meals[0].recipeId === "pw-a")).toBe(true); // the 3rd day had to fall back to A
+    });
+
+    it("produces identical output whether pickWeights is omitted or an empty Map", () => {
+      const omitted = generateMealPlan({
+        calorieTarget: 2000,
+        proteinTarget: 150,
+        mealsPerDay: 3,
+        excludeKeywords: [],
+        recipes: SAMPLE_RECIPES,
+      });
+      const empty = generateMealPlan({
+        calorieTarget: 2000,
+        proteinTarget: 150,
+        mealsPerDay: 3,
+        excludeKeywords: [],
+        recipes: SAMPLE_RECIPES,
+        pickWeights: new Map(),
+      });
+      expect(empty).toEqual(omitted);
+    });
+  });
 });
