@@ -5,6 +5,7 @@ import {
   setMealPlanItemCompleted,
   setMealPlanItemScheduledTime,
   setMealPlanItemNotes,
+  swapMealPlanItem,
 } from "@/domains/mealplan/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
 import { logNutrition, getNutritionLogsForDate, getNutritionDailyTotals } from "@/domains/nutrition/log-service";
@@ -104,7 +105,14 @@ export async function PATCH(request: NextRequest) {
   }
   const { supabase, userId } = auth;
 
-  let body: { itemId?: unknown; completed?: unknown; scheduledTime?: unknown; endTime?: unknown; notes?: unknown };
+  let body: {
+    itemId?: unknown;
+    completed?: unknown;
+    scheduledTime?: unknown;
+    endTime?: unknown;
+    notes?: unknown;
+    recipeId?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -118,16 +126,23 @@ export async function PATCH(request: NextRequest) {
   const hasScheduledTime = typeof body.scheduledTime === "string" || body.scheduledTime === null;
   const hasEndTime = typeof body.endTime === "string" || body.endTime === null;
   const hasNotes = typeof body.notes === "string" || body.notes === null;
-  if (!hasCompleted && !hasScheduledTime && !hasNotes) {
+  const hasRecipeId = typeof body.recipeId === "string";
+  if (!hasCompleted && !hasScheduledTime && !hasNotes && !hasRecipeId) {
     return NextResponse.json(
       {
         error:
-          "at least one of completed (boolean), scheduledTime (string | null), or notes (string | null) is required",
+          "at least one of completed (boolean), scheduledTime (string | null), notes (string | null), or recipeId (string) is required",
       },
       { status: 400 }
     );
   }
 
+  if (hasRecipeId) {
+    const result = await swapMealPlanItem(userId, body.itemId, body.recipeId as string, supabase);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+  }
   if (hasCompleted) {
     const result = await setMealPlanItemCompleted(userId, body.itemId, body.completed as boolean, supabase);
     if (!result.ok) {

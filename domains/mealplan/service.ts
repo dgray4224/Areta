@@ -8,6 +8,7 @@ import { getApprovedParameterValue } from "@/domains/parameters/service";
 import { getAllRecipes, getRecipesByIds } from "@/domains/recipes/service";
 import { generateMealPlan, type RecipeForPlanning } from "@/domains/mealplan/generate";
 import type { NutritionInput } from "@/domains/nutrition/schema";
+import type { RecipeCuisine } from "@/domains/recipes/types";
 import { logScheduleEvent } from "@/platform/scheduling/log-schedule-event";
 import { getWeekDates } from "@/platform/ui/week-dates";
 
@@ -29,7 +30,7 @@ function normalizeKeywords(list: string[] | undefined | null): string[] {
  */
 export async function generateAndSaveMealPlan(
   userId: string,
-  options?: { extraExcludeKeywords?: string[] },
+  options?: { weekStart?: string; extraExcludeKeywords?: string[]; preferredCuisines?: RecipeCuisine[] },
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const supabase = client ?? (await createClient());
@@ -78,6 +79,7 @@ export async function generateAndSaveMealPlan(
     id: r.id,
     name: r.name,
     mealType: r.mealType,
+    cuisine: r.cuisine,
     calories: r.calories,
     proteinG: r.proteinG,
     searchableText: [r.name, ...r.ingredients.map((i) => i.name)].join(" ").toLowerCase(),
@@ -94,10 +96,11 @@ export async function generateAndSaveMealPlan(
     proteinTarget,
     mealsPerDay: nutrition.mealsPerDay ?? 3,
     excludeKeywords,
+    preferredCuisines: options?.preferredCuisines,
     recipes: planningRecipes,
   });
 
-  const weekStart = currentWeekStart();
+  const weekStart = options?.weekStart ?? currentWeekStart();
 
   const { data: plan, error: planError } = await supabase
     .from("meal_plans")
@@ -147,15 +150,28 @@ export async function generateAndSaveMealPlan(
   return { ok: true, data: { warnings } };
 }
 
+/**
+ * Approves whatever the most recent *draft* plan actually is, by id -- not
+ * by an exact week_start === today match. Mirrors the same fix already
+ * applied to domains/workoutplan/service.ts#approveWorkoutPlan (a draft's
+ * week_start is stamped once, at generation time, so an exact-match
+ * approve would silently match zero rows -- and thus silently do nothing
+ * -- for anyone approving on a different day than generation, or for a
+ * future week generated ahead of time via generateAndSaveMealPlanWeeks).
+ */
 export async function approveMealPlan(userId: string, client?: SupabaseClient<Database>): Promise<ActionResult> {
   const supabase = client ?? (await createClient());
-  const weekStart = currentWeekStart();
-  const { error } = await supabase
+  const { data: draftPlan } = await supabase
     .from("meal_plans")
-    .update({ status: "active" })
+    .select("id")
     .eq("user_id", userId)
-    .eq("week_start", weekStart);
+    .eq("status", "draft")
+    .order("week_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!draftPlan) return { ok: false, error: "No draft plan to approve." };
 
+  const { error } = await supabase.from("meal_plans").update({ status: "active" }).eq("id", draftPlan.id);
   if (error) {
     return { ok: false, error: error.message };
   }
@@ -482,4 +498,75 @@ export async function setMealPlanItemNotes(
     return { ok: false, error: error.message };
   }
   return { ok: true, data: undefined };
+}
+
+/**
+ * Swaps a planned meal's recipe (mobile Plan tab "change what I want to
+ * prep to eat," Phase F/B of the Plan-tab-overhaul plan). Deliberately
+ * lighter validation than swapWorkoutPlanItemExercise's sibling-slot
+ * check -- there's no curated "alternates" concept for meals, any active
+ * recipe is a valid choice for its meal type, so the only two guards that
+ * matter are: the replacement must actually be a real, currently-active
+ * recipe (not draft/deprecated -- same status gate getAllRecipes applies
+ * to plan generation, so a swap can never point a plan at something
+ * generation itself would never have offered), and it must match the
+ * slot's mealType (a "breakfast" slot swapped to a "dinner" recipe would
+ * silently corrupt the day's calorie/protein totals and grocery
+ * grouping). Servings carries over unchanged from the existing item.
+ */
+export async function swapMealPlanItem(
+  userId: string,
+  itemId: string,
+  recipeId: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<MealPlanItemView>> {
+  const supabase = client ?? (await createClient());
+
+  const { data: item, error: itemError } = await supabase
+    .from("meal_plan_items")
+    .select("id, day_of_week, meal_type, servings, completed_at, nutrition_log_id, scheduled_time, end_time, notes")
+    .eq("id", itemId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (itemError) return { ok: false, error: itemError.message };
+  if (!item) return { ok: false, error: "Planned meal not found." };
+
+  const { data: recipe, error: recipeError } = await supabase
+    .from("recipes")
+    .select("id, meal_type, status")
+    .eq("id", recipeId)
+    .maybeSingle();
+
+  if (recipeError) return { ok: false, error: recipeError.message };
+  if (!recipe || recipe.status !== "active") {
+    return { ok: false, error: "Recipe not found or no longer available." };
+  }
+  if (recipe.meal_type !== item.meal_type) {
+    return { ok: false, error: `This slot needs a ${item.meal_type} recipe, not ${recipe.meal_type}.` };
+  }
+
+  const { error: updateError } = await supabase
+    .from("meal_plan_items")
+    .update({ recipe_id: recipeId })
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
+  if (updateError) return { ok: false, error: updateError.message };
+
+  return {
+    ok: true,
+    data: {
+      id: item.id,
+      dayOfWeek: item.day_of_week,
+      mealType: item.meal_type as MealPlanItemView["mealType"],
+      recipeId,
+      servings: item.servings,
+      completedAt: item.completed_at,
+      nutritionLogId: item.nutrition_log_id,
+      scheduledTime: item.scheduled_time,
+      endTime: item.end_time,
+      notes: item.notes,
+    },
+  };
 }

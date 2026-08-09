@@ -12,15 +12,32 @@ function currentWeekStart(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * Operates on whichever meal plan was most recently made active, not a
+ * hardcoded "this week" -- same reasoning as
+ * domains/mealplan/service.ts#approveMealPlan's own fix: this runs
+ * immediately after approval as part of approveMealPlanAndGenerateDownstream,
+ * for whatever week that approval just targeted (today, or a future week
+ * generated ahead of time via generateAndSaveMealPlanWeeks).
+ */
 export async function generateAndSaveGroceryList(userId: string, client?: SupabaseClient<Database>): Promise<ActionResult> {
-  const weekStart = currentWeekStart();
-  const plan = await getMealPlanForWeek(userId, weekStart, client);
+  const supabase = client ?? (await createClient());
+  const { data: activePlanRow } = await supabase
+    .from("meal_plans")
+    .select("week_start")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("week_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const weekStart = activePlanRow?.week_start ?? currentWeekStart();
+  const plan = await getMealPlanForWeek(userId, weekStart, supabase);
   if (!plan || plan.items.length === 0) {
     return { ok: false, error: "Generate and approve a meal plan first." };
   }
 
   const recipeIds = [...new Set(plan.items.map((i) => i.recipeId))];
-  const recipes = await getRecipesByIds(recipeIds, client);
+  const recipes = await getRecipesByIds(recipeIds, supabase);
 
   const needs: IngredientNeed[] = [];
   for (const item of plan.items) {
@@ -37,7 +54,6 @@ export async function generateAndSaveGroceryList(userId: string, client?: Supaba
     }
   }
 
-  const supabase = client ?? (await createClient());
   const { data: inventoryRows } = await supabase
     .from("inventory_items")
     .select("name, quantity, unit")

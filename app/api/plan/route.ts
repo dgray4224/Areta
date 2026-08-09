@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { authenticateBearerRequest } from "@/platform/auth/bearer";
 import { getMealPlanForWeek, type MealPlanView } from "@/domains/mealplan/service";
 import { getWorkoutPlanForWeek, type WorkoutPlanView } from "@/domains/workoutplan/service";
+import { classifyWeeklyTrainingFocus } from "@/domains/workoutplan/training-focus";
 import { getRecipesByIds } from "@/domains/recipes/service";
 import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { getWeekDates } from "@/platform/ui/week-dates";
@@ -164,6 +165,17 @@ export async function GET(request: NextRequest) {
   // Good enough for a header hint; not meant to be exhaustive per-week.
   const firstWorkoutPlan = resolutions.find((r) => r.workoutPlan !== null)?.workoutPlan ?? null;
 
+  // Training-focus classification is specific to "this week" (the
+  // Calendar summary card), not the whole possibly-multi-week range --
+  // only computed when that week's resolution actually landed in this
+  // request (it always will for the plain week view; a month-grid
+  // request only includes it if today falls inside the requested range).
+  const todaysWeekAnchor = getWeekDates(todayDateString())[0];
+  const thisWeekWorkoutPlan = resolutions.find((r) => r.weekAnchor === todaysWeekAnchor)?.workoutPlan ?? null;
+  const weekTrainingFocus = thisWeekWorkoutPlan
+    ? classifyWeeklyTrainingFocus(thisWeekWorkoutPlan.items, exercises)
+    : null;
+
   return NextResponse.json({
     rangeStart,
     rangeEnd,
@@ -171,6 +183,7 @@ export async function GET(request: NextRequest) {
     hasWorkoutPlan,
     phaseFocus: firstWorkoutPlan?.phaseFocus ?? null,
     programContext: firstWorkoutPlan?.programContext ?? null,
+    weekTrainingFocus,
     days,
   });
 }

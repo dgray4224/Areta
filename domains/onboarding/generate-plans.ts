@@ -108,7 +108,7 @@ export async function generatePlansAfterOnboarding(
     if (!approve.ok) {
       workout = { ok: false, error: approve.error };
     } else {
-      const plan = await generateAndSaveWorkoutPlan(userId, supabase);
+      const plan = await generateAndSaveWorkoutPlan(userId, undefined, supabase);
       if (!plan.ok) {
         workout = { ok: false, error: plan.error };
       } else {

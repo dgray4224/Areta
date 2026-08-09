@@ -15,15 +15,29 @@ function currentWeekStart(): string {
 const OVEN_PATTERN = /oven|bake|roast|preheat/i;
 const CARB_PATTERN = /rice|quinoa|pasta|potato|oats?|tortilla|bread|noodle/i;
 
+/**
+ * Operates on whichever meal plan was most recently made active, not a
+ * hardcoded "this week" -- same fix and reasoning as
+ * domains/grocery/service.ts#generateAndSaveGroceryList.
+ */
 export async function generateAndSavePrepPlan(userId: string, client?: SupabaseClient<Database>): Promise<ActionResult> {
-  const weekStart = currentWeekStart();
-  const plan = await getMealPlanForWeek(userId, weekStart, client);
+  const supabase = client ?? (await createClient());
+  const { data: activePlanRow } = await supabase
+    .from("meal_plans")
+    .select("week_start")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("week_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const weekStart = activePlanRow?.week_start ?? currentWeekStart();
+  const plan = await getMealPlanForWeek(userId, weekStart, supabase);
   if (!plan || plan.items.length === 0) {
     return { ok: false, error: "Generate and approve a meal plan first." };
   }
 
   const recipeIds = [...new Set(plan.items.map((i) => i.recipeId))];
-  const recipes = await getRecipesByIds(recipeIds, client);
+  const recipes = await getRecipesByIds(recipeIds, supabase);
 
   const uniqueRecipes: PrepRecipeInfo[] = recipeIds
     .map((id) => recipes.get(id))
@@ -41,7 +55,6 @@ export async function generateAndSavePrepPlan(userId: string, client?: SupabaseC
 
   const result = generatePrepPlan({ uniqueRecipes, totalMealCount: plan.items.length });
 
-  const supabase = client ?? (await createClient());
   const { data: prepPlan, error: planError } = await supabase
     .from("prep_plans")
     .upsert(

@@ -11,6 +11,16 @@ export function getWeekDates(anchor: string): string[] {
   });
 }
 
+/** `anchor` shifted by `days` (negative to go backward), as a YYYY-MM-DD
+ * string. UTC-based, same convention as getWeekDates, so chaining the two
+ * (e.g. stepping a week_start forward by 7 repeatedly) never drifts across
+ * a DST boundary the way local-time arithmetic could. */
+export function addDays(anchor: string, days: number): string {
+  const d = new Date(`${anchor}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export function formatShortDate(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", {
     month: "short",

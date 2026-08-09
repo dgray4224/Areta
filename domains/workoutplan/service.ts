@@ -20,7 +20,7 @@ import { isLegacyExerciseShape } from "@/domains/exercise/legacy";
 import type { ExerciseInput } from "@/domains/exercise/schema";
 import { generateGoalFirstPlan } from "@/domains/recommendation/service";
 import { logScheduleEvent, hasActualScheduleEventToday } from "@/platform/scheduling/log-schedule-event";
-import { getWeekDates } from "@/platform/ui/week-dates";
+import { getWeekDates, addDays } from "@/platform/ui/week-dates";
 
 function currentWeekStart(): string {
   return new Date().toISOString().slice(0, 10);
@@ -41,10 +41,11 @@ function currentWeekStart(): string {
  */
 export async function generateAndSaveWorkoutPlan(
   userId: string,
+  options?: { weekStart?: string },
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const supabase = client ?? (await createClient());
-  const weekStart = currentWeekStart();
+  const weekStart = options?.weekStart ?? currentWeekStart();
 
   // A client with an active trainer-assigned program (2026-08-06) should
   // never have it silently clobbered by the library generator — both
@@ -397,6 +398,39 @@ export async function approveWorkoutPlan(userId: string, client?: SupabaseClient
   const { error } = await supabase.from("workout_plans").update({ status: "active" }).eq("id", draftPlan.id);
   if (error) return { ok: false, error: error.message };
   return { ok: true, data: undefined };
+}
+
+/**
+ * Generates and auto-approves `weeks` consecutive workout plans starting
+ * from `weekStart` (defaults to the current week), one after another.
+ * Approving each week before generating the next lets resolveProgression
+ * see it as "the previous week's plan" (it reads workout_plans rows with
+ * week_start < the new week's), so phase advancement progresses correctly
+ * across the run instead of every week resolving against the same
+ * pre-loop state -- mirrors generateAndSaveMealPlanWeeks in
+ * domains/mealplan/approve-flow.ts.
+ */
+export async function generateAndSaveWorkoutPlanWeeks(
+  userId: string,
+  weeks: number,
+  weekStart?: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ warnings: string[] }>> {
+  const supabase = client ?? (await createClient());
+  const startWeek = weekStart ?? currentWeekStart();
+  const warnings: string[] = [];
+
+  for (let i = 0; i < weeks; i++) {
+    const targetWeekStart = i === 0 ? startWeek : addDays(startWeek, i * 7);
+    const generateResult = await generateAndSaveWorkoutPlan(userId, { weekStart: targetWeekStart }, supabase);
+    if (!generateResult.ok) return generateResult;
+    warnings.push(...generateResult.data.warnings);
+
+    const approveResult = await approveWorkoutPlan(userId, supabase);
+    if (!approveResult.ok) return approveResult;
+  }
+
+  return { ok: true, data: { warnings } };
 }
 
 export type WorkoutPlanItemView = {

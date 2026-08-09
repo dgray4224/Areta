@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
   const userIds = [...libraryUserIds, ...trainerUserIds];
 
   const results = await Promise.allSettled([
-    ...libraryUserIds.map((userId) => generateAndSaveWorkoutPlan(userId, supabase)),
+    ...libraryUserIds.map((userId) => generateAndSaveWorkoutPlan(userId, undefined, supabase)),
     ...trainerUserIds.map((userId) => generateAndSaveFromTrainerProgram(userId, supabase)),
   ]);
 
