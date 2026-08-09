@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
     const recipe = recipeMap.get(item.recipeId);
     return {
       id: item.id,
+      recipeId: item.recipeId,
       recipeName: recipe?.name ?? "Unknown recipe",
       cuisine: recipe?.cuisine ?? null,
       allergens: recipe?.allergens ?? [],
