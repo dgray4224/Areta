@@ -916,33 +916,49 @@ export async function customizeWorkoutPlanItemExercise(
 
 /**
  * Inserts a brand-new plan item into today's session (Exercise tab
- * "add exercise" flow), rather than replacing an existing one -- same
- * free-form library access as customizeWorkoutPlanItemExercise, appended
- * at the end of today's exercise order instead of overwriting a slot.
- * Not scoped to "just today": workout_plan_items are keyed by
- * day_of_week within the current active plan, so this reappears every
- * calendar day that maps to today's day_of_week until the plan's next
- * weekly regeneration -- the same lifetime the existing swap/customize
- * paths already have, not a new persistence model.
+ * "add exercise" flow, and now the Plan tab Calendar sub-tab's inline
+ * day panel -- see PlanDayDetail's "Add exercise" affordance), rather
+ * than replacing an existing one -- same free-form library access as
+ * customizeWorkoutPlanItemExercise, appended at the end of the day's
+ * exercise order instead of overwriting a slot. Not scoped to "just
+ * today": workout_plan_items are keyed by day_of_week within the
+ * resolved plan, so this reappears every calendar day that maps to the
+ * same day_of_week until the plan's next weekly regeneration -- the
+ * same lifetime the existing swap/customize paths already have, not a
+ * new persistence model.
+ *
+ * Resolves the plan bounded to the Sun-Sat week containing
+ * `referenceDate` (today, if omitted) -- previously resolved "whichever
+ * plan is most recently active" regardless of `dayOfWeek`'s actual
+ * week, which silently targeted the wrong week's plan for any caller
+ * outside the current week (found 2026-08-09 alongside the identical
+ * fix to getActiveMealPlan/getActiveWorkoutPlan -- the Calendar
+ * sub-tab's day panel is the first caller that can request an
+ * arbitrary day; the Exercise tab's own "today" caller is unaffected).
  */
 export async function addWorkoutPlanItemExercise(
   userId: string,
   dayOfWeek: number,
   input: CustomizeExerciseInput,
-  client?: SupabaseClient<Database>
+  client?: SupabaseClient<Database>,
+  referenceDate?: string
 ): Promise<ActionResult<WorkoutPlanItemView>> {
   const supabase = client ?? (await createClient());
+  const resolvedReferenceDate = referenceDate ?? (await todayForUser(supabase, userId));
+  const weekDates = getWeekDates(resolvedReferenceDate);
 
   const { data: plan, error: planError } = await supabase
     .from("workout_plans")
     .select("id")
     .eq("user_id", userId)
     .eq("status", "active")
+    .gte("week_start", weekDates[0])
+    .lte("week_start", weekDates[6])
     .order("week_start", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (planError) return { ok: false, error: planError.message };
-  if (!plan) return { ok: false, error: "No active workout plan found." };
+  if (!plan) return { ok: false, error: "No active workout plan found for that week." };
 
   const { data: exerciseRow, error: exerciseError } = await supabase
     .from("exercises")

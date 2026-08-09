@@ -319,7 +319,8 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const dayOfWeek = dayOfWeekFor(typeof body.date === "string" ? body.date : await todayForUser(supabase, userId));
+  const resolvedDate = typeof body.date === "string" ? body.date : await todayForUser(supabase, userId);
+  const dayOfWeek = dayOfWeekFor(resolvedDate);
 
   // Four distinct actions share this endpoint: swap to one of the slot's
   // up-to-2 curated alternates (itemId + targetProgramSessionExerciseId),
@@ -392,7 +393,7 @@ export async function POST(request: NextRequest) {
 
     const result = typeof body.itemId === "string"
       ? await customizeWorkoutPlanItemExercise(userId, body.itemId, { exerciseId: body.exerciseId, sets, reps, durationMinutes }, supabase)
-      : await addWorkoutPlanItemExercise(userId, dayOfWeek, { exerciseId: body.exerciseId, sets, reps, durationMinutes }, supabase);
+      : await addWorkoutPlanItemExercise(userId, dayOfWeek, { exerciseId: body.exerciseId, sets, reps, durationMinutes }, supabase, resolvedDate);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
