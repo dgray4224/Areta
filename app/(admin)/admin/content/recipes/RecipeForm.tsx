@@ -23,6 +23,32 @@ function csvDefault(values: string[] | undefined): string {
 
 const BLANK_INGREDIENT: Ingredient = { name: "", quantity: 0, unit: "", section: "" };
 
+/** A plain `<img>`, not `next/image` -- this field is a free-text URL an
+ * admin can paste anything into (not just the recipe-photos bucket
+ * next.config.ts allowlists), and next/image throws for any host not on
+ * that allowlist. A small unoptimized admin-only preview thumbnail isn't
+ * worth widening the allowlist to arbitrary hosts for. */
+function PhotoPreview({ url }: { url: string | undefined }) {
+  if (!url) {
+    return (
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-neutral-300 text-xs text-neutral-400 dark:border-neutral-700">
+        No photo
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt=""
+      className="h-16 w-16 shrink-0 rounded-lg border border-neutral-300 object-cover dark:border-neutral-700"
+      onError={(e) => {
+        e.currentTarget.style.visibility = "hidden";
+      }}
+    />
+  );
+}
+
 const CUISINE_LABEL: Record<(typeof RECIPE_CUISINES)[number], string> = {
   american: "American",
   italian: "Italian",
@@ -91,6 +117,7 @@ export function RecipeForm({
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<RecipeScalarInput>({
     resolver: zodResolver(recipeScalarSchema),
@@ -327,9 +354,12 @@ export function RecipeForm({
         label="Photo URL"
         htmlFor="photoUrl"
         error={errors.photoUrl?.message}
-        hint="Optional — no photo pipeline exists yet, so this is a manual paste-in until one does."
+        hint="Populated by pnpm run backfill:recipe-photos; edit here to override a specific recipe."
       >
-        <TextInput id="photoUrl" {...register("photoUrl")} />
+        <div className="flex items-center gap-3">
+          <TextInput id="photoUrl" {...register("photoUrl")} />
+          <PhotoPreview url={watch("photoUrl")} />
+        </div>
       </FormField>
 
       <FormField

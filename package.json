@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
     "backfill:activity-summary": "tsx scripts/backfill-activity-daily-summaries.ts",
+    "backfill:recipe-photos": "tsx scripts/backfill-recipe-photos.ts",
     "content:add": "tsx scripts/training-content/pipeline.ts",
     "content:add-recipes": "tsx scripts/recipe-content/pipeline.ts",
     "test": "vitest run",

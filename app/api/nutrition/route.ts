@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
       recipeName: recipe?.name ?? "Unknown recipe",
       cuisine: recipe?.cuisine ?? null,
       allergens: recipe?.allergens ?? [],
+      photoUrl: recipe?.photoUrl ?? null,
       mealType: item.mealType,
       servings: item.servings,
       completedAt: item.completedAt,

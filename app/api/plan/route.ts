@@ -111,7 +111,15 @@ export async function GET(request: NextRequest) {
   const byDate = new Map<
     string,
     {
-      meals: { id: string; mealType: string; recipeName: string; cuisine: string | null; allergens: string[]; completed: boolean }[];
+      meals: {
+        id: string;
+        mealType: string;
+        recipeName: string;
+        cuisine: string | null;
+        allergens: string[];
+        photoUrl: string | null;
+        completed: boolean;
+      }[];
       workouts: { id: string; exerciseName: string; completed: boolean }[];
     }
   >();
@@ -127,6 +135,7 @@ export async function GET(request: NextRequest) {
         recipeName: recipe?.name ?? "Unknown recipe",
         cuisine: recipe?.cuisine ?? null,
         allergens: recipe?.allergens ?? [],
+        photoUrl: recipe?.photoUrl ?? null,
         completed: i.completedAt !== null,
       });
     }
