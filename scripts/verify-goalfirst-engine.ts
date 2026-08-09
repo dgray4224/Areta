@@ -198,7 +198,7 @@ async function main() {
       const userId = await createFixtureUser(scenario.email, scenario.exercise, scenario.sessionsPerWeek);
       fixtureIds.push(userId);
 
-      const result = await generateAndSaveWorkoutPlan(userId, supabase);
+      const result = await generateAndSaveWorkoutPlan(userId, undefined, supabase);
       if (!result.ok) throw new Error(`generation failed: ${result.error}`);
       console.log(`warnings: ${result.data.warnings.length ? result.data.warnings.join(" | ") : "(none)"}`);
 
@@ -239,7 +239,7 @@ async function main() {
     console.log(`\n=== ${LEGACY_SCENARIO.label} ===`);
     const legacyId = await createFixtureUser(LEGACY_SCENARIO.email, LEGACY_SCENARIO.exercise, LEGACY_SCENARIO.sessionsPerWeek);
     fixtureIds.push(legacyId);
-    const legacyResult = await generateAndSaveWorkoutPlan(legacyId, supabase);
+    const legacyResult = await generateAndSaveWorkoutPlan(legacyId, undefined, supabase);
     if (!legacyResult.ok) throw new Error(`legacy generation failed: ${legacyResult.error}`);
     const { data: legacyPlan } = await supabase
       .from("workout_plans")

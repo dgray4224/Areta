@@ -6,6 +6,7 @@ function recipe(overrides: Partial<RecipeForPlanning>): RecipeForPlanning {
     id: "r1",
     name: "Test Recipe",
     mealType: "breakfast",
+    cuisine: "american",
     calories: 400,
     proteinG: 25,
     searchableText: "test recipe",

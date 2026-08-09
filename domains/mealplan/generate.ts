@@ -1,3 +1,5 @@
+import type { RecipeCuisine } from "@/domains/recipes/types";
+
 export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
 export type MealType = (typeof MEAL_TYPES)[number];
 
@@ -5,6 +7,7 @@ export type RecipeForPlanning = {
   id: string;
   name: string;
   mealType: MealType;
+  cuisine: RecipeCuisine;
   calories: number;
   proteinG: number;
   /** Recipe name + every ingredient name, lowercased, for keyword filtering. */
@@ -18,6 +21,13 @@ export type MealPlanGenerationInput = {
   mealsPerDay: number;
   /** Lowercased keywords (allergies, dislikes) — any recipe containing one is excluded. */
   excludeKeywords: string[];
+  /** Soft preference, not a filter -- recipes outside this list are never
+   * excluded, just scored worse, so an empty/mismatched cuisine pool for a
+   * given meal type can never break generation the way a hard filter
+   * could (same failure mode excludeKeywords already guards against via
+   * its own unfiltered-fallback, just avoided here by construction
+   * instead of a fallback). Omitted/empty means no cuisine preference. */
+  preferredCuisines?: RecipeCuisine[];
   recipes: RecipeForPlanning[];
   days?: number;
 };
@@ -75,6 +85,12 @@ export function generateMealPlan(input: MealPlanGenerationInput): MealPlanGenera
 
   const slotCalorieTarget = input.calorieTarget / slots.length;
   const slotProteinTarget = input.proteinTarget / slots.length;
+  const preferredCuisines = input.preferredCuisines ?? [];
+  // Sized relative to typical calorie/protein score deltas (tens to low
+  // hundreds) -- big enough to reliably win a tiebreak toward a preferred
+  // cuisine, small enough that a much-better macro fit outside the
+  // preference can still win, keeping this a nudge, not a filter.
+  const CUISINE_MISMATCH_PENALTY = 150;
 
   const usageCount = new Map<string, number>();
   const recentDays = new Map<string, number>(); // recipeId -> last day used
@@ -110,13 +126,12 @@ export function generateMealPlan(input: MealPlanGenerationInput): MealPlanGenera
               ? notUsedToday
               : pool;
 
-      const chosen = options.reduce((best, r) => {
-        const score =
-          Math.abs(r.calories - slotCalorieTarget) + Math.abs(r.proteinG - slotProteinTarget) * 2;
-        const bestScore =
-          Math.abs(best.calories - slotCalorieTarget) + Math.abs(best.proteinG - slotProteinTarget) * 2;
-        return score < bestScore ? r : best;
-      }, options[0]);
+      const scoreOf = (r: RecipeForPlanning) => {
+        const base = Math.abs(r.calories - slotCalorieTarget) + Math.abs(r.proteinG - slotProteinTarget) * 2;
+        const cuisineMismatch = preferredCuisines.length > 0 && !preferredCuisines.includes(r.cuisine);
+        return cuisineMismatch ? base + CUISINE_MISMATCH_PENALTY : base;
+      };
+      const chosen = options.reduce((best, r) => (scoreOf(r) < scoreOf(best) ? r : best), options[0]);
 
       meals.push({ mealType, recipeId: chosen.id });
       usedToday.add(chosen.id);
