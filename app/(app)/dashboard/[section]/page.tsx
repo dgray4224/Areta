@@ -110,6 +110,12 @@ export default async function DashboardSectionSummaryPage({
             </p>
           ) : null}
         </div>
+        <Link
+          href="/goals"
+          className="shrink-0 rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-black/[0.03] dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-white/5"
+        >
+          Goals
+        </Link>
       </div>
 
       <div className="flex justify-between xl:max-w-md">

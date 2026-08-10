@@ -181,7 +181,12 @@ async function WeekView({ userId, requestedWeek }: { userId: string; requestedWe
         </Card>
 
         <section>
-          <h2 className="text-sm font-medium text-neutral-500">This week&apos;s priorities</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-neutral-500">This week&apos;s priorities</h2>
+            <Link href="/goals" className="text-xs text-neutral-500 hover:text-brand">
+              See all goals
+            </Link>
+          </div>
           {goals && goals.length > 0 ? (
             <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">
               {goals.map((g) => (
