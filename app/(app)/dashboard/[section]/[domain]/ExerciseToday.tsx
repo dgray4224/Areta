@@ -2,7 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { Card } from "@/platform/ui/Card";
-import { setWorkoutPlanItemCompleted, setWorkoutPlanItemNotes } from "@/domains/workoutplan/service";
+import { ExercisePicker, type ExerciseScheme } from "@/platform/ui/ExercisePicker";
+import {
+  setWorkoutPlanItemCompleted,
+  setWorkoutPlanItemNotes,
+  customizeWorkoutPlanItemExercise,
+  addWorkoutPlanItemExercise,
+  type WorkoutPlanItemView,
+} from "@/domains/workoutplan/service";
+import type { Exercise } from "@/domains/exerciselibrary/types";
 
 export type PlannedExerciseView = {
   id: string;
@@ -48,23 +56,49 @@ function humanizeActivityType(activityType: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+/** Server actions return WorkoutPlanItemView (has exerciseId, not a
+ * resolved name) — look the name up from the same library array the
+ * picker itself browses, already loaded client-side, rather than a
+ * second round trip. */
+function toPlannedView(item: WorkoutPlanItemView, exercises: Exercise[]): PlannedExerciseView {
+  return {
+    id: item.id,
+    exerciseName: exercises.find((e) => e.id === item.exerciseId)?.name ?? "Unknown exercise",
+    completedAt: item.completedAt,
+    notes: item.notes,
+    substituted: item.substituted,
+    sets: item.sets,
+    reps: item.reps,
+    repsMin: item.repsMin,
+    repsMax: item.repsMax,
+    durationMinutes: item.durationMinutes,
+    intensityType: item.intensityType,
+    intensityValue: item.intensityValue,
+    cardioIntensity: item.cardioIntensity,
+  };
+}
+
 /**
  * The Dashboard exercise domain page's interactive core — a checkbox per
  * planned exercise ("did I follow today's plan," tracked independently
- * from HealthKit-synced workout_logs, shown read-only below) plus
- * per-exercise notes. Matches the interaction set areta-mobile's
- * Exercise.tsx has, minus swap/add-exercise/alternative-session/
- * scheduled-time editing — those need a full exercise-library picker UI
- * (mobile's ExercisePicker.tsx), a bigger lift deliberately deferred to
- * a later pass, same as the Plan panel's already-deferred interactivity.
+ * from HealthKit-synced workout_logs, shown read-only below), per-
+ * exercise notes, and swap/add via ExercisePicker (platform/ui/
+ * ExercisePicker.tsx). Matches the interaction set areta-mobile's
+ * Exercise.tsx has, minus alternative-session switching and scheduled-
+ * time editing (program-level / drag-timeline concepts, out of scope
+ * here) — free-library swap and add-exercise are covered.
  */
 export function ExerciseToday({
   userId,
+  dayOfWeek,
   plan,
+  exercises,
   syncedWorkouts,
 }: {
   userId: string;
+  dayOfWeek: number;
   plan: PlannedExerciseView[];
+  exercises: Exercise[];
   syncedWorkouts: SyncedWorkoutView[];
 }) {
   const [items, setItems] = useState(plan);
@@ -72,9 +106,17 @@ export function ExerciseToday({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
   const [savingNotesId, setSavingNotesId] = useState<string | null>(null);
+  const [pickerMode, setPickerMode] = useState<"swap" | "add" | null>(null);
+  const [pickerItemId, setPickerItemId] = useState<string | null>(null);
+  // Bumped on every open — see ExercisePicker.tsx's own doc comment on
+  // why it needs a fresh `key` per session rather than resetting itself.
+  const [pickerSessionId, setPickerSessionId] = useState(0);
+  const [confirming, setConfirming] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const notesValue = (item: PlannedExerciseView) => notesDraft[item.id] ?? item.notes ?? "";
+  const pickerItem = items.find((i) => i.id === pickerItemId) ?? null;
 
   const onToggle = (item: PlannedExerciseView) => {
     setTogglingId(item.id);
@@ -101,6 +143,51 @@ export function ExerciseToday({
       setSavingNotesId(null);
       if (result.ok) {
         setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, notes: next || null } : p)));
+      }
+    });
+  };
+
+  const openSwapPicker = (itemId: string) => {
+    setPickerError(null);
+    setPickerMode("swap");
+    setPickerItemId(itemId);
+    setPickerSessionId((n) => n + 1);
+  };
+
+  const openAddPicker = () => {
+    setPickerError(null);
+    setPickerMode("add");
+    setPickerItemId(null);
+    setPickerSessionId((n) => n + 1);
+  };
+
+  const closePicker = () => {
+    setPickerMode(null);
+    setPickerItemId(null);
+  };
+
+  const onConfirmPicker = (exerciseId: string, scheme: ExerciseScheme) => {
+    setConfirming(true);
+    setPickerError(null);
+    startTransition(async () => {
+      if (pickerMode === "swap" && pickerItemId) {
+        const result = await customizeWorkoutPlanItemExercise(userId, pickerItemId, { exerciseId, ...scheme });
+        setConfirming(false);
+        if (!result.ok) {
+          setPickerError(result.error);
+          return;
+        }
+        setItems((prev) => prev.map((p) => (p.id === pickerItemId ? toPlannedView(result.data, exercises) : p)));
+        closePicker();
+      } else if (pickerMode === "add") {
+        const result = await addWorkoutPlanItemExercise(userId, dayOfWeek, { exerciseId, ...scheme });
+        setConfirming(false);
+        if (!result.ok) {
+          setPickerError(result.error);
+          return;
+        }
+        setItems((prev) => [...prev, toPlannedView(result.data, exercises)]);
+        closePicker();
       }
     });
   };
@@ -165,13 +252,23 @@ export function ExerciseToday({
                         ) : null}
                       </div>
                       {!expanded ? (
-                        <button
-                          type="button"
-                          onClick={() => setExpandedId(item.id)}
-                          className="shrink-0 rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 hover:bg-black/[0.03] dark:border-neutral-700 dark:hover:bg-white/5"
-                        >
-                          {item.notes ? "Edit" : "+ Note"}
-                        </button>
+                        <div className="flex shrink-0 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openSwapPicker(item.id)}
+                            aria-label="Swap exercise"
+                            className="rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 hover:bg-black/[0.03] dark:border-neutral-700 dark:hover:bg-white/5"
+                          >
+                            ⇄
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedId(item.id)}
+                            className="rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 hover:bg-black/[0.03] dark:border-neutral-700 dark:hover:bg-white/5"
+                          >
+                            {item.notes ? "Edit" : "+ Note"}
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -179,6 +276,13 @@ export function ExerciseToday({
               })}
             </div>
           )}
+          <button
+            type="button"
+            onClick={openAddPicker}
+            className="mt-3 w-full rounded-lg border border-dashed border-neutral-300 py-2 text-sm font-medium text-brand hover:bg-black/[0.02] dark:border-neutral-700 dark:hover:bg-white/5"
+          >
+            + Add exercise
+          </button>
         </Card>
       </div>
 
@@ -202,6 +306,22 @@ export function ExerciseToday({
           )}
         </Card>
       </div>
+
+      <ExercisePicker
+        key={pickerSessionId}
+        open={pickerMode !== null}
+        mode={pickerMode ?? "add"}
+        exercises={exercises}
+        currentScheme={
+          pickerItem
+            ? { sets: pickerItem.sets, reps: pickerItem.reps, durationMinutes: pickerItem.durationMinutes }
+            : undefined
+        }
+        onClose={closePicker}
+        onConfirm={onConfirmPicker}
+        confirming={confirming}
+      />
+      {pickerError ? <p className="text-sm text-red-600 dark:text-red-400">{pickerError}</p> : null}
     </div>
   );
 }
