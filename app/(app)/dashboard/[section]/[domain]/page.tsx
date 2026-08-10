@@ -11,7 +11,7 @@ import { SleepTrendChart } from "@/platform/ui/charts/SleepTrendChart";
 import { NutritionAdherenceChart } from "@/platform/ui/charts/NutritionAdherenceChart";
 import { getActiveMealPlan } from "@/domains/mealplan/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
-import { getExercisesByIds } from "@/domains/exerciselibrary/service";
+import { getExercisesByIds, getAllExercises } from "@/domains/exerciselibrary/service";
 import { getNutritionLogsForDate } from "@/domains/nutrition/log-service";
 import { todayForUser } from "@/domains/activity-summary/service";
 import { NutritionToday, type PlannedMealView, type LoggedFoodView } from "./NutritionToday";
@@ -140,12 +140,13 @@ export default async function DashboardDomainDetailPage({
     const today = await todayForUser(supabase, user.id);
     const dow = dayOfWeekFor(today);
 
-    const [sessionsPerWeek, recentLogs, workoutPlan, todaysWorkoutLogsRaw, history] = await Promise.all([
+    const [sessionsPerWeek, recentLogs, workoutPlan, todaysWorkoutLogsRaw, history, exerciseLibrary] = await Promise.all([
       getApprovedParameterValue(user.id, "exercise", "sessions_per_week"),
       getRecentExerciseLogs(user.id, 14),
       getActiveWorkoutPlan(user.id, supabase, today),
       getRecentWorkoutLogs(user.id, 1, supabase),
       getExerciseHistory(user.id, 7, supabase),
+      getAllExercises(supabase),
     ]);
 
     const todaysItems = workoutPlan?.items.filter((item) => item.dayOfWeek === dow) ?? [];
@@ -185,7 +186,13 @@ export default async function DashboardDomainDetailPage({
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">Exercise</h1>
 
-        <ExerciseToday userId={user.id} plan={plannedExercises} syncedWorkouts={syncedWorkouts} />
+        <ExerciseToday
+          userId={user.id}
+          dayOfWeek={dow}
+          plan={plannedExercises}
+          exercises={exerciseLibrary}
+          syncedWorkouts={syncedWorkouts}
+        />
 
         <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm font-medium text-neutral-500">Target sessions per week</p>
