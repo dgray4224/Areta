@@ -2,34 +2,42 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/platform/auth/session";
 import { createClient } from "@/platform/supabase/server";
-import { getOrCreateWeeklyReview } from "@/domains/review/service";
+import { getReviewSummaryBundle } from "@/domains/review/service";
+import { ReviewTabs } from "./ReviewTabs";
+import { InterviewSection } from "./InterviewSection";
+import { PlanAdherenceRecap } from "./PlanAdherenceRecap";
+import { StreaksAndComparison } from "./StreaksAndComparison";
+import { VitalsTrends } from "./VitalsTrends";
+import { OutcomesCheckIn } from "./OutcomesCheckIn";
 
 const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-export default async function ReviewPage() {
-  const user = await requireUser();
-  const review = await getOrCreateWeeklyReview(user.id);
+const SUB_TABS = ["interview", "recap", "streaks", "vitals", "checkin"] as const;
+type SubTab = (typeof SUB_TABS)[number];
 
-  if (review.brief) {
+function isSubTab(value: string | undefined): value is SubTab {
+  return SUB_TABS.includes(value as SubTab);
+}
+
+export default async function ReviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const { tab: rawTab } = await searchParams;
+  const tab = isSubTab(rawTab) ? rawTab : "summary";
+
+  const user = await requireUser();
+  const bundle = await getReviewSummaryBundle(user.id);
+
+  // "Summary" is the only tab with brief-redirect behavior (matches the
+  // page's pre-tabs behavior exactly) — the other five sub-tabs render
+  // inline regardless of whether a brief exists yet this week.
+  if (tab === "summary" && bundle.brief) {
     redirect("/review/brief");
   }
 
-  const m = review.metrics;
-
-  // No manual "generate" trigger anywhere (web or mobile) — the weekly
-  // cron (app/api/cron/generate-weekly-reviews) is the only thing that
-  // generates a brief, on the user's own weekly_review_day. Just tell
-  // them which day that is.
-  const supabase = await createClient();
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("weekly_review_day")
-    .eq("id", user.id)
-    .maybeSingle();
-  const reviewDayLabel =
-    profile?.weekly_review_day !== null && profile?.weekly_review_day !== undefined
-      ? WEEKDAY_LABELS[profile.weekly_review_day]
-      : null;
+  const m = bundle.metrics;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
@@ -39,10 +47,53 @@ export default async function ReviewPage() {
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">Weekly review</h1>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          Week of {review.weekStart} through today.
+          Week of {bundle.weekStart} through today.
         </p>
       </div>
 
+      <ReviewTabs />
+
+      {tab === "summary" ? <SummaryTab userId={user.id} weekStart={bundle.weekStart} metrics={m} /> : null}
+      {tab === "interview" ? (
+        <InterviewSection
+          userId={user.id}
+          initialAnswers={bundle.answers}
+          missedTaskReasons={m?.missedTaskReasons ?? []}
+        />
+      ) : null}
+      {tab === "recap" ? <PlanAdherenceRecap userId={user.id} weekStart={bundle.weekStart} /> : null}
+      {tab === "streaks" ? <StreaksAndComparison bundle={bundle} /> : null}
+      {tab === "vitals" ? <VitalsTrends userId={user.id} /> : null}
+      {tab === "checkin" ? <OutcomesCheckIn userId={user.id} /> : null}
+    </div>
+  );
+}
+
+async function SummaryTab({
+  userId,
+  metrics: m,
+}: {
+  userId: string;
+  weekStart: string;
+  metrics: import("@/domains/review/metrics").WeeklyMetrics | null;
+}) {
+  // No manual "generate" trigger anywhere (web or mobile) — the weekly
+  // cron (app/api/cron/generate-weekly-reviews) is the only thing that
+  // generates a brief, on the user's own weekly_review_day. Just tell
+  // them which day that is.
+  const supabase = await createClient();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("weekly_review_day")
+    .eq("id", userId)
+    .maybeSingle();
+  const reviewDayLabel =
+    profile?.weekly_review_day !== null && profile?.weekly_review_day !== undefined
+      ? WEEKDAY_LABELS[profile.weekly_review_day]
+      : null;
+
+  return (
+    <>
       {m ? (
         <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
           <h2 className="text-sm font-medium text-neutral-500">This week, calculated</h2>
@@ -114,6 +165,6 @@ export default async function ReviewPage() {
             : "Your weekly brief generates automatically on your weekly review day (set in Settings)."}
         </p>
       </section>
-    </div>
+    </>
   );
 }
