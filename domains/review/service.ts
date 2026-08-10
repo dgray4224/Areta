@@ -243,6 +243,32 @@ export async function getOrCreateWeeklyReview(
     .select("*")
     .single();
 
+  if (error?.code === "23505") {
+    // Lost a create race against another concurrent call for the same
+    // user+week (getReviewSummaryBundle fans out getOrCreateWeeklyReview
+    // and getReviewFactsBundle — which itself calls getOrCreateWeeklyReview
+    // — in the same Promise.all; on a week with no row yet, both read
+    // "nothing exists" before either has inserted). The other call won;
+    // fetch what it created instead of failing the whole request.
+    const { data: winner, error: refetchError } = await supabase
+      .from("weekly_reviews")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("week_start", weekStart)
+      .single();
+    if (refetchError || !winner) {
+      throw new Error(`Failed to create weekly review: ${error.message}`);
+    }
+    return {
+      id: winner.id,
+      weekStart: winner.week_start,
+      status: winner.status as WeeklyReviewView["status"],
+      metrics: winner.metrics as WeeklyMetrics,
+      brief: winner.brief as WeeklyBrief | null,
+      answers: (winner.answers as Record<string, string> | null) ?? {},
+    };
+  }
+
   if (error || !created) {
     throw new Error(`Failed to create weekly review: ${error?.message}`);
   }
