@@ -95,7 +95,7 @@ async function WeekView({
   const weekOptions = [...new Set((recentMealPlans ?? []).map((r) => r.week_start))];
   const weekStart = requestedWeek ?? weekOptions[0] ?? todayDateString();
 
-  const [mealPlan, workoutPlan, groceryItems, prepPlan, planRange, { data: latestReview }, { data: phases }, { data: goals }, { data: weeklyOutcomes }] =
+  const [mealPlan, workoutPlan, groceryItems, prepPlan, planRange, { data: latestReview }, { data: phases }] =
     await Promise.all([
       getMealPlanForWeek(userId, weekStart),
       getWorkoutPlanForWeek(userId, weekStart),
@@ -111,17 +111,6 @@ async function WeekView({
         .limit(1)
         .maybeSingle(),
       supabase.from("phases").select("name, mission").eq("user_id", userId).eq("is_current", true).limit(1),
-      supabase
-        .from("goals")
-        .select("id, outcome, target_date, priority")
-        .eq("user_id", userId)
-        .order("priority", { ascending: true })
-        .limit(3),
-      supabase
-        .from("weekly_outcomes")
-        .select("outcome_text")
-        .eq("user_id", userId)
-        .eq("status", "proposed"),
     ]);
 
   const brief = latestReview?.brief as WeeklyBrief | null | undefined;
@@ -141,7 +130,7 @@ async function WeekView({
         <WeekPicker weekStart={weekStart} options={weekOptions} />
       ) : null}
 
-      <div className="max-w-2xl space-y-6">
+      <div className="max-w-2xl">
         <Card tone="hero">
           {motto ? (
             <>
@@ -160,34 +149,6 @@ async function WeekView({
             </p>
           )}
         </Card>
-
-        <section>
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-neutral-500">This week&apos;s priorities</h2>
-            <Link href="/goals" className="text-xs text-neutral-500 hover:text-brand">
-              See all goals
-            </Link>
-          </div>
-          {goals && goals.length > 0 ? (
-            <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">
-              {goals.map((g) => (
-                <li key={g.id}>
-                  {g.outcome}
-                  {g.target_date ? ` — by ${g.target_date}` : ""}
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <EmptyState title="No goals yet" />
-          )}
-          {weeklyOutcomes && weeklyOutcomes.length > 0 ? (
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-neutral-600 dark:text-neutral-400">
-              {weeklyOutcomes.map((w, i) => (
-                <li key={i}>{w.outcome_text}</li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
       </div>
 
       <section>
