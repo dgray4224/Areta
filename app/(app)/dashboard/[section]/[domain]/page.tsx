@@ -11,9 +11,15 @@ import { SleepTrendChart } from "@/platform/ui/charts/SleepTrendChart";
 import { NutritionAdherenceChart } from "@/platform/ui/charts/NutritionAdherenceChart";
 import { getActiveMealPlan } from "@/domains/mealplan/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
+import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { getNutritionLogsForDate } from "@/domains/nutrition/log-service";
 import { todayForUser } from "@/domains/activity-summary/service";
 import { NutritionToday, type PlannedMealView, type LoggedFoodView } from "./NutritionToday";
+import { ExerciseToday, type PlannedExerciseView, type SyncedWorkoutView } from "./ExerciseToday";
+import { getActiveWorkoutPlan } from "@/domains/workoutplan/service";
+import { getRecentWorkoutLogs } from "@/domains/workout/service";
+import { getExerciseHistory } from "@/domains/workout/history";
+import { VitalsMiniChart } from "@/platform/ui/charts/VitalsMiniChart";
 
 const RECENT_FOODS_LOOKBACK_DAYS = 6;
 
@@ -130,20 +136,86 @@ export default async function DashboardDomainDetailPage({
   }
 
   if (domain === "exercise") {
-    const [sessionsPerWeek, recentLogs] = await Promise.all([
+    const supabase = await createClient();
+    const today = await todayForUser(supabase, user.id);
+    const dow = dayOfWeekFor(today);
+
+    const [sessionsPerWeek, recentLogs, workoutPlan, todaysWorkoutLogsRaw, history] = await Promise.all([
       getApprovedParameterValue(user.id, "exercise", "sessions_per_week"),
       getRecentExerciseLogs(user.id, 14),
+      getActiveWorkoutPlan(user.id, supabase, today),
+      getRecentWorkoutLogs(user.id, 1, supabase),
+      getExerciseHistory(user.id, 7, supabase),
     ]);
+
+    const todaysItems = workoutPlan?.items.filter((item) => item.dayOfWeek === dow) ?? [];
+    const exerciseMap = await getExercisesByIds(
+      todaysItems.map((item) => item.exerciseId),
+      supabase
+    );
+    const plannedExercises: PlannedExerciseView[] = todaysItems.map((item) => ({
+      id: item.id,
+      exerciseName: exerciseMap.get(item.exerciseId)?.name ?? "Unknown exercise",
+      completedAt: item.completedAt,
+      notes: item.notes,
+      substituted: item.substituted,
+      sets: item.sets,
+      reps: item.reps,
+      repsMin: item.repsMin,
+      repsMax: item.repsMax,
+      durationMinutes: item.durationMinutes,
+      intensityType: item.intensityType,
+      intensityValue: item.intensityValue,
+      cardioIntensity: item.cardioIntensity,
+    }));
+    // getRecentWorkoutLogs(days: 1) is a rolling 24h window, not "today" by
+    // calendar day — filter to the user's actual local today the same way
+    // getExerciseHistory buckets its own days, so this list and that chart
+    // never disagree about what counts as "today."
+    const syncedWorkouts: SyncedWorkoutView[] = todaysWorkoutLogsRaw
+      .filter((log) => log.start_date.slice(0, 10) === today)
+      .map((log) => ({
+        id: log.id,
+        activityType: log.activity_type,
+        durationMinutes: log.duration_minutes,
+        caloriesBurned: log.total_energy_burned_kcal,
+      }));
 
     return (
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">Exercise</h1>
+
+        <ExerciseToday userId={user.id} plan={plannedExercises} syncedWorkouts={syncedWorkouts} />
+
         <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm font-medium text-neutral-500">Target sessions per week</p>
           <p className="text-lg font-medium">{sessionsPerWeek ?? "Not set yet"}</p>
         </div>
+
+        <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+          <p className="mb-2 text-sm font-medium">Last 7 days</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-neutral-500">Exercise minutes</p>
+              <VitalsMiniChart
+                data={history.map((d) => ({ date: d.date, value: d.exerciseMinutes }))}
+                unit="min"
+                seriesKey="series1"
+              />
+            </div>
+            <div>
+              <p className="text-xs text-neutral-500">Calories burned</p>
+              <VitalsMiniChart
+                data={history.map((d) => ({ date: d.date, value: d.caloriesBurned }))}
+                unit="kcal"
+                seriesKey="series2"
+              />
+            </div>
+          </div>
+        </div>
+
         <div>
-          <p className="text-sm font-medium text-neutral-500">Recent sessions</p>
+          <p className="text-sm font-medium text-neutral-500">Recent logged sessions</p>
           {recentLogs.length > 0 ? (
             <ul className="mt-2 space-y-1 text-sm">
               {recentLogs.map((log) => (
@@ -161,6 +233,7 @@ export default async function DashboardDomainDetailPage({
             <EmptyState title="No sessions logged yet" />
           )}
         </div>
+
         <div className="flex gap-4 text-sm">
           <Link href="/plan/exercise-parameters" className="underline">
             Training parameters
