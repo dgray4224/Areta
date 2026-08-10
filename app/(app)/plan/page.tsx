@@ -4,17 +4,16 @@ import { createClient } from "@/platform/supabase/server";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { Card } from "@/platform/ui/Card";
 import { LinkButton } from "@/platform/ui/Button";
-import { getWeekDates, DAY_NAMES } from "@/platform/ui/week-dates";
 import { getMealPlanForWeek } from "@/domains/mealplan/service";
 import { getWorkoutPlanForWeek } from "@/domains/workoutplan/service";
 import { getGroceryListForWeek } from "@/domains/grocery/service";
 import { getPrepPlanForWeek } from "@/domains/prep/service";
-import { getRecipesByIds } from "@/domains/recipes/service";
-import { getExercisesByIds } from "@/domains/exerciselibrary/service";
+import { getPlanRange } from "@/domains/plan/service";
 import { getMotivationQuote } from "@/domains/motivation/quotes";
 import type { WeeklyBrief } from "@/domains/review/brief-schema";
 import { WeekPicker } from "./WeekPicker";
-import { PlanWeekCalendar, type PlanDay } from "./PlanWeekCalendar";
+import { PlanMonthCalendar } from "./PlanMonthCalendar";
+import { currentMonthString, gridBounds } from "./calendar-date-utils";
 import { navTabClass } from "../nav-links";
 
 const TABS = [
@@ -30,10 +29,10 @@ function todayDateString(): string {
 export default async function PlanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; week?: string }>;
+  searchParams: Promise<{ view?: string; week?: string; month?: string }>;
 }) {
   const user = await requireUser();
-  const { view: rawView, week: requestedWeek } = await searchParams;
+  const { view: rawView, week: requestedWeek, month: requestedMonth } = await searchParams;
   const view = rawView === "month" || rawView === "year" ? rawView : "week";
 
   return (
@@ -62,7 +61,7 @@ export default async function PlanPage({
       </nav>
 
       {view === "week" ? (
-        <WeekView userId={user.id} requestedWeek={requestedWeek} />
+        <WeekView userId={user.id} requestedWeek={requestedWeek} requestedMonth={requestedMonth} />
       ) : (
         <EmptyState
           title={`${view === "month" ? "Month" : "Year"} view — not built yet`}
@@ -73,8 +72,18 @@ export default async function PlanPage({
   );
 }
 
-async function WeekView({ userId, requestedWeek }: { userId: string; requestedWeek?: string }) {
+async function WeekView({
+  userId,
+  requestedWeek,
+  requestedMonth,
+}: {
+  userId: string;
+  requestedWeek?: string;
+  requestedMonth?: string;
+}) {
   const supabase = await createClient();
+  const month = requestedMonth && /^\d{4}-\d{2}$/.test(requestedMonth) ? requestedMonth : currentMonthString();
+  const { gridStart, gridEnd } = gridBounds(month);
 
   const { data: recentMealPlans } = await supabase
     .from("meal_plans")
@@ -86,12 +95,13 @@ async function WeekView({ userId, requestedWeek }: { userId: string; requestedWe
   const weekOptions = [...new Set((recentMealPlans ?? []).map((r) => r.week_start))];
   const weekStart = requestedWeek ?? weekOptions[0] ?? todayDateString();
 
-  const [mealPlan, workoutPlan, groceryItems, prepPlan, { data: latestReview }, { data: phases }, { data: goals }, { data: weeklyOutcomes }] =
+  const [mealPlan, workoutPlan, groceryItems, prepPlan, planRange, { data: latestReview }, { data: phases }, { data: goals }, { data: weeklyOutcomes }] =
     await Promise.all([
       getMealPlanForWeek(userId, weekStart),
       getWorkoutPlanForWeek(userId, weekStart),
       getGroceryListForWeek(userId, weekStart),
       getPrepPlanForWeek(userId, weekStart),
+      getPlanRange(userId, gridStart, gridEnd, supabase),
       supabase
         .from("weekly_reviews")
         .select("brief")
@@ -118,41 +128,12 @@ async function WeekView({ userId, requestedWeek }: { userId: string; requestedWe
   const motto = brief ? getMotivationQuote(brief.weeklyMottoId) : null;
   const phaseMission = phases && phases.length > 0 ? phases[0].mission : null;
 
-  const [recipes, exercises] = await Promise.all([
-    getRecipesByIds([...new Set((mealPlan?.items ?? []).map((i) => i.recipeId))]),
-    getExercisesByIds([...new Set((workoutPlan?.items ?? []).map((i) => i.exerciseId))]),
-  ]);
-
-  const weekDates = getWeekDates(weekStart);
   const today = todayDateString();
-
-  // Plain, serializable per-day shape for PlanWeekCalendar ("use client")
-  // — the Map<string, Recipe>/Map<string, Exercise> above can't cross the
-  // server/client boundary as props, so this resolves them into each
-  // day's own arrays here on the server instead.
-  const days: PlanDay[] = DAY_NAMES.map((dayName, day) => ({
-    date: weekDates[day],
-    dayName,
-    isToday: weekDates[day] === today,
-    hasWorkoutPlan: workoutPlan !== null,
-    meals: (mealPlan?.items ?? [])
-      .filter((i) => i.dayOfWeek === day)
-      .map((i) => ({
-        id: i.id,
-        mealType: i.mealType,
-        recipeName: recipes.get(i.recipeId)?.name ?? "Unknown recipe",
-        photoUrl: recipes.get(i.recipeId)?.photoUrl ?? null,
-      })),
-    workouts: (workoutPlan?.items ?? [])
-      .filter((i) => i.dayOfWeek === day)
-      .map((i) => ({
-        id: i.id,
-        name: exercises.get(i.exerciseId)?.name ?? "Unknown exercise",
-        sets: i.sets,
-        reps: i.reps,
-        durationMinutes: i.durationMinutes,
-      })),
-  }));
+  const gridDates: string[] = [];
+  for (let d = gridStart; d <= gridEnd; ) {
+    gridDates.push(d);
+    d = new Date(new Date(`${d}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10);
+  }
 
   return (
     <div className="space-y-6">
@@ -210,21 +191,9 @@ async function WeekView({ userId, requestedWeek }: { userId: string; requestedWe
       </div>
 
       <section>
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-neutral-500">This week</h2>
-          <div className="flex gap-3 text-xs text-neutral-500">
-            <Link href="/plan/meals" className="hover:text-brand">
-              Full meal plan
-            </Link>
-            <Link href="/plan/workouts" className="hover:text-brand">
-              Full workout plan
-            </Link>
-          </div>
-        </div>
+        <h2 className="mb-2 text-sm font-medium text-neutral-500">Calendar</h2>
         {mealPlan || workoutPlan ? (
-          <div className="mt-2">
-            <PlanWeekCalendar days={days} />
-          </div>
+          <PlanMonthCalendar month={month} today={today} gridDates={gridDates} days={planRange.days} />
         ) : (
           <EmptyState
             title="No plan for this week yet"
