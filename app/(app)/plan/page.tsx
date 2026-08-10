@@ -137,7 +137,12 @@ async function WeekView({ userId, requestedWeek }: { userId: string; requestedWe
     hasWorkoutPlan: workoutPlan !== null,
     meals: (mealPlan?.items ?? [])
       .filter((i) => i.dayOfWeek === day)
-      .map((i) => ({ id: i.id, mealType: i.mealType, recipeName: recipes.get(i.recipeId)?.name ?? "Unknown recipe" })),
+      .map((i) => ({
+        id: i.id,
+        mealType: i.mealType,
+        recipeName: recipes.get(i.recipeId)?.name ?? "Unknown recipe",
+        photoUrl: recipes.get(i.recipeId)?.photoUrl ?? null,
+      })),
     workouts: (workoutPlan?.items ?? [])
       .filter((i) => i.dayOfWeek === day)
       .map((i) => ({

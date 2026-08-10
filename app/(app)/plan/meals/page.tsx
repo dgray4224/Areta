@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/platform/auth/session";
 import { EmptyState } from "@/platform/ui/EmptyState";
+import { RecipePhoto } from "@/platform/ui/RecipePhoto";
 import { getMealPlanForWeek, type MealPlanItemView } from "@/domains/mealplan/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
 import { GenerateMealPlanButton } from "./GenerateMealPlanButton";
@@ -90,15 +91,16 @@ async function MealPlanBody({
               className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800"
             >
               <p className="font-medium">{DAY_NAMES[day]}</p>
-              <ul className="mt-2 space-y-1 text-sm">
+              <ul className="mt-2 space-y-2 text-sm">
                 {items.map((item) => {
                   const recipe = recipes.get(item.recipeId);
                   return (
-                    <li key={item.id} className="flex justify-between gap-4">
-                      <span className="shrink-0 capitalize text-neutral-500">
-                        {item.mealType}
+                    <li key={item.id} className="flex items-center justify-between gap-4">
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <RecipePhoto url={recipe?.photoUrl ?? null} size={36} className="shrink-0" />
+                        <span className="shrink-0 capitalize text-neutral-500">{item.mealType}</span>
                       </span>
-                      <span className="text-right">
+                      <span className="min-w-0 text-right">
                         {recipe?.name ?? "Unknown recipe"}
                         {recipe ? (
                           <span className="text-neutral-400">

@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Card } from "@/platform/ui/Card";
+import { RecipePhoto } from "@/platform/ui/RecipePhoto";
 
-export type PlanDayMeal = { id: string; mealType: string; recipeName: string };
+export type PlanDayMeal = { id: string; mealType: string; recipeName: string; photoUrl: string | null };
 export type PlanDayWorkout = { id: string; name: string; sets: number | null; reps: number | null; durationMinutes: number | null };
 export type PlanDay = {
   date: string;
@@ -109,11 +110,14 @@ export function PlanWeekCalendar({ days }: { days: PlanDay[] }) {
                 {selectedDay.meals.length === 0 ? (
                   <p className="mt-1 text-sm text-neutral-400">—</p>
                 ) : (
-                  <ul className="mt-1.5 space-y-1.5 text-sm">
+                  <ul className="mt-1.5 space-y-2 text-sm">
                     {selectedDay.meals.map((m) => (
-                      <li key={m.id}>
-                        <span className="text-xs capitalize text-neutral-500">{m.mealType}</span>
-                        <p className="truncate">{m.recipeName}</p>
+                      <li key={m.id} className="flex items-center gap-2.5">
+                        <RecipePhoto url={m.photoUrl} size={36} className="shrink-0" />
+                        <div className="min-w-0">
+                          <span className="text-xs capitalize text-neutral-500">{m.mealType}</span>
+                          <p className="truncate">{m.recipeName}</p>
+                        </div>
                       </li>
                     ))}
                   </ul>
