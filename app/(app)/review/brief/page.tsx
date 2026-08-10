@@ -4,6 +4,7 @@ import { requireUser } from "@/platform/auth/session";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { getOrCreateWeeklyReview, getRecommendationsForCurrentReview, getReviewFactsBundle } from "@/domains/review/service";
 import { ApproveBriefButton } from "./ApproveBriefButton";
+import { ReviewTabs } from "../ReviewTabs";
 
 const SEVERITY_STYLES: Record<string, string> = {
   low: "bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300",
@@ -46,6 +47,7 @@ export default async function BriefPage() {
         <Link href="/dashboard" className="text-sm text-neutral-500 hover:underline">
           ← Back to dashboard
         </Link>
+        <ReviewTabs />
         <EmptyState
           title="This week's plan is active"
           description="Your meal plan, grocery list, and prep plan have been regenerated for the new week."
@@ -73,6 +75,8 @@ export default async function BriefPage() {
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">Weekly Operating Brief</h1>
       </div>
+
+      <ReviewTabs />
 
       {/* Headline-first: the single most eye-opening finding leads, ahead
           of the broader executive summary — matches the mobile AI Summary

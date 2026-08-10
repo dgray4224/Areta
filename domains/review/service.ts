@@ -686,3 +686,52 @@ export async function getRecommendationsForCurrentReview(
     outcomeMetricAfter: r.outcome_metric_after,
   }));
 }
+
+export type ReviewSummaryBundle = {
+  weekStart: string;
+  status: WeeklyReviewView["status"];
+  metrics: WeeklyMetrics | null;
+  brief: WeeklyBrief | null;
+  answers: Record<string, string>;
+  recommendations: RecommendationView[];
+  previousWeekMetrics: WeeklyMetrics | null;
+  achievements: AchievementFacts;
+  goalTrajectories: GoalTrajectory[];
+  streaks: StreakFacts;
+  correlationFindings: ReviewFactsBundle["correlationFindings"];
+  experimentOutcomes: ExperimentOutcome[];
+};
+
+/** Everything the Review tab's sub-tabs need in one round trip — shared by
+ * the mobile bearer route (app/api/review/route.ts) and the web app's own
+ * /review pages, so the two never assemble this bundle two different ways.
+ * Read-only: getReviewFactsBundle recomputes the deterministic facts fresh
+ * (cheap — pure queries/math, no AI call), so this works whether or not a
+ * brief has been generated yet this week. */
+export async function getReviewSummaryBundle(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<ReviewSummaryBundle> {
+  const supabase = client ?? (await createClient());
+
+  const [review, recommendations, facts] = await Promise.all([
+    getOrCreateWeeklyReview(userId, supabase),
+    getRecommendationsForCurrentReview(userId, supabase),
+    getReviewFactsBundle(userId, supabase),
+  ]);
+
+  return {
+    weekStart: review.weekStart,
+    status: review.status,
+    metrics: review.metrics,
+    brief: review.brief,
+    answers: review.answers,
+    recommendations,
+    previousWeekMetrics: facts.weeklyMetricsHistory[0]?.metrics ?? null,
+    achievements: facts.achievements,
+    goalTrajectories: facts.goalTrajectories,
+    streaks: facts.streaks,
+    correlationFindings: facts.correlationFindings,
+    experimentOutcomes: facts.experimentOutcomes,
+  };
+}
