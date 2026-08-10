@@ -56,6 +56,25 @@
   --color-accent-ink: var(--accent-ink);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+
+  /* Warm neutral scale — replaces Tailwind's stock cool grays everywhere
+   * `text-neutral-*`/`border-neutral-*`/`bg-neutral-*` are already used
+   * across the app (dozens of call sites, unchanged) with a scale tinted
+   * toward the same brown hue as --canvas/--hero above, instead of pure
+   * gray sitting oddly next to the terracotta brand color. One override
+   * here retints every existing usage app-wide — no per-file edits. */
+  --color-neutral-50: #faf8f5;
+  --color-neutral-100: #f3efe9;
+  --color-neutral-200: #e6ddd1;
+  --color-neutral-300: #d3c4b2;
+  --color-neutral-400: #b3a493;
+  --color-neutral-500: #8a7a68;
+  --color-neutral-600: #6b5d4d;
+  --color-neutral-700: #3a2c22;
+  --color-neutral-800: #2a201a;
+  --color-neutral-900: #1c130f;
+  --color-neutral-950: #120d0a;
 }
 
 /* Chart tokens (dataviz skill palette). Surfaces/ink map onto the app's
@@ -113,6 +132,24 @@ body {
   background: var(--canvas);
   color: var(--foreground);
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+}
+
+/* Editorial character for real page titles only (h1 — "Nutrition",
+ * "Plan", "Weekly review"). h2/h3 stay sans: this app reuses those tags
+ * for small section labels too (e.g. "This week's priorities" at
+ * text-sm), and serif at that size/weight reads as a mistake, not a
+ * choice. */
+h1 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+:root {
+  --shadow-card: 0 1px 2px rgba(28, 19, 15, 0.06), 0 8px 24px -12px rgba(28, 19, 15, 0.18);
+}
+.dark {
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
 }
 
 /* Homepage hero background -- three soft brand-colored blobs drifting
