@@ -3,6 +3,7 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { Card } from "@/platform/ui/Card";
 import { EmptyState } from "@/platform/ui/EmptyState";
+import { RecipePhoto } from "@/platform/ui/RecipePhoto";
 import { setMealPlanItemCompleted, setMealPlanItemNotes } from "@/domains/mealplan/service";
 import { logNutrition } from "@/domains/nutrition/log-service";
 import type { NutritionLogInput } from "@/domains/nutrition/log-schema";
@@ -225,6 +226,7 @@ export function NutritionToday({
                           item.completedAt ? "border-accent bg-accent" : "border-neutral-300 dark:border-neutral-700"
                         }`}
                       />
+                      <RecipePhoto url={item.photoUrl} size={44} className="shrink-0" />
                       <div className="min-w-0 flex-1">
                         <p className={`text-sm font-medium ${item.completedAt ? "text-neutral-400 line-through" : ""}`}>
                           {item.recipeName}
