@@ -36,7 +36,7 @@ export default async function DashboardSectionLayout({
   const activeDomains = getActiveDomainsForSection(section, activeDomainKeys);
 
   return (
-    <div className="mx-auto max-w-4xl px-4 pt-6">
+    <div className="mx-auto max-w-6xl px-4 pt-6">
       <nav className="flex gap-4 border-b border-neutral-200 text-sm dark:border-neutral-800">
         {activeSections.map((key) => (
           <Link

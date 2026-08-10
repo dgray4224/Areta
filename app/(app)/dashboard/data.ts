@@ -7,6 +7,8 @@ import { getGroceryListForWeek } from "@/domains/grocery/service";
 import { getPrepPlanForWeek } from "@/domains/prep/service";
 import { getUpcomingEventsWithTimeout as fetchUpcomingEventsWithTimeout } from "@/domains/calendar/events-service";
 import type { UpcomingEvent } from "@/domains/calendar/schema";
+import { getTimelineEventsForDate } from "@/domains/timeline/service";
+import type { TimelineEventView } from "@/domains/timeline/service";
 
 export type TodayTask = {
   id: string;
@@ -52,6 +54,7 @@ export type DashboardData = {
   };
   upcomingEvents: UpcomingEvent[];
   hasCalendarConnection: boolean;
+  timelineEvents: TimelineEventView[];
 };
 
 const UPCOMING_EVENTS_DAYS_AHEAD = 7;
@@ -138,6 +141,8 @@ export async function getDashboardData(userId: string, viewDate?: string): Promi
     supabase.from("calendar_connections").select("id", { count: "exact", head: true }).eq("user_id", userId),
     getUpcomingEventsWithTimeout(userId),
   ]);
+
+  const timelineEvents = await getTimelineEventsForDate(userId, selectedDate, supabase);
 
   const todayTasks: TodayTask[] = (tasks ?? []).map((t) => ({
     id: t.id,
@@ -239,5 +244,6 @@ export async function getDashboardData(userId: string, viewDate?: string): Promi
     },
     upcomingEvents,
     hasCalendarConnection: (calendarConnectionCount ?? 0) > 0,
+    timelineEvents,
   };
 }
