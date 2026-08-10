@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/platform/auth/session";
+import { createClient } from "@/platform/supabase/server";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { getDashboardTrends } from "../../trends-data";
 import { getRecentExerciseLogs } from "@/domains/exercise/service";
@@ -8,6 +9,23 @@ import { getApprovedParameterValue } from "@/domains/parameters/service";
 import { WeightTrendChart } from "@/platform/ui/charts/WeightTrendChart";
 import { SleepTrendChart } from "@/platform/ui/charts/SleepTrendChart";
 import { NutritionAdherenceChart } from "@/platform/ui/charts/NutritionAdherenceChart";
+import { getActiveMealPlan } from "@/domains/mealplan/service";
+import { getRecipesByIds } from "@/domains/recipes/service";
+import { getNutritionLogsForDate } from "@/domains/nutrition/log-service";
+import { todayForUser } from "@/domains/activity-summary/service";
+import { NutritionToday, type PlannedMealView, type LoggedFoodView } from "./NutritionToday";
+
+const RECENT_FOODS_LOOKBACK_DAYS = 6;
+
+function shiftDateString(dateString: string, deltaDays: number): string {
+  const d = new Date(`${dateString}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+function dayOfWeekFor(dateString: string): number {
+  return new Date(`${dateString}T00:00:00Z`).getUTCDay();
+}
 
 export default async function DashboardDomainDetailPage({
   params,
@@ -18,10 +36,61 @@ export default async function DashboardDomainDetailPage({
   const user = await requireUser();
 
   if (domain === "nutrition") {
-    const trends = await getDashboardTrends(user.id);
+    const supabase = await createClient();
+    const today = await todayForUser(supabase, user.id);
+    const dow = dayOfWeekFor(today);
+
+    const [trends, mealPlan, todaysLogs, recentDaysLogs] = await Promise.all([
+      getDashboardTrends(user.id),
+      getActiveMealPlan(user.id, supabase, today),
+      getNutritionLogsForDate(user.id, today, supabase),
+      Promise.all(
+        Array.from({ length: RECENT_FOODS_LOOKBACK_DAYS }, (_, i) =>
+          getNutritionLogsForDate(user.id, shiftDateString(today, -(i + 1)), supabase).catch(() => [])
+        )
+      ),
+    ]);
+
+    const todaysItems = mealPlan?.items.filter((item) => item.dayOfWeek === dow) ?? [];
+    const recipeMap = await getRecipesByIds(
+      todaysItems.map((item) => item.recipeId),
+      supabase
+    );
+    const plannedMeals: PlannedMealView[] = todaysItems.map((item) => {
+      const recipe = recipeMap.get(item.recipeId);
+      return {
+        id: item.id,
+        recipeName: recipe?.name ?? "Unknown recipe",
+        cuisine: recipe?.cuisine ?? null,
+        photoUrl: recipe?.photoUrl ?? null,
+        mealType: item.mealType,
+        servings: item.servings,
+        completedAt: item.completedAt,
+        notes: item.notes,
+      };
+    });
+    const recentFoodNames = recentDaysLogs.flat().map((l) => l.food);
+    // meal is a plain `text` column server-side, not a DB enum — narrow it
+    // here rather than widening LoggedFoodView's type, since every writer
+    // of nutrition_logs (this page's own form, mobile, the meal-plan
+    // completion path) only ever writes one of the four real values.
+    const todaysLogsView: LoggedFoodView[] = todaysLogs.map((l) => ({
+      ...l,
+      meal: l.meal as LoggedFoodView["meal"],
+    }));
+
     return (
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">Nutrition</h1>
+
+        <NutritionToday
+          userId={user.id}
+          date={today}
+          initialPlan={plannedMeals}
+          initialLogs={todaysLogsView}
+          recentFoodNames={recentFoodNames}
+        />
+
         <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="mb-1 text-sm font-medium">Calorie adherence · last 30 days</p>
           <NutritionAdherenceChart data={trends.nutrition.data} target={trends.nutrition.target} />
@@ -36,9 +105,6 @@ export default async function DashboardDomainDetailPage({
           </Link>
           <Link href="/plan/meals" className="underline">
             Meal plan
-          </Link>
-          <Link href="/log/nutrition" className="underline">
-            Log food
           </Link>
         </div>
       </div>
