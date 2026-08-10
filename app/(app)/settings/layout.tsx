@@ -9,7 +9,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
   const [{ isAdmin }, isTrainer] = await Promise.all([getAdminStatus(user.id), getTrainerStatus(user.id)]);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-10">
       <div>
         <Link href="/dashboard" className="text-sm text-neutral-500 hover:underline">
           ← Back to dashboard

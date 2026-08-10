@@ -4,7 +4,7 @@ import { createClient } from "@/platform/supabase/server";
 import { EmptyState } from "@/platform/ui/EmptyState";
 import { Card } from "@/platform/ui/Card";
 import { LinkButton } from "@/platform/ui/Button";
-import { getWeekDates, formatShortDate, DAY_NAMES } from "@/platform/ui/week-dates";
+import { getWeekDates, DAY_NAMES } from "@/platform/ui/week-dates";
 import { getMealPlanForWeek } from "@/domains/mealplan/service";
 import { getWorkoutPlanForWeek } from "@/domains/workoutplan/service";
 import { getGroceryListForWeek } from "@/domains/grocery/service";
@@ -14,6 +14,7 @@ import { getExercisesByIds } from "@/domains/exerciselibrary/service";
 import { getMotivationQuote } from "@/domains/motivation/quotes";
 import type { WeeklyBrief } from "@/domains/review/brief-schema";
 import { WeekPicker } from "./WeekPicker";
+import { PlanWeekCalendar, type PlanDay } from "./PlanWeekCalendar";
 import { navTabClass } from "../nav-links";
 
 const TABS = [
@@ -36,7 +37,7 @@ export default async function PlanPage({
   const view = rawView === "month" || rawView === "year" ? rawView : "week";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
+    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
       <div>
         <Link href="/dashboard" className="text-sm text-neutral-500 hover:underline">
           ← Back to dashboard
@@ -125,6 +126,29 @@ async function WeekView({ userId, requestedWeek }: { userId: string; requestedWe
   const weekDates = getWeekDates(weekStart);
   const today = todayDateString();
 
+  // Plain, serializable per-day shape for PlanWeekCalendar ("use client")
+  // — the Map<string, Recipe>/Map<string, Exercise> above can't cross the
+  // server/client boundary as props, so this resolves them into each
+  // day's own arrays here on the server instead.
+  const days: PlanDay[] = DAY_NAMES.map((dayName, day) => ({
+    date: weekDates[day],
+    dayName,
+    isToday: weekDates[day] === today,
+    hasWorkoutPlan: workoutPlan !== null,
+    meals: (mealPlan?.items ?? [])
+      .filter((i) => i.dayOfWeek === day)
+      .map((i) => ({ id: i.id, mealType: i.mealType, recipeName: recipes.get(i.recipeId)?.name ?? "Unknown recipe" })),
+    workouts: (workoutPlan?.items ?? [])
+      .filter((i) => i.dayOfWeek === day)
+      .map((i) => ({
+        id: i.id,
+        name: exercises.get(i.exerciseId)?.name ?? "Unknown exercise",
+        sets: i.sets,
+        reps: i.reps,
+        durationMinutes: i.durationMinutes,
+      })),
+  }));
+
   return (
     <div className="space-y-6">
       {weekOptions.length > 0 ? (
@@ -188,56 +212,8 @@ async function WeekView({ userId, requestedWeek }: { userId: string; requestedWe
           </div>
         </div>
         {mealPlan || workoutPlan ? (
-          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-            {DAY_NAMES.map((dayName, day) => {
-              const date = weekDates[day];
-              const isToday = date === today;
-              const meals = (mealPlan?.items ?? []).filter((i) => i.dayOfWeek === day);
-              const workouts = (workoutPlan?.items ?? []).filter((i) => i.dayOfWeek === day);
-              return (
-                <Card
-                  key={day}
-                  tone="surface"
-                  className={`space-y-3 ${isToday ? "border-2 border-brand" : ""}`}
-                >
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                      {dayName}
-                      {isToday ? " · today" : ""}
-                    </p>
-                    <p className="text-sm font-semibold">{formatShortDate(date)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-neutral-500">Workout</p>
-                    {workouts.length > 0 ? (
-                      <ul className="mt-1 space-y-0.5 text-xs">
-                        {workouts.map((w) => (
-                          <li key={w.id}>{exercises.get(w.exerciseId)?.name ?? "Unknown"}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-1 text-xs text-neutral-400">
-                        {workoutPlan ? "Rest" : "—"}
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs text-neutral-500">Meals</p>
-                    {meals.length > 0 ? (
-                      <ul className="mt-1 space-y-0.5 text-xs">
-                        {meals.map((m) => (
-                          <li key={m.id} className="capitalize">
-                            {m.mealType}: {recipes.get(m.recipeId)?.name ?? "Unknown"}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-1 text-xs text-neutral-400">—</p>
-                    )}
-                  </div>
-                </Card>
-              );
-            })}
+          <div className="mt-2">
+            <PlanWeekCalendar days={days} />
           </div>
         ) : (
           <EmptyState
@@ -251,7 +227,7 @@ async function WeekView({ userId, requestedWeek }: { userId: string; requestedWe
         )}
       </section>
 
-      <div className="grid max-w-2xl grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Link href="/plan/grocery">
           <Card tone="surface" className="hover:bg-black/[0.02] dark:hover:bg-white/5">
             <p className="text-sm font-medium">Grocery list</p>

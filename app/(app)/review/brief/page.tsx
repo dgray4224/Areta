@@ -42,7 +42,7 @@ export default async function BriefPage() {
 
   if (review.status === "approved") {
     return (
-      <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
+      <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
         <Link href="/dashboard" className="text-sm text-neutral-500 hover:underline">
           ← Back to dashboard
         </Link>
@@ -66,7 +66,7 @@ export default async function BriefPage() {
   const trajectoriesByGoal = new Map(facts.goalTrajectories.map((t) => [t.goalId, t]));
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
       <div>
         <Link href="/review" className="text-sm text-neutral-500 hover:underline">
           ← Back to review

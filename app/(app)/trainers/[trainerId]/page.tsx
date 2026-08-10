@@ -20,7 +20,7 @@ export default async function TrainerPublicProfilePage({ params }: { params: Pro
   const pendingRequestToThisTrainer = myRequests.some((r) => r.trainerId === trainerId && r.status === "pending");
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
       <Link href="/trainers" className="text-sm text-neutral-500 hover:underline">
         ← Find a trainer
       </Link>

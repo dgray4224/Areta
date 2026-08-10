@@ -13,7 +13,7 @@ export default async function BrowseTrainersPage({
   const trainers = await listDiscoverableTrainers({ city, specialty });
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
       <div>
         <h1 className="text-2xl font-semibold">Find a trainer</h1>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
