@@ -1,14 +1,7 @@
 "use client";
 
 import Link from "next/link";
-
-const LOG_LINKS = [
-  { href: "/log/weight", label: "Weight" },
-  { href: "/log/sleep", label: "Sleep" },
-  { href: "/log/nutrition", label: "Food" },
-  { href: "/log/exercise", label: "Exercise" },
-  { href: "/log/learning", label: "Learning" },
-] as const;
+import { LOG_LINKS } from "./nav-links";
 
 export function QuickActionSheet({ onClose }: { onClose: () => void }) {
   return (

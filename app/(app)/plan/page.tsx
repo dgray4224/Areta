@@ -251,7 +251,7 @@ async function WeekView({ userId, requestedWeek }: { userId: string; requestedWe
         )}
       </section>
 
-      <div className="grid max-w-2xl grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Link href="/plan/grocery">
           <Card tone="surface" className="hover:bg-black/[0.02] dark:hover:bg-white/5">
             <p className="text-sm font-medium">Grocery list</p>

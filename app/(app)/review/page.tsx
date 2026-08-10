@@ -32,7 +32,7 @@ export default async function ReviewPage() {
       : null;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
       <div>
         <Link href="/dashboard" className="text-sm text-neutral-500 hover:underline">
           ← Back to dashboard

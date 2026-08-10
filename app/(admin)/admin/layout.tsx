@@ -6,7 +6,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const { adminRole } = await requireAdmin();
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
+    <div className="mx-auto max-w-6xl space-y-6 px-4 py-10">
       <div>
         <Link href="/dashboard" className="text-sm text-neutral-500 hover:underline">
           ← Back to Areta
