@@ -1,5 +1,6 @@
 import { requireUser } from "@/platform/auth/session";
 import { signOut } from "@/platform/auth/actions";
+import { DeleteAccountButton } from "./DeleteAccountButton";
 import { ExportDataButton } from "./ExportDataButton";
 import { RestartOnboardingButton } from "./RestartOnboardingButton";
 
@@ -48,6 +49,14 @@ export default async function AccountSettingsPage() {
             Sign out
           </button>
         </form>
+      </section>
+
+      <section className="border-t border-black/5 pt-6 dark:border-white/5">
+        <h2 className="text-sm font-medium text-red-700 dark:text-red-400">Danger zone</h2>
+        <p className="mt-1 mb-3 text-sm text-neutral-600 dark:text-neutral-400">
+          Permanently delete your account and everything Areta has stored for you.
+        </p>
+        <DeleteAccountButton userId={user.id} />
       </section>
     </div>
   );
