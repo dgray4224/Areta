@@ -31,6 +31,15 @@ export const workScheduleSchema = z.object({
 
 export type WorkScheduleInput = z.infer<typeof workScheduleSchema>;
 
+/** Settings -> Profile avatar upload. Separate from identitySchema, same
+ * split areta-mobile uses (profile.tsx's photo saves immediately on
+ * upload, independent of the rest of the form's Save button). */
+export const avatarUrlSchema = z.object({
+  avatarUrl: z.string().url(),
+});
+
+export type AvatarUrlInput = z.infer<typeof avatarUrlSchema>;
+
 /** 0 = Sunday .. 6 = Saturday, for weekday <select> options. */
 export const WEEKDAYS = [
   { value: 0, label: "Sunday" },

@@ -1,6 +1,6 @@
 "use server";
 
-import { identitySchema, workScheduleSchema } from "@/domains/identity/schema";
+import { avatarUrlSchema, identitySchema, workScheduleSchema } from "@/domains/identity/schema";
 import { saveOnboardingStep } from "@/domains/onboarding/store";
 import { createClient } from "@/platform/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -76,6 +76,63 @@ export async function updateWorkSchedule(userId: string, input: unknown): Promis
     return { ok: false, error: error.message };
   }
   return { ok: true, data: undefined };
+}
+
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+const ALLOWED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/** Settings -> Profile avatar upload. Web counterpart to areta-mobile's
+ * lib/avatar-upload.ts: same fixed `${userId}/avatar.jpg` path with
+ * upsert:true (re-uploading overwrites in place instead of accumulating
+ * orphaned old photos in the `avatars` bucket — migration
+ * 20260809180500), same public-URL-plus-cache-busting-query-string
+ * return shape. Runs server-side (unlike mobile, which uploads directly
+ * from the device) since this app already routes all mutations through
+ * "use server" actions rather than exposing Storage writes to a client
+ * Supabase instance — the server client here still carries the caller's
+ * session cookies, so the bucket's `auth.uid()`-scoped RLS policies
+ * apply exactly as they would to a direct client-side upload. */
+export async function uploadAvatar(userId: string, formData: FormData): Promise<ActionResult<{ avatarUrl: string }>> {
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { ok: false, error: "No file provided" };
+  }
+  if (!ALLOWED_AVATAR_TYPES.has(file.type)) {
+    return { ok: false, error: "Photo must be a JPEG, PNG, or WebP image" };
+  }
+  if (file.size > MAX_AVATAR_BYTES) {
+    return { ok: false, error: "Photo must be smaller than 5MB" };
+  }
+
+  const supabase = await createClient();
+  const path = `${userId}/avatar.jpg`;
+  const { error: uploadError } = await supabase.storage.from("avatars").upload(path, file, {
+    contentType: file.type,
+    upsert: true,
+  });
+  if (uploadError) {
+    return { ok: false, error: `Failed to upload photo: ${uploadError.message}` };
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from("avatars").getPublicUrl(path);
+  const avatarUrl = `${publicUrl}?updated=${Date.now()}`;
+
+  const parsed = avatarUrlSchema.safeParse({ avatarUrl });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid photo URL" };
+  }
+
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({ avatar_url: parsed.data.avatarUrl })
+    .eq("id", userId);
+  if (updateError) {
+    return { ok: false, error: updateError.message };
+  }
+
+  return { ok: true, data: { avatarUrl: parsed.data.avatarUrl } };
 }
 
 /** Creates a bare `profiles` row the first time an authenticated user is
