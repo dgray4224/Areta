@@ -2,15 +2,18 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/platform/auth/session";
 import { createClient } from "@/platform/supabase/server";
-import {
-  SECTIONS,
-  isSectionKey,
-  getActiveSections,
-  getActiveDomainsForSection,
-} from "@/platform/ui/sections";
+import { SECTIONS, isSectionKey, getActiveSections } from "@/platform/ui/sections";
 import { navTabClass } from "../../nav-links";
-import { DomainNav } from "./DomainNav";
 
+/**
+ * DomainNav's Overview/Nutrition/Exercise sub-tab row is gone -- the
+ * consolidated page.tsx renders every active domain inline now, no
+ * per-domain route to link to. The Section-level row above it stays: V1
+ * only has "health" active so it never actually renders more than one
+ * item today, but it's the real multi-section switch for whenever a
+ * second section (Learning, Family, etc.) activates, not "sub tabs" in
+ * the sense that was cut.
+ */
 export default async function DashboardSectionLayout({
   children,
   params,
@@ -33,7 +36,6 @@ export default async function DashboardSectionLayout({
 
   const activeDomainKeys = (domains ?? []).map((d) => d.key);
   const activeSections = getActiveSections(activeDomainKeys);
-  const activeDomains = getActiveDomainsForSection(section, activeDomainKeys);
 
   return (
     <div className="mx-auto max-w-6xl px-4 pt-6">
@@ -48,10 +50,6 @@ export default async function DashboardSectionLayout({
           </Link>
         ))}
       </nav>
-
-      {activeDomains.length > 0 ? (
-        <DomainNav section={section} activeDomains={activeDomains} />
-      ) : null}
 
       <div className="py-6">{children}</div>
     </div>

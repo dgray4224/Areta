@@ -46,7 +46,10 @@ export function Sidebar({ isAdmin, isTrainer }: { isAdmin: boolean; isTrainer: b
   const secondaryLinks = [...(isAdmin ? [ADMIN_LINK] : []), ...(isTrainer ? [COACHING_LINK] : [])];
 
   return (
-    <aside className="hidden shrink-0 flex-col border-r border-black/5 bg-card px-3 py-4 xl:flex xl:w-[86px]" aria-label="Primary">
+    <aside
+      className="sticky top-0 hidden h-screen shrink-0 flex-col overflow-y-auto border-r border-black/5 bg-card px-3 py-4 xl:flex xl:w-[86px]"
+      aria-label="Primary"
+    >
       <Link href="/dashboard" className="mb-6 flex items-center justify-center" aria-label="Areta home">
         <Logo size={28} />
       </Link>
