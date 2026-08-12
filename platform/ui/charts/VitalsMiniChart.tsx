@@ -1,6 +1,6 @@
 "use client";
 
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
+import { Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { useChartColors, type ChartColors } from "./colors";
 import { ChartTooltip } from "./ChartTooltip";
 
@@ -21,10 +21,18 @@ export function VitalsMiniChart({
   data,
   unit,
   seriesKey,
+  targetValue,
+  targetLabel,
 }: {
   data: VitalsSeriesDatum[];
   unit: string;
   seriesKey: keyof Pick<ChartColors, "series1" | "series2" | "series3" | "series4" | "series5">;
+  /** Optional reference line (a goal's target value) -- Recharts'
+   * ReferenceLine, dashed, in the neutral baseline color, never a second
+   * series hue. A target marker is an annotation, not a competing series
+   * (same "recessive grid/axes" call as the mobile MiniLineChart). */
+  targetValue?: number;
+  targetLabel?: string;
 }) {
   const colors = useChartColors();
   const color = colors[seriesKey];
@@ -52,6 +60,14 @@ export function VitalsMiniChart({
           activeDot={{ r: 4, fill: color, strokeWidth: 2, stroke: "var(--background)" }}
           isAnimationActive={false}
         />
+        {targetValue !== undefined ? (
+          <ReferenceLine
+            y={targetValue}
+            stroke={colors.baseline}
+            strokeDasharray="4 3"
+            label={targetLabel ? { value: targetLabel, position: "insideTopRight", fill: colors.textMuted, fontSize: 9 } : undefined}
+          />
+        ) : null}
       </LineChart>
     </ResponsiveContainer>
   );

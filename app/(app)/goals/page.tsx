@@ -78,7 +78,7 @@ export default async function GoalsPage() {
                     </span>
                   ) : null}
                 </div>
-                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-500">
                   {goal.targetDate ? <span>Target: {formatTargetDate(goal.targetDate)}</span> : null}
                   {trajectory && trajectory.weeksRemaining !== null ? (
                     <span>{trajectory.weeksRemaining} weeks left</span>
@@ -86,8 +86,12 @@ export default async function GoalsPage() {
                   {trajectory ? (
                     <span>
                       {trajectory.currentValue} → {trajectory.targetValue}
+                      {trajectory.projectedCompletionDate ? ` (~${formatTargetDate(trajectory.projectedCompletionDate)})` : ""}
                     </span>
                   ) : null}
+                  <Link href={`/goals/${goal.id}/edit`} className="text-brand hover:underline">
+                    {trajectory ? "Edit target" : "Set a target"}
+                  </Link>
                 </div>
               </Card>
             );

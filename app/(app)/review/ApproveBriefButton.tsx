@@ -42,32 +42,27 @@ export function ApproveBriefButton({
     <div className="space-y-4">
       {recommendations.length > 0 ? (
         <section>
-          <h2 className="text-sm font-medium text-neutral-500">Proposed changes</h2>
-          <div className="mt-2 space-y-2">
-            {recommendations.map((r) => (
-              <label
-                key={r.id}
-                className="flex items-start gap-3 rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-800"
-              >
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={!rejected.has(r.id)}
-                  onChange={() => toggle(r.id)}
-                />
-                <div>
-                  <p className="font-medium">
-                    {r.field}
-                    {r.previousValue !== null && r.proposedValue !== null
-                      ? `: ${r.previousValue} → ${r.proposedValue}`
-                      : ""}
-                  </p>
-                  <p className="text-neutral-600 dark:text-neutral-400">{r.reason}</p>
-                </div>
-              </label>
-            ))}
+          <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Proposed changes — tap to reject</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recommendations.map((r) => {
+              const isRejected = rejected.has(r.id);
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => toggle(r.id)}
+                  className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-opacity ${
+                    isRejected
+                      ? "border-neutral-300 text-neutral-400 opacity-50 dark:border-neutral-700"
+                      : "border-brand text-neutral-900 dark:text-neutral-100"
+                  }`}
+                  title={r.reason}
+                >
+                  {r.field}
+                </button>
+              );
+            })}
           </div>
-          <p className="mt-1 text-xs text-neutral-400">Uncheck anything you don&apos;t want.</p>
         </section>
       ) : null}
 

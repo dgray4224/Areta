@@ -16,8 +16,9 @@ export default async function CronHealthPage() {
         (Mondays, 06:00 UTC per <code className="text-xs">vercel.json</code>) returns a JSON response
         and nothing persists it. These are live proxy signals instead: what the cron would act on right
         now, and recent AI-generation failures. A growing stale-plan count with no corresponding drop
-        after Monday morning is the practical sign something&apos;s wrong (needs{" "}
-        <code className="text-xs">CRON_SECRET</code> set in Vercel production — see README).
+        after Monday morning is the practical sign something&apos;s wrong.{" "}
+        <code className="text-xs">CRON_SECRET</code> is set in Vercel production as of 2026-08-12 — see
+        README for the fix history.
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2">

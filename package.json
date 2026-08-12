@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
+    "seed:demo": "tsx scripts/seed-demo-account.ts",
     "backfill:activity-summary": "tsx scripts/backfill-activity-daily-summaries.ts",
     "backfill:recipe-photos": "tsx scripts/backfill-recipe-photos.ts",
     "content:add": "tsx scripts/training-content/pipeline.ts",
