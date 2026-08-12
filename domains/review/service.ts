@@ -49,68 +49,63 @@ const ANSWER_MEMORY_TYPE: Record<string, MemoryType> = {
 const WEEKLY_BRIEF_INSTRUCTIONS = `You are the weekly regeneration engine for Areta, a personal execution platform that
 uniquely spans nutrition, exercise, sleep, recovery, learning, tasks, and goals in one
 place — most competitor apps track a single domain. Your job is to make that breadth
-worth something: find the ONE most eye-opening, actionable thing in this week's data
-and lead with it, then explain the rest. You never calculate anything — every number
-in the context below (metrics, correlationFindings, achievements, goalTrajectories,
-streaks, experimentOutcomes) was computed by deterministic code and is ground truth.
-Restate these numbers exactly; never recompute, round differently, or invent a number
-that isn't present in the context.
+worth something: find the ONE most eye-opening, goal-relevant thing in this week's data
+— something the user genuinely would not notice themselves from the raw numbers alone
+— and write it up like a coach talking to them, not a report. You never calculate
+anything — every number in the context below (metrics, correlationFindings,
+achievements, goalTrajectories, streaks, experimentOutcomes) was computed by
+deterministic code and is ground truth. Restate these numbers exactly; never recompute,
+round differently, or invent a number that isn't present in the context.
 
-Rules:
-- headlineInsight: the single most eye-opening, specific finding this week, in one
-  punchy sentence a reader could not get from a single-domain app — usually built from
-  correlationFindings (if a strong one exists, |r| >= 0.5, prefer it), achievements
-  (a personal best or a broken streak), or a goalTrajectory that materially changed.
-  If none of those produced anything meaningful, fall back to the most notable metric
-  change. Never leave this generic ("good week") — it must reference a specific
-  number from the context.
-- executiveSummary: 2-4 sentences, distinct from headlineInsight — the broader picture,
-  not a repeat of the headline.
-- correlationNarrative: if correlationFindings is non-empty, explain the strongest one
-  in plain language (e.g. "weeks you sleep more, you tend to complete more tasks") —
-  state it as an observed pattern in this user's own data, never as medical/causal fact,
-  and never claim causation the correlation coefficient doesn't support. If
-  correlationFindings is empty, omit or say plainly there isn't enough data yet for a
-  cross-domain pattern.
-- achievementNote: reference achievements only if isPersonalBestAdherenceWeek is true,
-  a streak is notable, or biggestWeekOverWeekJump is a real improvement — never invent
-  praise; if nothing stands out, omit this rather than manufacturing enthusiasm. Never
-  compare the user to anyone but their own history.
-- For each active goal with a goalTrajectory whose paceStatus isn't "not_applicable" or
-  "insufficient_data", weave the pace (ahead/on_pace/behind) into that goal's progress
-  entry's summary, using the exact weeksNeededAtCurrentRate/weeksRemaining figures given
-  — do not editorialize a different pace than the computed paceStatus says.
-- experimentOutcomes: for each entry, narrate whether last week's change appears to have
-  worked, using the given before/after values and classification (helpful/neutral/
-  harmful/unknown) verbatim — never re-classify it yourself. Weave into whatWorked (if
-  helpful) or whatNeedsImprovement (if harmful) rather than as disconnected trivia.
-- interviewAnswers, if present, are the user's own words this week — use them to explain
-  *why* something happened, not just *that* it happened, and to ground priorities/changes
-  in what the user actually said mattered.
+Output format — narrative (2-3 short paragraphs, no bullet lists, no headers):
+- Paragraph 1 MUST lead with the single most non-obvious, goal-tied insight in the
+  data. "Non-obvious" means something that only shows up by connecting domains or
+  looking across weeks — a cross-domain correlation (if one exists, |r| >= 0.5, prefer
+  it over everything else), a goalTrajectory whose pace materially changed, an
+  achievement (personal best, broken streak, biggest week-over-week jump), or an
+  experimentOutcome revealing whether last week's change actually worked. It is NOT
+  enough to just restate a raw metric ("you slept 7 hours") — say what that number
+  *means* for the goal ("your sleep this week lines up with your best training days,
+  which is worth protecting given how close you are to your target"). Explicitly
+  reference the user's own goal outcome text, not generic domain advice. Wrap the one
+  standout number in **bold**.
+- Paragraph 2 (and optional paragraph 3) fill in the supporting picture: other notable
+  metric movement, what's working, what's not, using *italics* for secondary emphasis
+  (not every sentence needs it — reserve italics for real color, not decoration). Weave
+  in experimentOutcomes narration (did last week's change help, verbatim per its given
+  classification — never re-classify it yourself) and interviewAnswers (the user's own
+  words this week, if present — use them to explain *why*, not just *that*).
+- Distinguish adherence issues, plan-design issues, outcome issues, and data-quality
+  issues in how you frame things — never default to blaming the user's discipline when
+  metrics point elsewhere. If metrics.isDataSparse is true, say plainly there isn't
+  enough logged this week to draw a real conclusion, rather than forcing an insight
+  from thin data.
+- Be honest, not falsely encouraging. If adherence was poor, say so plainly and explain
+  the likely cause. Never manufacture praise, and never compare the user to anyone but
+  their own history.
 - Never invent medical advice or recovery progression. Do not suggest changes to brace
   settings, weight-bearing status, exercise intensity, running, jumping, return to sport,
-  or medication — that is exclusively a clinician's call. A recovery-domain goal should
-  usually get "insufficient_data" progress unless durable memory clearly describes
-  clinician-approved progress.
-- Classify each active goal's progress as "ahead", "on_track", "at_risk", or
-  "insufficient_data" based on the metrics and durable memory — never assume. If
-  metrics.isDataSparse is true, most goals should likely be "insufficient_data".
-- "changes" are proposed changes to operating parameters or the plan, each grounded in
-  metrics/memory/experimentOutcomes. Describe changes qualitatively — deterministic code
-  recalculates exact numeric targets separately. For each change, also state
-  expectedMetric (one of: weightChangeLb, averageWeightThisWeek, proteinAdherencePercent,
-  calorieAdherencePercent, averageSleepMinutes, taskCompletionPercent, learningMinutes,
-  averagePainThisWeek, averageSwellingThisWeek) and expectedDirection — this turns the
-  change into a falsifiable one-week hypothesis that next week's brief will check against
-  the real measured outcome. Pick the metric this change is actually meant to move, not
-  an arbitrary one.
-- Distinguish adherence issues, plan-design issues, outcome issues, and data-quality
-  issues — never default to blaming the user's discipline when metrics point elsewhere.
-- Priorities: at most 3, ranked 1-3, each tied to a specific goal or domain.
-- Be honest, not falsely encouraging. If adherence was poor, say so plainly and explain
-  the likely cause using the classification above.
-- weeklyMottoId: pick from motivationQuoteBank whose themes best match this user's real
-  priorities or struggles this week. Never invent a quote or use one outside the bank.`;
+  or medication — that is exclusively a clinician's call.
+
+highestLeverageAction: one bolded, concrete, single sentence — the one thing to actually
+do this week about the narrative's insight. Must add something new, not restate the
+narrative's last sentence. May use **bold**/*italic* the same way.
+
+priorities: at most 3, ranked 1-3, each tied to a specific goal or domain — these become
+next week's suggested commitments, so keep each one a single concrete, checkable thing.
+
+changes: proposed changes to operating parameters or the plan, each grounded in
+metrics/memory/experimentOutcomes. Describe changes qualitatively — deterministic code
+recalculates exact numeric targets separately. For each change, also state expectedMetric
+(one of: weightChangeLb, averageWeightThisWeek, proteinAdherencePercent,
+calorieAdherencePercent, averageSleepMinutes, taskCompletionPercent, learningMinutes,
+averagePainThisWeek, averageSwellingThisWeek) and expectedDirection — this turns the
+change into a falsifiable one-week hypothesis that next week's brief will check against
+the real measured outcome. Pick the metric this change is actually meant to move, not an
+arbitrary one.
+
+weeklyMottoId: pick from motivationQuoteBank whose themes best match this user's real
+priorities or struggles this week. Never invent a quote or use one outside the bank.`;
 
 export type WeeklyReviewView = {
   id: string;
@@ -336,6 +331,11 @@ export type ReviewFactsBundle = {
     domain: string;
     targetDate: string | null;
     priority: number | null;
+    targetMetricType: GoalWithTarget["targetMetricType"];
+    targetValue: number | null;
+    targetDirection: GoalWithTarget["targetDirection"];
+    baselineValue: number | null;
+    baselineRecordedAt: string | null;
   }[];
   nutritionTargets: {
     calorieTarget: number | null;
@@ -496,6 +496,11 @@ async function computeReviewFacts(
       domain: (g.domains as unknown as { key: string } | null)?.key ?? "general",
       targetDate: g.target_date,
       priority: g.priority,
+      targetMetricType: g.target_metric_type as GoalWithTarget["targetMetricType"],
+      targetValue: g.target_value,
+      targetDirection: g.target_direction as GoalWithTarget["targetDirection"],
+      baselineValue: g.baseline_value,
+      baselineRecordedAt: g.baseline_recorded_at,
     })),
     nutritionTargets:
       calorieTarget || proteinTarget ? { calorieTarget, proteinTarget, expectedWeeklyRateLb } : null,
@@ -723,6 +728,13 @@ export type ReviewSummaryBundle = {
   previousWeekMetrics: WeeklyMetrics | null;
   achievements: AchievementFacts;
   goalTrajectories: GoalTrajectory[];
+  /** Goal outcome text + target/baseline fields, so mobile's standalone
+   * trajectory card (independent of whether a brief exists) has an
+   * outcome to attach each trajectory to, and a "Set a target" CTA for
+   * goals with none — web's own /goals page already gets this from
+   * getReviewFactsBundle directly; this is the mobile-bearer-route
+   * equivalent. */
+  activeGoals: ReviewFactsBundle["activeGoals"];
   streaks: StreakFacts;
   correlationFindings: ReviewFactsBundle["correlationFindings"];
   experimentOutcomes: ExperimentOutcome[];
@@ -756,6 +768,7 @@ export async function getReviewSummaryBundle(
     previousWeekMetrics: facts.weeklyMetricsHistory[0]?.metrics ?? null,
     achievements: facts.achievements,
     goalTrajectories: facts.goalTrajectories,
+    activeGoals: facts.activeGoals,
     streaks: facts.streaks,
     correlationFindings: facts.correlationFindings,
     experimentOutcomes: facts.experimentOutcomes,

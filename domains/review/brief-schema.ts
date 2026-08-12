@@ -12,35 +12,27 @@ import { EXPECTED_METRIC_KEYS } from "@/domains/review/experiments";
  * Recovery plan, learning plan, appointments, and daily schedule
  * generation aren't built yet — see README known gaps.
  *
- * v2: adds headlineInsight/correlationNarrative/achievementNote (the
- * "eye-opening, cross-domain, self-referential" engine redesign) and
- * expectedMetric/expectedDirection on each proposed change (closed-loop
- * experiment tracking, CLAUDE.md §8) — see this feature's plan doc.
+ * v3 (2026-08-12): collapsed from 8 separate structured fields
+ * (headlineInsight/executiveSummary/correlationNarrative/achievementNote/
+ * whatWorked/whatNeedsImprovement/progress/risks) down to `narrative` --
+ * flowing paragraph prose reads as a coach talking to you, not a stitched-
+ * together report. Verified before cutting each field that nothing outside
+ * the UI reads it: only `priorities` (rolls into next week's
+ * weekly_outcomes, domains/review/approve-flow.ts) and `changes` (creates
+ * `recommendations` rows, domains/review/service.ts) are load-bearing --
+ * everything else was pure display, safe to fold into prose.
  */
 export const weeklyBriefSchema = z.object({
-  /** The single most eye-opening, specific finding this week — rendered
-   * as the hero/lead, ahead of executiveSummary. Required (not optional)
-   * so forced tool-use can't silently omit it the way an optional field
-   * sometimes does. */
-  headlineInsight: z.string(),
-  executiveSummary: z.string(),
-  /** Plain-language read of the strongest cross-domain correlation found
-   * in this user's own multi-week history, or null if none was strong
-   * enough to report (never invent one). */
-  correlationNarrative: z.string().nullable(),
-  /** Personal-best / streak / biggest-jump framing, or null if nothing
-   * genuinely stands out this week (never manufacture praise). */
-  achievementNote: z.string().nullable(),
-  whatWorked: z.array(z.string()),
-  whatNeedsImprovement: z.array(z.string()),
-  progress: z.array(
-    z.object({
-      goalId: z.string(),
-      status: z.enum(["ahead", "on_track", "at_risk", "insufficient_data"]),
-      summary: z.string(),
-      evidence: z.array(z.string()),
-    })
-  ),
+  /** 2-3 short paragraphs of flowing prose, no bullet lists. Supports a
+   * markdown-lite subset only: **bold** for the one standout number/
+   * finding per paragraph, *italic* for secondary emphasis -- rendered by
+   * platform/ui/RichText.tsx (web) / lib/ui/RichText.tsx (mobile), which
+   * only parse those two markers. Paragraph 1 must lead with the single
+   * most non-obvious, goal-tied insight in the data (see
+   * WEEKLY_BRIEF_INSTRUCTIONS for exactly what "non-obvious" means here).
+   * Required min 2 (not optional/nullable) so forced tool-use can't
+   * silently collapse this to nothing. */
+  narrative: z.array(z.string()).min(2).max(3),
   priorities: z
     .array(
       z.object({
@@ -71,13 +63,10 @@ export const weeklyBriefSchema = z.object({
       expectedDirection: z.enum(["increase", "decrease", "improve", "stabilize"]).optional(),
     })
   ),
-  risks: z.array(
-    z.object({
-      description: z.string(),
-      severity: z.enum(["low", "medium", "high"]),
-      mitigation: z.string(),
-    })
-  ),
+  /** One bolded-in-UI capstone sentence — the single concrete thing to do
+   * about the narrative's insight. Must add something beyond the last
+   * narrative paragraph, not restate it. May use the same bold/italic
+   * markdown-lite markers as `narrative`. */
   highestLeverageAction: z.string(),
   /** An id from the curated MOTIVATION_QUOTES bank (domains/motivation/quotes.ts)
    * — the model selects, it never generates the quote text itself, so a

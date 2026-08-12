@@ -7,8 +7,9 @@ export type TargetMetricType = GoalTargetMetricType;
  * it tracks. `weight_lb` maps to `averageWeightThisWeek` (an absolute
  * level, comparable to a target weight) rather than `weightChangeLb`
  * (already a week's delta, not a level a target value can be compared
- * against). */
-const METRIC_FIELD: Record<TargetMetricType, keyof WeeklyMetrics> = {
+ * against). Exported so `domains/goals/baseline.ts#captureGoalBaseline`
+ * reuses the exact same mapping rather than redeclaring it. */
+export const METRIC_FIELD: Record<TargetMetricType, keyof WeeklyMetrics> = {
   weight_lb: "averageWeightThisWeek",
   calorie_adherence_pct: "calorieAdherencePercent",
   protein_adherence_pct: "proteinAdherencePercent",
@@ -36,6 +37,10 @@ export type GoalTrajectory = {
   weeksRemaining: number | null;
   projectedWeeksNeeded: number | null;
   paceStatus: PaceStatus;
+  /** Calendar-date ETA derived from the latest data point + projectedWeeksNeeded
+   * — null whenever projectedWeeksNeeded itself is null (insufficient data, or
+   * a flat/negative rate with no honest projection to give). Never fabricated. */
+  projectedCompletionDate: string | null;
 };
 
 const MIN_DATA_POINTS = 3;
@@ -44,6 +49,14 @@ const MS_PER_WEEK = MS_PER_DAY * 7;
 
 function weeksBetween(earlier: string, later: string): number {
   return (new Date(`${later}T00:00:00Z`).getTime() - new Date(`${earlier}T00:00:00Z`).getTime()) / MS_PER_WEEK;
+}
+
+/** `dateIso` shifted forward by `weeks` (fractional weeks allowed), as a
+ * YYYY-MM-DD string. Same UTC-based convention as `weeksBetween` above and
+ * `platform/ui/week-dates.ts`'s `addDays`, so date math never drifts across
+ * a DST boundary the way local-time arithmetic could. */
+function addWeeks(dateIso: string, weeks: number): string {
+  return new Date(new Date(`${dateIso}T00:00:00Z`).getTime() + weeks * MS_PER_WEEK).toISOString().slice(0, 10);
 }
 
 /**
@@ -87,6 +100,7 @@ export function computeGoalTrajectories(
           weeksRemaining: null,
           projectedWeeksNeeded: null,
           paceStatus: "insufficient_data",
+          projectedCompletionDate: null,
         };
       }
 
@@ -107,6 +121,7 @@ export function computeGoalTrajectories(
           weeksRemaining: goal.targetDate ? Math.max(0, weeksBetween(latest.at, goal.targetDate)) : null,
           projectedWeeksNeeded: 0,
           paceStatus: "ahead",
+          projectedCompletionDate: latest.at,
         };
       }
 
@@ -119,6 +134,7 @@ export function computeGoalTrajectories(
           weeksRemaining: null,
           projectedWeeksNeeded: null,
           paceStatus: "insufficient_data",
+          projectedCompletionDate: null,
         };
       }
 
@@ -138,11 +154,13 @@ export function computeGoalTrajectories(
           weeksRemaining: goal.targetDate ? Math.max(0, weeksBetween(latest.at, goal.targetDate)) : null,
           projectedWeeksNeeded: null,
           paceStatus: "behind",
+          projectedCompletionDate: null,
         };
       }
 
       const remainingGap = Math.abs(targetValue - currentValue);
       const projectedWeeksNeeded = Math.round((remainingGap / progressRatePerWeek) * 10) / 10;
+      const projectedCompletionDate = addWeeks(latest.at, projectedWeeksNeeded);
 
       if (!goal.targetDate) {
         return {
@@ -153,12 +171,22 @@ export function computeGoalTrajectories(
           weeksRemaining: null,
           projectedWeeksNeeded,
           paceStatus: "on_pace",
+          projectedCompletionDate,
         };
       }
 
       const weeksRemaining = Math.round(weeksBetween(latest.at, goal.targetDate) * 10) / 10;
       const paceStatus: PaceStatus = projectedWeeksNeeded <= weeksRemaining ? "ahead" : "behind";
 
-      return { goalId: goal.id, metricType, currentValue, targetValue, weeksRemaining, projectedWeeksNeeded, paceStatus };
+      return {
+        goalId: goal.id,
+        metricType,
+        currentValue,
+        targetValue,
+        weeksRemaining,
+        projectedWeeksNeeded,
+        paceStatus,
+        projectedCompletionDate,
+      };
     });
 }

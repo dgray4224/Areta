@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OnboardingOutput, OnboardingResponses } from "@/domains/onboarding/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { DOMAIN_LABELS } from "@/domains/goals/schema";
+import { captureGoalBaseline } from "@/domains/goals/baseline";
 
 /**
  * No `next/headers` or `server-only` imports here on purpose: this module
@@ -78,6 +79,17 @@ export async function writeOnboardingOutput(
     // that's the one downstream consumer (generateNutritionParameters) that
     // looks up a goal's target date via its linked domain today.
     const domainLookupKey = goal.domainKey === "health" ? "nutrition" : goal.domainKey;
+
+    // Goal-trajectory target (all three optional, set together by the Goals
+    // step's UI). A brand-new onboarding user usually has no history yet to
+    // sample a baseline from (captureGoalBaseline returns null gracefully in
+    // that case, and trajectory.ts falls back to the first available
+    // weekly_reviews history point instead) -- but a re-run of onboarding's
+    // Goals step, or a companion-app HealthKit weight sync that landed
+    // pre-onboarding, can have real data already, so it's always worth a
+    // real attempt rather than hardcoding null.
+    const baseline = goal.targetMetricType ? await captureGoalBaseline(supabase, userId, goal.targetMetricType) : null;
+
     const { data, error } = await supabase
       .from("goals")
       .insert({
@@ -92,14 +104,11 @@ export async function writeOnboardingOutput(
         priority: goal.priority,
         confidence: goal.confidence,
         known_obstacles: goal.knownObstacles ?? null,
-        // Goal-trajectory target (all three optional, set together by the
-        // Goals step's UI) — baseline_value/baseline_recorded_at are left
-        // null here since a brand-new onboarding user has no logged
-        // history yet to sample a baseline from; trajectory.ts falls back
-        // to the first available weekly_reviews history point instead.
         target_metric_type: goal.targetMetricType ?? null,
         target_value: goal.targetValue ?? null,
         target_direction: goal.targetDirection ?? null,
+        baseline_value: baseline?.value ?? null,
+        baseline_recorded_at: baseline?.recordedAt ?? null,
       })
       .select("id, outcome")
       .single();

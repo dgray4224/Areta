@@ -97,3 +97,25 @@ export const goalsStepSchema = z.object({
 
 export type Goal = z.infer<typeof goalSchema>;
 export type GoalsStepInput = z.infer<typeof goalsStepSchema>;
+
+/** Post-onboarding goal-target set/edit flow (domains/goals/service.ts's
+ * setGoalTarget). Mirrors goalSchema's target fields, but enforces the
+ * "all three together, or all three cleared" rule server-side — unlike
+ * the onboarding form, a direct API caller isn't bound by client-side UI
+ * validation. */
+export const goalTargetSchema = z
+  .object({
+    targetMetricType: z.enum(GOAL_TARGET_METRIC_TYPES).nullable(),
+    targetValue: z.number().nullable(),
+    targetDirection: z.enum(["increase", "decrease"]).nullable(),
+  })
+  .refine(
+    (data) => {
+      const allSet = data.targetMetricType !== null && data.targetValue !== null && data.targetDirection !== null;
+      const allNull = data.targetMetricType === null && data.targetValue === null && data.targetDirection === null;
+      return allSet || allNull;
+    },
+    { message: "Set a metric, value, and direction together, or clear all three." }
+  );
+
+export type GoalTargetInput = z.infer<typeof goalTargetSchema>;
