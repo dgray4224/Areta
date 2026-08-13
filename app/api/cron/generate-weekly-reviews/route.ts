@@ -3,7 +3,7 @@ import { getServerEnv } from "@/platform/env.server";
 import { createAdminClient } from "@/platform/supabase/admin";
 import { localDateString } from "@/domains/activity-summary/timezone";
 import { getOrCreateWeeklyReview, generateWeeklyBrief } from "@/domains/review/service";
-import { sendPushToUser } from "@/platform/push/send";
+import { sendPushToUsers } from "@/platform/push/send";
 
 /**
  * Daily cron (see vercel.json): generates each user's weekly brief
@@ -69,13 +69,6 @@ export async function GET(request: NextRequest) {
       }
       const result = await generateWeeklyBrief(userId, supabase);
       if (!result.ok) throw new Error(result.error);
-      // Best-effort, never blocks/fails the cron result itself -- see
-      // sendPushToUser's own doc comment.
-      await sendPushToUser(
-        userId,
-        { title: "Your weekly review is ready", body: "See how this week went and what's next.", screen: "review" },
-        supabase
-      );
       return { userId, skipped: false as const };
     })
   );
@@ -83,6 +76,7 @@ export async function GET(request: NextRequest) {
   let generated = 0;
   let alreadyDone = 0;
   const failures: { userId: string; error: string }[] = [];
+  const newlyGeneratedUserIds: string[] = [];
   results.forEach((r, i) => {
     if (r.status === "rejected") {
       failures.push({ userId: dueUserIds[i], error: String(r.reason) });
@@ -90,8 +84,23 @@ export async function GET(request: NextRequest) {
       alreadyDone++;
     } else {
       generated++;
+      newlyGeneratedUserIds.push(r.value.userId);
     }
   });
+
+  // Batched across every user due today rather than one Expo API request
+  // per user (see sendPushToUsers' own doc comment) -- best-effort, never
+  // blocks/fails the cron result itself, so this runs after (not inside)
+  // the generation loop above.
+  await sendPushToUsers(
+    newlyGeneratedUserIds.map((userId) => ({
+      userId,
+      title: "Your weekly review is ready",
+      body: "See how this week went and what's next.",
+      screen: "review" as const,
+    })),
+    supabase
+  );
 
   return NextResponse.json({ checked: dueUserIds.length, generated, alreadyDone, failures });
 }
