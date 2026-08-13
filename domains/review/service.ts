@@ -126,6 +126,9 @@ async function fetchMetrics(
   const [
     { data: weightLogsRaw },
     { data: sleepLogs },
+    { data: restingHeartRateLogs },
+    { data: heartRateVariabilityLogs },
+    { data: vo2MaxLogs },
     { data: nutritionLogs },
     { data: recoveryLogs },
     { data: studySessions },
@@ -145,6 +148,30 @@ async function fetchMetrics(
       .select("value")
       .eq("user_id", userId)
       .eq("metric_type", "sleep")
+      .gte("started_at", `${weekStart}T00:00:00.000Z`)
+      .lte("started_at", `${weekEnd}T23:59:59.999Z`),
+    // Phase 4 of the enhancement roadmap (2026-08-13) -- the three
+    // vitals CANDIDATE_PAIRS in domains/review/correlations.ts actually
+    // reference. Same query shape as the sleep query above, one per type.
+    supabase
+      .from("health_metrics")
+      .select("value")
+      .eq("user_id", userId)
+      .eq("metric_type", "resting_heart_rate")
+      .gte("started_at", `${weekStart}T00:00:00.000Z`)
+      .lte("started_at", `${weekEnd}T23:59:59.999Z`),
+    supabase
+      .from("health_metrics")
+      .select("value")
+      .eq("user_id", userId)
+      .eq("metric_type", "heart_rate_variability")
+      .gte("started_at", `${weekStart}T00:00:00.000Z`)
+      .lte("started_at", `${weekEnd}T23:59:59.999Z`),
+    supabase
+      .from("health_metrics")
+      .select("value")
+      .eq("user_id", userId)
+      .eq("metric_type", "vo2_max")
       .gte("started_at", `${weekStart}T00:00:00.000Z`)
       .lte("started_at", `${weekEnd}T23:59:59.999Z`),
     supabase
@@ -185,6 +212,11 @@ async function fetchMetrics(
     weekStart,
     weightLogs,
     sleepLogs: (sleepLogs ?? []).map((s) => ({ totalDurationMinutes: s.value != null ? Number(s.value) : null })),
+    restingHeartRateLogs: (restingHeartRateLogs ?? []).map((r) => ({ value: r.value != null ? Number(r.value) : null })),
+    heartRateVariabilityLogs: (heartRateVariabilityLogs ?? []).map((r) => ({
+      value: r.value != null ? Number(r.value) : null,
+    })),
+    vo2MaxLogs: (vo2MaxLogs ?? []).map((r) => ({ value: r.value != null ? Number(r.value) : null })),
     nutritionLogs: (nutritionLogs ?? []).map((n) => ({
       date: n.date,
       calories: n.calories,

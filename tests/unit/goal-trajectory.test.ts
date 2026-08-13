@@ -33,6 +33,9 @@ function metricsWeek(overrides: Partial<WeeklyMetrics> = {}): WeeklyMetrics {
     taskCompletionPercent: null,
     missedTaskReasons: [],
     isDataSparse: false,
+    averageRestingHeartRate: null,
+    averageHeartRateVariability: null,
+    averageVo2Max: null,
     ...overrides,
   };
 }

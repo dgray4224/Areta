@@ -13,6 +13,14 @@ const CANDIDATE_PAIRS: readonly [keyof WeeklyMetrics, keyof WeeklyMetrics][] = [
   ["learningMinutes", "taskCompletionPercent"],
   ["taskCompletionPercent", "weightChangeLb"],
   ["learningMinutes", "averageSleepMinutes"],
+  // Phase 4 of the enhancement roadmap (2026-08-13) -- the first pairs to
+  // use HealthKit vitals (averageRestingHeartRate/
+  // averageHeartRateVariability/averageVo2Max, see metrics.ts) rather
+  // than only self-reported logging. HRV-vs-sleep is a well-established
+  // real relationship; resting-HR-vs-adherence is a reasonable proxy for
+  // "fatigue/stress affects follow-through."
+  ["averageHeartRateVariability", "averageSleepMinutes"],
+  ["averageRestingHeartRate", "taskCompletionPercent"],
 ];
 
 /** Below this many paired (both-non-null) weeks, a correlation coefficient

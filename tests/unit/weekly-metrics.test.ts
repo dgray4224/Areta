@@ -12,6 +12,9 @@ function baseInput(overrides: Partial<WeeklyMetricsInput> = {}): WeeklyMetricsIn
     tasks: [],
     calorieTarget: null,
     proteinTarget: null,
+    restingHeartRateLogs: [],
+    heartRateVariabilityLogs: [],
+    vo2MaxLogs: [],
     ...overrides,
   };
 }
@@ -103,6 +106,19 @@ describe("computeWeeklyMetrics", () => {
       })
     );
     expect(result.averageSleepMinutes).toBe(450);
+  });
+
+  it("averages weekly HealthKit vitals, ignoring null samples", () => {
+    const result = computeWeeklyMetrics(
+      baseInput({
+        restingHeartRateLogs: [{ value: 58 }, { value: 62 }],
+        heartRateVariabilityLogs: [{ value: null }],
+        vo2MaxLogs: [],
+      })
+    );
+    expect(result.averageRestingHeartRate).toBe(60);
+    expect(result.averageHeartRateVariability).toBeNull();
+    expect(result.averageVo2Max).toBeNull();
   });
 
   it("classifies pain/swelling trends from first-half vs second-half averages", () => {

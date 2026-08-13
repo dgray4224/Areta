@@ -11,6 +11,15 @@ export type WeeklyMetricsInput = {
   tasks: { status: TaskStatus; skipReason: string | null }[];
   calorieTarget: number | null;
   proteinTarget: number | null;
+  /** Weekly HealthKit vitals (Phase 4 of the enhancement roadmap,
+   * 2026-08-13) — feeds domains/review/correlations.ts's CANDIDATE_PAIRS,
+   * the same reason averagePainThisWeek/averageSwellingThisWeek exist
+   * alongside their categorical trend labels above. Each array is
+   * whatever samples landed in health_metrics for that type this week;
+   * simple average, no special weighting. */
+  restingHeartRateLogs: { value: number | null }[];
+  heartRateVariabilityLogs: { value: number | null }[];
+  vo2MaxLogs: { value: number | null }[];
 };
 
 export type Trend = "improving" | "worsening" | "stable" | "insufficient_data";
@@ -38,6 +47,11 @@ export type WeeklyMetrics = {
    * — CLAUDE.md's "data-quality issue" classification should win over
    * "adherence issue" whenever this is true. */
   isDataSparse: boolean;
+  /** Phase 4 of the enhancement roadmap (2026-08-13) — see
+   * WeeklyMetricsInput's matching fields. */
+  averageRestingHeartRate: number | null;
+  averageHeartRateVariability: number | null;
+  averageVo2Max: number | null;
 };
 
 function average(values: number[]): number | null {
@@ -115,6 +129,14 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
     .filter((m): m is number => m !== null);
   const averageSleepMinutes = sleepDurations.length > 0 ? Math.round(average(sleepDurations)!) : null;
 
+  const vitalsAverage = (logs: { value: number | null }[]): number | null => {
+    const values = logs.map((l) => l.value).filter((v): v is number => v !== null);
+    return values.length > 0 ? round1(average(values)!) : null;
+  };
+  const averageRestingHeartRate = vitalsAverage(input.restingHeartRateLogs);
+  const averageHeartRateVariability = vitalsAverage(input.heartRateVariabilityLogs);
+  const averageVo2Max = vitalsAverage(input.vo2MaxLogs);
+
   const recoveryLoggingDays = new Set(input.recoveryLogs.map((r) => r.date)).size;
   // Trend direction depends on chronological order, which the caller isn't
   // guaranteed to provide (a plain date-range query has no defined row
@@ -168,5 +190,8 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
     taskCompletionPercent,
     missedTaskReasons,
     isDataSparse: loggedDayCount < 3,
+    averageRestingHeartRate,
+    averageHeartRateVariability,
+    averageVo2Max,
   };
 }
