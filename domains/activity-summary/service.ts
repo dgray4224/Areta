@@ -10,9 +10,43 @@ import { aggregateActivityDailySummary } from "@/domains/activity-summary/aggreg
 
 const DEFAULT_TIMEZONE = "UTC";
 
+// Per-client memoization (2026-08-13, found via code review of
+// insertImportedHealthMetric's new day-level override guard): a
+// HealthKit sync batch calls resolveTimezone once per sample via
+// Promise.all in app/api/health-sync/route.ts, re-querying the same
+// user's profiles.time_zone hundreds of times for one request. Keyed by
+// the supabase client instance (WeakMap, so it's GC'd with the request)
+// rather than a module-level cache -- safe *only* because every caller
+// in this codebase creates a fresh client per request/invocation
+// (createClient()/createAdminClient() called inside each route handler,
+// never a long-lived singleton reused across unrelated requests). The
+// promise itself is cached, not just its result, so concurrent calls
+// for the same user within one Promise.all also collapse into a single
+// query rather than each firing before the first resolves.
+const timezoneCache = new WeakMap<SupabaseClient<Database>, Map<string, Promise<string>>>();
+
 export async function resolveTimezone(supabase: SupabaseClient<Database>, userId: string): Promise<string> {
-  const { data: profile } = await supabase.from("profiles").select("time_zone").eq("id", userId).maybeSingle();
-  return profile?.time_zone ?? DEFAULT_TIMEZONE;
+  let perClient = timezoneCache.get(supabase);
+  if (!perClient) {
+    perClient = new Map();
+    timezoneCache.set(supabase, perClient);
+  }
+  let cached = perClient.get(userId);
+  if (!cached) {
+    // Promise.resolve(...) -- Supabase's query builder is thenable but
+    // not a real Promise instance (no .catch/.finally), which the Map's
+    // Promise<string> value type requires.
+    cached = Promise.resolve(
+      supabase
+        .from("profiles")
+        .select("time_zone")
+        .eq("id", userId)
+        .maybeSingle()
+        .then(({ data }) => data?.time_zone ?? DEFAULT_TIMEZONE)
+    );
+    perClient.set(userId, cached);
+  }
+  return cached;
 }
 
 /** This user's current local calendar day (YYYY-MM-DD), per

@@ -2,10 +2,17 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isOlderThanHealthImportRetentionWindow } from "@/platform/health/retention";
-import { resolveTimezone } from "@/domains/activity-summary/service";
-import { localDateString } from "@/domains/activity-summary/timezone";
+import { resolveTimezone, recomputeActivityDailySummaryForInstant } from "@/domains/activity-summary/service";
+import { localDateString, localDayUtcRange } from "@/domains/activity-summary/timezone";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
+
+// activity_daily_summaries only actually tracks these four metric types
+// (weight_first/last, sleep_duration, steps_total, heart_rate_avg_bpm) --
+// recomputing it for e.g. a VO2 max correction would be a guaranteed
+// no-op, so upsertManualHealthMetricOverride only pays for the recompute
+// when it can matter.
+const ACTIVITY_SUMMARY_METRIC_TYPES = new Set<MetricType>(["weight", "sleep", "steps", "heart_rate"]);
 
 /** Every HealthKit-sourced (or manually entered) metric shares one table,
  * health_metrics, discriminated by metric_type. See the create_health_metrics
@@ -95,18 +102,21 @@ export async function insertManualHealthMetric(
 /**
  * A user-initiated correction for one metric/day (Phase 3 of the
  * enhancement roadmap, 2026-08-13) — collapses that whole day to this one
- * value and protects it from future re-import. Upserts on a synthetic
- * `manual-override-{day}` dedup_key so editing the same day again updates
- * the same row rather than accumulating duplicates, and sets
- * `user_override`/`override_day` so insertImportedHealthMetric's
- * day-level guard (below) blocks any HealthKit re-sync for that day going
- * forward. Deliberately day-granularity, not per-sample: a manual
- * correction is a statement about "what actually happened that day," and
- * HealthKit's own per-sample dedup_key has no way to express that (see the
- * README's originally-flagged "manual correction can be silently
- * overwritten" gap — the missing piece was always this write path, not
- * the read-side guard, which already existed and simply had nothing that
- * ever set user_override=true).
+ * value and protects it from future re-import. Deletes every existing row
+ * for that user/metric/day (whatever HealthKit already imported, plus any
+ * earlier override) before inserting the new one, so nothing downstream
+ * ever averages or lists the pre-correction value alongside the
+ * correction — a correction is a replacement, not an addition. Sets
+ * `user_override`/`override_day` on the inserted row so
+ * insertImportedHealthMetric's day-level guard (below) blocks any
+ * HealthKit re-sync for that day going forward. Deliberately
+ * day-granularity, not per-sample: a manual correction is a statement
+ * about "what actually happened that day," and HealthKit's own
+ * per-sample dedup_key has no way to express that (see the README's
+ * originally-flagged "manual correction can be silently overwritten" gap
+ * — the missing piece was always this write path, not the read-side
+ * guard, which already existed and simply had nothing that ever set
+ * user_override=true).
  */
 export async function upsertManualHealthMetricOverride(
   supabase: SupabaseClient<Database>,
@@ -115,37 +125,42 @@ export async function upsertManualHealthMetricOverride(
   fields: { value: number; unit?: string | null; day: string }
 ): Promise<ActionResult> {
   const timezone = await resolveTimezone(supabase, userId);
-  // Noon, not midnight — avoids the stored started_at itself drifting to
-  // the adjacent calendar day under localDateString's own UTC round-trip
-  // if this row is ever re-read that way elsewhere.
-  const startedAt = new Date(`${fields.day}T12:00:00Z`).toISOString();
+  // start is local midnight for `day` in the user's own timezone, so
+  // localDateString(start, timezone) === day always holds by
+  // construction — unlike a fixed "noon UTC" guess, there's no longitude
+  // where this can drift to the adjacent calendar day. [start, end)
+  // doubles as the delete range below.
+  const { start, end } = localDayUtcRange(fields.day, timezone);
+  const startedAt = start.toISOString();
 
-  const { error } = await supabase.from("health_metrics").upsert(
-    {
-      user_id: userId,
-      metric_type: metricType,
-      value: fields.value,
-      unit: fields.unit ?? null,
-      started_at: startedAt,
-      source: "manual",
-      user_override: true,
-      override_day: fields.day,
-      dedup_key: `manual-override-${fields.day}`,
-    },
-    { onConflict: "user_id,metric_type,dedup_key" }
-  );
+  const { error: deleteError } = await supabase
+    .from("health_metrics")
+    .delete()
+    .eq("user_id", userId)
+    .eq("metric_type", metricType)
+    .gte("started_at", startedAt)
+    .lt("started_at", end.toISOString());
+  if (deleteError) {
+    return { ok: false, error: deleteError.message };
+  }
 
+  const { error } = await supabase.from("health_metrics").insert({
+    user_id: userId,
+    metric_type: metricType,
+    value: fields.value,
+    unit: fields.unit ?? null,
+    started_at: startedAt,
+    source: "manual",
+    user_override: true,
+    override_day: fields.day,
+    dedup_key: `manual-override-${fields.day}`,
+  });
   if (error) {
     return { ok: false, error: error.message };
   }
-  // Sanity check, not load-bearing: confirms the day we stored under
-  // round-trips through the same timezone the import guard will later
-  // recompute it with, so a bug here fails loudly in logs instead of
-  // silently letting a future re-import slip past the guard.
-  if (localDateString(new Date(startedAt), timezone) !== fields.day) {
-    console.warn(
-      `[upsertManualHealthMetricOverride] Stored override_day "${fields.day}" doesn't round-trip through timezone "${timezone}" — the day-level import guard may not match this row later.`
-    );
+
+  if (ACTIVITY_SUMMARY_METRIC_TYPES.has(metricType)) {
+    await recomputeActivityDailySummaryForInstant(supabase, userId, start);
   }
   return { ok: true, data: undefined };
 }

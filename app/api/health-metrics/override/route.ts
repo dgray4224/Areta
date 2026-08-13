@@ -32,6 +32,20 @@ const OVERRIDABLE_METRIC_TYPES = new Set<string>([
 ]);
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+// Shape alone (DAY_PATTERN) accepts calendar-impossible strings like
+// "2026-13-45" -- upsertManualHealthMetricOverride's
+// `new Date(...).toISOString()` throws on those (RangeError: Invalid
+// time value), which without this check would surface as an unhandled
+// 500 instead of a clean 400. Relies on Date's own overflow
+// normalization: constructing "2026-13-45" as UTC(2026, 12, 45) rolls
+// forward to a real date whose components then disagree with the input.
+function isValidCalendarDay(day: string): boolean {
+  if (!DAY_PATTERN.test(day)) return false;
+  const [year, month, dayOfMonth] = day.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, dayOfMonth));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === dayOfMonth;
+}
+
 /**
  * Bearer-authenticated manual correction for one metric/day (Phase 3 of
  * the enhancement roadmap, 2026-08-13) — mobile's Trends screen is the
@@ -60,8 +74,8 @@ export async function POST(request: NextRequest) {
   if (typeof metricType !== "string" || !OVERRIDABLE_METRIC_TYPES.has(metricType)) {
     return NextResponse.json({ error: "Invalid or unsupported metricType" }, { status: 400 });
   }
-  if (typeof day !== "string" || !DAY_PATTERN.test(day)) {
-    return NextResponse.json({ error: "day must be YYYY-MM-DD" }, { status: 400 });
+  if (typeof day !== "string" || !isValidCalendarDay(day)) {
+    return NextResponse.json({ error: "day must be a valid YYYY-MM-DD calendar date" }, { status: 400 });
   }
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return NextResponse.json({ error: "value must be a finite number" }, { status: 400 });

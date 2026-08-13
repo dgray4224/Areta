@@ -88,7 +88,16 @@ async function main() {
     if (rowsError) throw new Error(`select failed: ${rowsError.message}`);
 
     console.log("Rows in health_metrics for this fixture:", JSON.stringify(rows));
-    assert(rows?.length === 2, `Expected exactly 2 rows (original import + override), got ${rows?.length}`);
+    // Exactly 1 row, not 2 -- the override deletes the original import
+    // rather than coexisting with it (2026-08-13 fix: a code review of
+    // the first version of this feature found that leaving both rows in
+    // place meant weekly averages and trend charts still blended in the
+    // pre-correction value alongside the correction).
+    assert(rows?.length === 1, `Expected exactly 1 row (the override replaces the import), got ${rows?.length}`);
+    assert(
+      !rows.some((r) => r.dedup_key === "hk-sample-original"),
+      "The original (pre-correction) import row should have been deleted by the override"
+    );
     assert(
       !rows.some((r) => r.dedup_key === "hk-sample-resync"),
       "The re-synced row should never have been written at all"
@@ -98,7 +107,24 @@ async function main() {
     assert(Number(overrideRow!.value) === 145, `Override row's value is ${overrideRow!.value}, expected 145`);
     assert(overrideRow!.user_override === true, "Override row should have user_override = true");
     assert(overrideRow!.override_day === DAY, `override_day is "${overrideRow!.override_day}", expected "${DAY}"`);
-    console.log("PASS: stored data reflects the 145 lb correction; the 150 lb re-sync attempt left no trace");
+    console.log("PASS: only the 145 lb correction remains — the pre-correction import and the re-sync attempt both left no trace");
+
+    // 5. weight is one of the four metric types activity_daily_summaries
+    // actually tracks -- the override should have refreshed it, same as
+    // every other weight write path already does (2026-08-13 fix).
+    const { data: summaryRow, error: summaryError } = await supabase
+      .from("activity_daily_summaries")
+      .select("weight_last_value")
+      .eq("user_id", userId)
+      .eq("day", DAY)
+      .maybeSingle();
+    if (summaryError) throw new Error(`activity_daily_summaries select failed: ${summaryError.message}`);
+    assert(!!summaryRow, "activity_daily_summaries has no row for this user/day — override didn't trigger a recompute");
+    assert(
+      Number(summaryRow!.weight_last_value) === 145,
+      `activity_daily_summaries.weight_last_value is ${summaryRow!.weight_last_value}, expected 145`
+    );
+    console.log("PASS: activity_daily_summaries reflects the correction (weight_last_value = 145)");
 
     console.log("\nAll assertions passed — a manual correction genuinely survives a subsequent re-sync attempt.");
   } finally {
