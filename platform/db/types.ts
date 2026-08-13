@@ -1043,6 +1043,7 @@ export type Database = {
           imported_at: string | null
           metric_type: string
           notes: string | null
+          override_day: string | null
           sleep_interruptions: number | null
           sleep_quality: number | null
           source: string
@@ -1064,6 +1065,7 @@ export type Database = {
           imported_at?: string | null
           metric_type: string
           notes?: string | null
+          override_day?: string | null
           sleep_interruptions?: number | null
           sleep_quality?: number | null
           source?: string
@@ -1085,6 +1087,7 @@ export type Database = {
           imported_at?: string | null
           metric_type?: string
           notes?: string | null
+          override_day?: string | null
           sleep_interruptions?: number | null
           sleep_quality?: number | null
           source?: string

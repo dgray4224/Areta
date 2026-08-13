@@ -2,6 +2,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isOlderThanHealthImportRetentionWindow } from "@/platform/health/retention";
+import { resolveTimezone } from "@/domains/activity-summary/service";
+import { localDateString } from "@/domains/activity-summary/timezone";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
@@ -69,7 +71,11 @@ function toRow(userId: string, metricType: MetricType, fields: HealthMetricField
 /** Manual-entry insert (weight/sleep only, today) — plain insert, no
  * retention check (a user must always be able to log old data by hand, per
  * platform/health/retention.ts's own comment), no dedup/upsert since manual
- * rows have no dedup_key. */
+ * rows have no dedup_key. Coexists alongside any HealthKit-imported reading
+ * for the same day rather than replacing it — for a *correction* (the user
+ * saying "this imported value is wrong"), use
+ * upsertManualHealthMetricOverride below instead, which does replace and
+ * protects against re-import. */
 export async function insertManualHealthMetric(
   supabase: SupabaseClient<Database>,
   userId: string,
@@ -82,6 +88,64 @@ export async function insertManualHealthMetric(
   });
   if (error) {
     return { ok: false, error: error.message };
+  }
+  return { ok: true, data: undefined };
+}
+
+/**
+ * A user-initiated correction for one metric/day (Phase 3 of the
+ * enhancement roadmap, 2026-08-13) — collapses that whole day to this one
+ * value and protects it from future re-import. Upserts on a synthetic
+ * `manual-override-{day}` dedup_key so editing the same day again updates
+ * the same row rather than accumulating duplicates, and sets
+ * `user_override`/`override_day` so insertImportedHealthMetric's
+ * day-level guard (below) blocks any HealthKit re-sync for that day going
+ * forward. Deliberately day-granularity, not per-sample: a manual
+ * correction is a statement about "what actually happened that day," and
+ * HealthKit's own per-sample dedup_key has no way to express that (see the
+ * README's originally-flagged "manual correction can be silently
+ * overwritten" gap — the missing piece was always this write path, not
+ * the read-side guard, which already existed and simply had nothing that
+ * ever set user_override=true).
+ */
+export async function upsertManualHealthMetricOverride(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  metricType: MetricType,
+  fields: { value: number; unit?: string | null; day: string }
+): Promise<ActionResult> {
+  const timezone = await resolveTimezone(supabase, userId);
+  // Noon, not midnight — avoids the stored started_at itself drifting to
+  // the adjacent calendar day under localDateString's own UTC round-trip
+  // if this row is ever re-read that way elsewhere.
+  const startedAt = new Date(`${fields.day}T12:00:00Z`).toISOString();
+
+  const { error } = await supabase.from("health_metrics").upsert(
+    {
+      user_id: userId,
+      metric_type: metricType,
+      value: fields.value,
+      unit: fields.unit ?? null,
+      started_at: startedAt,
+      source: "manual",
+      user_override: true,
+      override_day: fields.day,
+      dedup_key: `manual-override-${fields.day}`,
+    },
+    { onConflict: "user_id,metric_type,dedup_key" }
+  );
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  // Sanity check, not load-bearing: confirms the day we stored under
+  // round-trips through the same timezone the import guard will later
+  // recompute it with, so a bug here fails loudly in logs instead of
+  // silently letting a future re-import slip past the guard.
+  if (localDateString(new Date(startedAt), timezone) !== fields.day) {
+    console.warn(
+      `[upsertManualHealthMetricOverride] Stored override_day "${fields.day}" doesn't round-trip through timezone "${timezone}" — the day-level import guard may not match this row later.`
+    );
   }
   return { ok: true, data: undefined };
 }
@@ -101,6 +165,26 @@ export async function insertImportedHealthMetric(
   fields: HealthMetricFields & { source: string; device?: string | null; dedupKey: string }
 ): Promise<ActionResult<{ skipped: boolean }>> {
   if (isOlderThanHealthImportRetentionWindow(fields.startedAt)) {
+    return { ok: true, data: { skipped: true } };
+  }
+
+  // Day-level override guard (Phase 3, 2026-08-13) — checked first and
+  // separately from the per-dedup_key check below: a manual correction's
+  // dedup_key ("manual-override-{day}") never matches an imported
+  // sample's own dedup_key, so only a day-scoped lookup can catch this.
+  // See upsertManualHealthMetricOverride's doc comment for why this is
+  // day-granularity rather than per-sample.
+  const timezone = await resolveTimezone(supabase, userId);
+  const day = localDateString(new Date(fields.startedAt), timezone);
+  const { data: dayOverride } = await supabase
+    .from("health_metrics")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("metric_type", metricType)
+    .eq("override_day", day)
+    .eq("user_override", true)
+    .maybeSingle();
+  if (dayOverride) {
     return { ok: true, data: { skipped: true } };
   }
 
