@@ -3,6 +3,7 @@ import { getServerEnv } from "@/platform/env.server";
 import { createAdminClient } from "@/platform/supabase/admin";
 import { localDateString } from "@/domains/activity-summary/timezone";
 import { getOrCreateWeeklyReview, generateWeeklyBrief } from "@/domains/review/service";
+import { sendPushToUser } from "@/platform/push/send";
 
 /**
  * Daily cron (see vercel.json): generates each user's weekly brief
@@ -68,6 +69,13 @@ export async function GET(request: NextRequest) {
       }
       const result = await generateWeeklyBrief(userId, supabase);
       if (!result.ok) throw new Error(result.error);
+      // Best-effort, never blocks/fails the cron result itself -- see
+      // sendPushToUser's own doc comment.
+      await sendPushToUser(
+        userId,
+        { title: "Your weekly review is ready", body: "See how this week went and what's next.", screen: "review" },
+        supabase
+      );
       return { userId, skipped: false as const };
     })
   );
