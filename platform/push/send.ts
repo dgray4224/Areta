@@ -7,13 +7,15 @@ const EXPO_PUSH_TIMEOUT_MS = 8000;
 // Expo's documented max messages per request to /push/send.
 const EXPO_PUSH_BATCH_SIZE = 100;
 
-// The only notification this app sends today is "review" (weekly-
-// review-ready). A real string union (not `string`) so a typo'd/
-// unsynced value is a compile error here, not just a doc-comment
-// convention -- areta-mobile's app/_layout.tsx SCREEN_ROUTES must be
-// kept mirroring this exact set of keys; there's no shared package
-// between the two repos to enforce that automatically.
-export type NotificationScreen = "review";
+// Two notifications exist today: "review" (weekly-review-ready) and
+// "insights" (a high-score record/streak insight from the
+// generate-insights cron, Phase 3 2026-08-14 -- both land on the mobile
+// Review tab, where the insight feed lives). A real string union (not
+// `string`) so a typo'd/unsynced value is a compile error here, not just
+// a doc-comment convention -- areta-mobile's app/_layout.tsx
+// SCREEN_ROUTES must be kept mirroring this exact set of keys; there's
+// no shared package between the two repos to enforce that automatically.
+export type NotificationScreen = "review" | "insights";
 
 type ExpoPushMessage = {
   to: string;

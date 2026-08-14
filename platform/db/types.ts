@@ -1216,6 +1216,7 @@ export type Database = {
           id: string
           period_end: string | null
           period_start: string | null
+          pushed_at: string | null
           score: number
           seen_at: string | null
           shared_at: string | null
@@ -1233,6 +1234,7 @@ export type Database = {
           id?: string
           period_end?: string | null
           period_start?: string | null
+          pushed_at?: string | null
           score?: number
           seen_at?: string | null
           shared_at?: string | null
@@ -1250,6 +1252,7 @@ export type Database = {
           id?: string
           period_end?: string | null
           period_start?: string | null
+          pushed_at?: string | null
           score?: number
           seen_at?: string | null
           shared_at?: string | null

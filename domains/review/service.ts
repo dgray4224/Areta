@@ -53,16 +53,18 @@ worth something: find the ONE most eye-opening, goal-relevant thing in this week
 — something the user genuinely would not notice themselves from the raw numbers alone
 — and write it up like a coach talking to them, not a report. You never calculate
 anything — every number in the context below (metrics, correlationFindings,
-achievements, goalTrajectories, streaks, experimentOutcomes) was computed by
-deterministic code and is ground truth. Restate these numbers exactly; never recompute,
+achievements, goalTrajectories, streaks, experimentOutcomes, recentInsights) was
+computed by deterministic code and is ground truth. Restate these numbers exactly; never recompute,
 round differently, or invent a number that isn't present in the context.
 
 Output format — narrative (2-3 short paragraphs, no bullet lists, no headers):
 - Paragraph 1 MUST lead with the single most non-obvious, goal-tied insight in the
   data. "Non-obvious" means something that only shows up by connecting domains or
-  looking across weeks — a cross-domain correlation (if one exists, |r| >= 0.5, prefer
-  it over everything else), a goalTrajectory whose pace materially changed, an
-  achievement (personal best, broken streak, biggest week-over-week jump), or an
+  looking across weeks — a recentInsight (a day-grain pattern/record the insight
+  engine already validated statistically; if one exists, prefer it over everything
+  else and keep its numbers verbatim from its headline), a cross-domain correlation
+  (|r| >= 0.5), a goalTrajectory whose pace materially changed, an achievement
+  (personal best, broken streak, biggest week-over-week jump), or an
   experimentOutcome revealing whether last week's change actually worked. It is NOT
   enough to just restate a raw metric ("you slept 7 hours") — say what that number
   *means* for the goal ("your sleep this week lines up with your best training days,
@@ -601,6 +603,20 @@ export async function generateWeeklyBrief(
 
   const facts = await computeReviewFacts(supabase, userId, weekStart, today, timezone, currentMetrics, true);
 
+  // This week's Insight Engine v2 findings (Phase 3, 2026-08-14) — the
+  // generate-insights cron runs 30 minutes before this one (vercel.json),
+  // so on the user's review day fresh pattern insights already exist by
+  // the time the brief generates. Dismissed insights are excluded: the
+  // user said "not interesting", the narrative shouldn't resurface them.
+  const { data: recentInsightRows } = await supabase
+    .from("insights")
+    .select("type, headline")
+    .eq("user_id", userId)
+    .neq("status", "dismissed")
+    .gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString())
+    .order("score", { ascending: false })
+    .limit(5);
+
   const context = buildWeeklyReviewContext({
     weekStart,
     currentPhase: facts.currentPhase,
@@ -615,6 +631,7 @@ export async function generateWeeklyBrief(
     goalTrajectories: facts.goalTrajectories,
     streaks: facts.streaks,
     experimentOutcomes: facts.experimentOutcomes,
+    recentInsights: recentInsightRows ?? [],
     interviewAnswers: (review.answers as Record<string, string> | null) ?? {},
   });
 

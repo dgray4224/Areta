@@ -2,7 +2,21 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServerEnv } from "@/platform/env.server";
 import { createAdminClient } from "@/platform/supabase/admin";
 import { localDateString } from "@/domains/activity-summary/timezone";
-import { computeAndStoreInsights } from "@/domains/insights/service";
+import { computeAndStoreInsights, type CreatedInsight } from "@/domains/insights/service";
+import { sendPushToUsers } from "@/platform/push/send";
+
+/** Only celebration-shaped insights earn a push (a statistical pattern is
+ * better discovered in-app with its context around it), and only above
+ * this score — a push interrupts; it has to be worth it. */
+const PUSHABLE_TYPES = new Set(["personal_record", "behavior_streak"]);
+const PUSH_MIN_SCORE = 75;
+/** At most one insight push per user per rolling week, tracked via
+ * insights.pushed_at (see the insights_pushed_at migration). */
+const PUSH_THROTTLE_DAYS = 7;
+
+function stripMarkdown(text: string): string {
+  return text.replace(/\*\*/g, "").replace(/\*/g, "");
+}
 
 /**
  * Daily cron (see vercel.json): runs the Insight Engine v2 detector
@@ -56,13 +70,57 @@ export async function GET(request: NextRequest) {
 
   let created = 0;
   const failures: { userId: string; error: string }[] = [];
+  const pushCandidates: { userId: string; insight: CreatedInsight }[] = [];
   results.forEach((r, i) => {
     if (r.status === "rejected") {
       failures.push({ userId: users[i].userId, error: String(r.reason) });
     } else {
       created += r.value.created;
+      const best = r.value.createdInsights
+        .filter((insight) => PUSHABLE_TYPES.has(insight.type) && insight.score >= PUSH_MIN_SCORE)
+        .sort((a, b) => b.score - a.score)[0];
+      if (best) pushCandidates.push({ userId: r.value.userId, insight: best });
     }
   });
 
-  return NextResponse.json({ checked: users.length, created, failures });
+  // Throttle to <=1 insight push per user per rolling week, then send one
+  // batched Expo request for everyone left -- best-effort, never fails the
+  // cron (same posture as generate-weekly-reviews' push hook).
+  let pushed = 0;
+  if (pushCandidates.length > 0) {
+    const throttleCutoff = new Date(Date.now() - PUSH_THROTTLE_DAYS * 86_400_000).toISOString();
+    const { data: recentlyPushed } = await supabase
+      .from("insights")
+      .select("user_id")
+      .in(
+        "user_id",
+        pushCandidates.map((c) => c.userId)
+      )
+      .gte("pushed_at", throttleCutoff);
+    const throttledUserIds = new Set((recentlyPushed ?? []).map((row) => row.user_id));
+
+    const toPush = pushCandidates.filter((c) => !throttledUserIds.has(c.userId));
+    if (toPush.length > 0) {
+      await sendPushToUsers(
+        toPush.map(({ userId, insight }) => ({
+          userId,
+          title: "New about you",
+          body: stripMarkdown(insight.headline),
+          screen: "insights" as const,
+        })),
+        supabase
+      );
+      const now = new Date().toISOString();
+      await supabase
+        .from("insights")
+        .update({ pushed_at: now })
+        .in(
+          "id",
+          toPush.map(({ insight }) => insight.id)
+        );
+      pushed = toPush.length;
+    }
+  }
+
+  return NextResponse.json({ checked: users.length, created, pushed, failures });
 }

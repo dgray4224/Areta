@@ -47,10 +47,20 @@ const PATTERN_TYPES = new Set([
   "weekend_shift",
 ]);
 
+export type CreatedInsight = {
+  id: string;
+  type: string;
+  score: number;
+  headline: string;
+};
+
 export type ComputeInsightsResult = {
   created: number;
   /** Candidates whose dedupe_key already existed (cooldown / already fired). */
   duplicates: number;
+  /** The rows actually inserted this run — the cron's push logic picks
+   * its notification candidate from these. */
+  createdInsights: CreatedInsight[];
 };
 
 export async function computeAndStoreInsights(
@@ -125,7 +135,7 @@ export async function computeAndStoreInsights(
         ]
       : []),
   ];
-  if (candidates.length === 0) return { created: 0, duplicates: 0 };
+  if (candidates.length === 0) return { created: 0, duplicates: 0, createdInsights: [] };
 
   // Dedupe against everything this user has ever been shown — dedupe_key
   // encodes both idempotency (same run twice) and cooldown (month buckets).
@@ -147,24 +157,31 @@ export async function computeAndStoreInsights(
     .slice(0, MAX_NEW_PATTERN_INSIGHTS_PER_RUN);
   const factInsights = fresh.filter((c) => !PATTERN_TYPES.has(c.type));
   const toInsert = [...factInsights, ...patternInsights];
-  if (toInsert.length === 0) return { created: 0, duplicates: candidates.length - fresh.length };
+  if (toInsert.length === 0) return { created: 0, duplicates: candidates.length - fresh.length, createdInsights: [] };
 
-  const { error: insertError } = await supabase.from("insights").insert(
-    toInsert.map((c) => ({
-      user_id: userId,
-      type: c.type,
-      grain: c.grain,
-      period_start: c.periodStart,
-      period_end: c.periodEnd,
-      facts: c.facts,
-      headline: c.headline,
-      score: c.score,
-      dedupe_key: c.dedupeKey,
-    }))
-  );
+  const { data: inserted, error: insertError } = await supabase
+    .from("insights")
+    .insert(
+      toInsert.map((c) => ({
+        user_id: userId,
+        type: c.type,
+        grain: c.grain,
+        period_start: c.periodStart,
+        period_end: c.periodEnd,
+        facts: c.facts,
+        headline: c.headline,
+        score: c.score,
+        dedupe_key: c.dedupeKey,
+      }))
+    )
+    .select("id, type, score, headline");
   if (insertError) throw new Error(`insights insert failed: ${insertError.message}`);
 
-  return { created: toInsert.length, duplicates: candidates.length - fresh.length };
+  return {
+    created: toInsert.length,
+    duplicates: candidates.length - fresh.length,
+    createdInsights: (inserted ?? []).map((row) => ({ id: row.id, type: row.type, score: row.score, headline: row.headline })),
+  };
 }
 
 /** Per-day task completion from raw daily_actions rows — only days with at

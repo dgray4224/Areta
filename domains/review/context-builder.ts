@@ -36,6 +36,12 @@ export type WeeklyReviewContext = {
   goalTrajectories: GoalTrajectory[];
   streaks: StreakFacts;
   experimentOutcomes: ExperimentOutcome[];
+  /** This week's Insight Engine v2 findings (domains/insights/, Phase 3
+   * 2026-08-14) — day-grain records/streaks/patterns the detector battery
+   * already validated and phrased. Ground truth like everything else
+   * here: the model may weave them into the narrative but never restate
+   * their numbers differently or invent new ones. */
+  recentInsights: { type: string; headline: string }[];
   /** This week's answers to the lightweight interview step (mobile-only
    * for now), keyed by question id — see review-screens/InterviewStep on
    * the mobile side. Empty object if none answered yet. */
