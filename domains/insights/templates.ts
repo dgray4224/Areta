@@ -13,6 +13,28 @@
 import { hashSeed } from "./stats";
 import { weekdayName } from "./dates";
 
+/** Display eyebrow per detector type -- the server-side source of truth
+ * (added via /code-review, 2026-08-14): mobile's InsightFeed.tsx
+ * previously hardcoded its own copy of this mapping with no shared
+ * contract, so a new or renamed detector type would silently degrade to
+ * a generic "Insight" label until a mobile release caught up. Now
+ * included in the /api/insights response as `typeLabel`, so the
+ * client's local mirror only has to serve as a same-version convenience
+ * / offline fallback rather than the source of truth. Keep this in sync
+ * with any new detector added to domains/insights/detectors/. */
+export const TYPE_LABELS: Record<string, string> = {
+  personal_record: "Personal record",
+  behavior_streak: "Streak",
+  sleep_next_day_completion: "Pattern",
+  weekday_pattern: "Pattern",
+  workout_timing_sleep: "Pattern",
+  weekend_shift: "Pattern",
+};
+
+export function typeLabelFor(type: string): string {
+  return TYPE_LABELS[type] ?? "Insight";
+}
+
 function pick(variants: string[], dedupeKey: string): string {
   return variants[hashSeed(dedupeKey) % variants.length];
 }

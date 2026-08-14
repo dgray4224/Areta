@@ -26,6 +26,13 @@ export async function GET(request: NextRequest) {
       id: e.id,
       name: e.name,
       movementPattern: e.movementPattern,
+      // Normalized taxonomy + modality (content-expansion 4d, 2026-08-14)
+      // so the mobile picker can group/filter by movement and by
+      // equipment style, not just primaryMuscleGroups[0]. Found missing
+      // here via /code-review -- the mobile picker's "Movement" axis was
+      // reading undefined and crashing.
+      movementPatterns: e.movementPatterns,
+      modality: e.modality,
       equipmentRequired: e.equipmentRequired,
       primaryMuscleGroups: e.primaryMuscleGroups,
       instructions: e.instructions,
