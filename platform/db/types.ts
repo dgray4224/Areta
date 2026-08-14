@@ -1206,6 +1206,60 @@ export type Database = {
         }
         Relationships: []
       }
+      insights: {
+        Row: {
+          created_at: string
+          dedupe_key: string
+          facts: Json
+          grain: string
+          headline: string
+          id: string
+          period_end: string | null
+          period_start: string | null
+          score: number
+          seen_at: string | null
+          shared_at: string | null
+          status: string
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dedupe_key: string
+          facts: Json
+          grain: string
+          headline: string
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          score?: number
+          seen_at?: string | null
+          shared_at?: string | null
+          status?: string
+          type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dedupe_key?: string
+          facts?: Json
+          grain?: string
+          headline?: string
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          score?: number
+          seen_at?: string | null
+          shared_at?: string | null
+          status?: string
+          type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       limitation_rules: {
         Row: {
           action: string

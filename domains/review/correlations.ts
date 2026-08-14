@@ -1,4 +1,5 @@
 import type { WeeklyMetrics } from "@/domains/review/metrics";
+import { hashSeed, permutationPValueForAssociation } from "@/domains/insights/stats";
 
 /** The only metric pairs worth testing — chosen because a real
  * relationship between them would be genuinely cross-domain (the thing a
@@ -24,15 +25,22 @@ const CANDIDATE_PAIRS: readonly [keyof WeeklyMetrics, keyof WeeklyMetrics][] = [
 ];
 
 /** Below this many paired (both-non-null) weeks, a correlation coefficient
- * is noise, not a finding — mirrors `isDataSparse`'s "&lt;3 logged days"
- * convention in metrics.ts, one notch higher since this needs *weeks*,
- * a scarcer unit than days. */
-const MIN_PAIRED_WEEKS = 4;
+ * is noise, not a finding. Raised 4 → 6 during the Insight Engine v2
+ * hardening pass (2026-08-14): at n=4, |r| >= 0.5 happens about half the
+ * time under pure chance — the old floor was structurally a coin flip. */
+const MIN_PAIRED_WEEKS = 6;
 
 /** Below this |r|, a relationship is too weak to be worth surfacing as an
  * "eye-opening" finding — a conventional threshold for a "moderate"
  * correlation. */
 const MIN_ABS_R = 0.5;
+
+/** A candidate must also survive a permutation significance test (see
+ * permutationPValueForAssociation) — |r| alone says nothing at these
+ * sample sizes. 8 candidate pairs are scanned per run, so alpha is
+ * Bonferroni-corrected by the pair count, matching the hand-Bonferroni
+ * convention in domains/insights/detectors/weekday-pattern.ts. */
+const ALPHA = 0.05 / CANDIDATE_PAIRS.length;
 
 const MAX_FINDINGS = 2;
 
@@ -92,6 +100,15 @@ export function computeMetricCorrelations(
     const ys = paired.map((h) => h.metrics[metricB] as number);
     const r = pearsonR(xs, ys);
     if (r === null || Math.abs(r) < MIN_ABS_R) continue;
+
+    // Significance gate added in the Insight Engine v2 hardening pass
+    // (2026-08-14): permutation test on the correlation itself. Seeded by
+    // the pair + the sampled weeks so the p-value is reproducible for a
+    // given history and shifts only when the data does.
+    const p = permutationPValueForAssociation(xs, ys, pearsonR, {
+      seed: hashSeed(`${metricA}:${metricB}:${paired.map((h) => h.weekStart).join(",")}`),
+    });
+    if (p >= ALPHA) continue;
 
     findings.push({
       metricA,
