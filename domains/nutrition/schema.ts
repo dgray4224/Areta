@@ -23,6 +23,21 @@ export type ActivityLevel = (typeof ACTIVITY_LEVELS)[number];
  * read anywhere downstream -- and were removed from both the schema and
  * the web/mobile forms. Old stored blobs keep those keys harmlessly
  * (zod strips unknown keys on parse; the jsonb column is untouched). */
+/** Dietary pattern (2026-08-14, content-expansion 4a): a HARD filter for
+ * meal-plan generation — unlike allergies' old substring matching, this
+ * gates on recipes' curated dietaryTags/allergens and is never relaxed by
+ * a fallback. Optional; absent means omnivore for every existing user (no
+ * backfill needed). */
+export const DIETARY_PATTERNS = ["omnivore", "vegetarian", "pescatarian", "vegan"] as const;
+export type DietaryPattern = (typeof DIETARY_PATTERNS)[number];
+
+export const DIETARY_PATTERN_LABELS: Record<DietaryPattern, string> = {
+  omnivore: "No restriction",
+  vegetarian: "Vegetarian",
+  pescatarian: "Pescatarian",
+  vegan: "Vegan",
+};
+
 export const nutritionSchema = z.object({
   height: z.number().positive().optional(),
   currentWeight: z.number().positive().optional(),
@@ -33,6 +48,7 @@ export const nutritionSchema = z.object({
   sex: z.enum(["male", "female"]).optional(),
   activityLevel: z.enum(ACTIVITY_LEVELS).optional(),
   allergies: z.array(z.string()).optional(),
+  dietaryPattern: z.enum(DIETARY_PATTERNS).optional(),
   dislikedFoods: z.array(z.string()).optional(),
   mealsPerDay: z.number().int().min(1).max(10).optional(),
   trackingPreference: z.enum(["detailed", "simple", "none"]).optional(),

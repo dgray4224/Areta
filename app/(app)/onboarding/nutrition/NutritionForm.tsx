@@ -6,6 +6,8 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   ACTIVITY_LEVELS,
+  DIETARY_PATTERNS,
+  DIETARY_PATTERN_LABELS,
   nutritionSchema,
   type NutritionInput,
   ALLERGY_SUGGESTIONS,
@@ -141,6 +143,18 @@ export function NutritionForm({
               {ACTIVITY_LEVELS.map((level) => (
                 <option key={level} value={level}>
                   {level.replace("_", " ")}
+                </option>
+              ))}
+            </SelectInput>
+          </FormField>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Dietary pattern" htmlFor="dietaryPattern" error={errors.dietaryPattern?.message}>
+            <SelectInput id="dietaryPattern" {...register("dietaryPattern", { setValueAs: optionalStringValue })}>
+              <option value="">—</option>
+              {DIETARY_PATTERNS.map((pattern) => (
+                <option key={pattern} value={pattern}>
+                  {DIETARY_PATTERN_LABELS[pattern]}
                 </option>
               ))}
             </SelectInput>

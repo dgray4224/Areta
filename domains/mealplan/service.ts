@@ -6,7 +6,7 @@ import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { getApprovedParameterValue } from "@/domains/parameters/service";
 import { getAllRecipes, getRecipesByIds } from "@/domains/recipes/service";
-import { generateMealPlan, type RecipeForPlanning } from "@/domains/mealplan/generate";
+import { generateMealPlan, mapAllergiesToAllergens, type RecipeForPlanning } from "@/domains/mealplan/generate";
 import type { NutritionInput } from "@/domains/nutrition/schema";
 import type { RecipeCuisine } from "@/domains/recipes/types";
 import { logScheduleEvent } from "@/platform/scheduling/log-schedule-event";
@@ -93,25 +93,36 @@ export async function generateAndSaveMealPlan(
     calories: r.calories,
     proteinG: r.proteinG,
     searchableText: [r.name, ...r.ingredients.map((i) => i.name)].join(" ").toLowerCase(),
+    allergens: r.allergens,
+    dietaryTags: r.dietaryTags,
   }));
 
+  // Substring keywords stay as the extra safety layer for free-text
+  // allergies the Big 9 mapping can't represent ("strawberries") plus
+  // dislikes; the structured excludeAllergens below is the reliable,
+  // never-relaxed filter (content-expansion 4a, 2026-08-14).
   const excludeKeywords = [
     ...normalizeKeywords(nutrition.allergies),
     ...normalizeKeywords(nutrition.dislikedFoods),
     ...(options?.extraExcludeKeywords ?? []),
   ];
 
+  const weekStart = options?.weekStart ?? (await todayForUser(supabase, userId));
+
   const { days, warnings } = generateMealPlan({
     calorieTarget,
     proteinTarget,
     mealsPerDay: nutrition.mealsPerDay ?? 3,
     excludeKeywords,
+    excludeAllergens: mapAllergiesToAllergens(nutrition.allergies),
+    dietaryPattern: nutrition.dietaryPattern,
+    // Per-user, per-week seed: same-week regenerations stay stable; next
+    // week's plan rotates among equally-suitable recipes (4b).
+    variantSeed: `${userId}:${weekStart}`,
     preferredCuisines: options?.preferredCuisines,
     recipes: planningRecipes,
     pickWeights,
   });
-
-  const weekStart = options?.weekStart ?? (await todayForUser(supabase, userId));
 
   const { data: plan, error: planError } = await supabase
     .from("meal_plans")

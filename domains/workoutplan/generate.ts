@@ -58,7 +58,17 @@ const CARDIO_PATTERNS = ["aerobic", "anaerobic / speed", "aerobic / conditioning
 
 export function hasEquipment(exercise: Exercise, equipmentAccess: string[]): boolean {
   const wildcard = equipmentAccess.includes("Full gym access");
-  return exercise.equipmentRequired.every((eq) => wildcard || equipmentAccess.includes(eq));
+  if (wildcard) return true;
+  // equipment_required lists ALTERNATIVES, not co-requirements — every
+  // seed row reads that way ('Suitcase carry' → Dumbbells | Kettlebells |
+  // Full gym access; 'Barbell hip thrust' → Barbell | Full gym access).
+  // This was `.every(...)` until 2026-08-14, which silently excluded any
+  // multi-option exercise for every non-full-gym user (a dumbbells-only
+  // user couldn't get suitcase carries because they lacked kettlebells) —
+  // a big part of why home equipment contexts felt so thin. An empty
+  // requirement list means no equipment needed.
+  if (exercise.equipmentRequired.length === 0) return true;
+  return exercise.equipmentRequired.some((eq) => equipmentAccess.includes(eq));
 }
 
 /**
