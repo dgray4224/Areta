@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DaySummary, DetectorInput } from "@/domains/insights/types";
+import type { DaySummary, DetectorInput, FactSeries } from "@/domains/insights/types";
 import { addDaysToDateString } from "@/domains/insights/dates";
 import { detectSleepNextDayCompletion } from "@/domains/insights/detectors/sleep-next-day-completion";
 import { detectWeekdayPattern } from "@/domains/insights/detectors/weekday-pattern";
@@ -10,6 +10,17 @@ import { detectBehaviorStreaks } from "@/domains/insights/detectors/behavior-str
 import { computeTaskCompletions } from "@/domains/insights/service";
 
 const TODAY = "2026-08-14";
+
+/** Narrow a facts payload's `series` for assertions. Returns undefined
+ * rather than throwing so a missing series fails on the expectation. */
+function seriesOf<K extends FactSeries["kind"]>(
+  facts: Record<string, unknown> | undefined,
+  kind: K
+): Extract<FactSeries, { kind: K }> | undefined {
+  const series = facts?.series;
+  if (!series || typeof series !== "object") return undefined;
+  return (series as FactSeries).kind === kind ? (series as Extract<FactSeries, { kind: K }>) : undefined;
+}
 
 function emptyDay(day: string): DaySummary {
   return {
@@ -181,6 +192,45 @@ describe("detectPersonalRecords", () => {
     expect(milestone?.facts.milestone).toBe(25);
   });
 
+  it("attaches a PEAK series marking the record against the days it beat", () => {
+    const allTime = daysEndingToday(40, (day, i) => {
+      day.stepsTotal = i === 38 ? 12000 : 5000 + (i % 7) * 100; // record yesterday
+    }).map((d) => ({ day: d.day, stepsTotal: d.stepsTotal, workoutCount: 0, workoutTotalMinutes: 0 }));
+    const results = detectPersonalRecords(baseInput({ allTimeSummaries: allTime }));
+
+    const series = seriesOf(results.find((r) => r.facts.kind === "steps_day")?.facts, "peak");
+    expect(series).toBeDefined();
+    expect(series!.values).toHaveLength(40);
+    expect(series!.values[series!.recordIndex]).toBe(12000);
+    // The line the record broke — the best of every OTHER day, not the
+    // record itself.
+    expect(series!.previousBest).toBe(5600);
+  });
+
+  it("attaches an ACCUMULATION series and drops the app from the milestone headline", () => {
+    const allTime = daysEndingToday(40, (day, i) => {
+      day.stepsTotal = 5000 + (i % 7) * 100;
+      day.workoutCount = 1; // 40 total -> crosses the 25 milestone
+    }).map((d) => ({ day: d.day, stepsTotal: d.stepsTotal, workoutCount: d.workoutCount, workoutTotalMinutes: 0 }));
+    const milestone = detectPersonalRecords(baseInput({ allTimeSummaries: allTime })).find(
+      (r) => r.facts.kind === "workout_milestone"
+    );
+
+    const series = seriesOf(milestone?.facts, "accumulation");
+    expect(series).toBeDefined();
+    expect(series!.threshold).toBe(25);
+    expect(series!.firstDay).toBe(addDaysToDateString(TODAY, -39));
+    expect(series!.lastDay).toBe(TODAY);
+    // Cumulative, so monotonically non-decreasing and ending at the total.
+    expect(series!.points[series!.points.length - 1]).toBe(40);
+    expect(series!.points.every((v, i, arr) => i === 0 || v >= arr[i - 1])).toBe(true);
+
+    // The whole point of the rewrite: the milestone is framed by how long
+    // it took, not by the product that counted it.
+    expect(milestone?.headline).toContain("6 weeks");
+    expect(milestone?.headline).not.toContain("Areta");
+  });
+
   it("does not fire a stale record", () => {
     const allTime = daysEndingToday(40, (day, i) => {
       day.stepsTotal = i === 20 ? 12000 : 5000 + (i % 7) * 100; // record 19 days ago
@@ -209,6 +259,16 @@ describe("detectBehaviorStreaks", () => {
     expect(steps).toBeDefined();
     expect(steps?.facts.length).toBe(7);
     expect(steps?.facts.currentStreak).toBe(7);
+
+    // The run sits at the END of the cells, with the days before it kept
+    // for contrast — including the day that broke the previous run.
+    const series = seriesOf(steps?.facts, "persistence");
+    expect(series).toBeDefined();
+    expect(series!.unit).toBe("day");
+    expect(series!.cells).toHaveLength(63);
+    expect(series!.streakStartIndex).toBe(56);
+    expect(series!.cells.slice(56).every(Boolean)).toBe(true);
+    expect(series!.cells[55]).toBe(false);
   });
 
   it("fires the consecutive-workout-weeks milestone", () => {
@@ -223,6 +283,15 @@ describe("detectBehaviorStreaks", () => {
     const weeks = results.find((r) => r.facts.kind === "workout_weeks");
     expect(weeks).toBeDefined();
     expect(weeks?.facts.length).toBe(3);
+
+    // Week cells keep the non-qualifying oldest week — the loop now
+    // evaluates every week instead of breaking at the first miss, and the
+    // streak is the leading run, exactly as the break-loop computed it.
+    const series = seriesOf(weeks?.facts, "persistence");
+    expect(series).toBeDefined();
+    expect(series!.unit).toBe("week");
+    expect(series!.cells).toEqual([false, true, true, true]);
+    expect(series!.streakStartIndex).toBe(1);
   });
 
   it("stays silent below every milestone", () => {

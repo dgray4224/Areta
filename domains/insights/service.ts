@@ -63,11 +63,17 @@ export type ComputeInsightsResult = {
   createdInsights: CreatedInsight[];
 };
 
-export async function computeAndStoreInsights(
+/** Run the detector battery for one user and return the candidates,
+ * without touching the `insights` table. Split out of
+ * computeAndStoreInsights so ops tooling can recompute a user's facts
+ * (e.g. to attach share-card series to insights that fired before those
+ * existed) without going through the insert path, which deliberately
+ * drops any candidate whose dedupe_key already fired. */
+export async function computeInsightCandidates(
   userId: string,
   supabase: SupabaseClient<Database>,
   options: { includePatternScans: boolean }
-): Promise<ComputeInsightsResult> {
+): Promise<InsightCandidate[]> {
   const timezone = await resolveTimezone(supabase, userId);
   const today = localDateString(new Date(), timezone);
   const windowStart = addDaysToDateString(today, -WINDOW_DAYS);
@@ -123,7 +129,7 @@ export async function computeAndStoreInsights(
     seedKey: userId,
   };
 
-  const candidates: InsightCandidate[] = [
+  return [
     ...detectPersonalRecords(input),
     ...detectBehaviorStreaks(input),
     ...(options.includePatternScans
@@ -135,6 +141,14 @@ export async function computeAndStoreInsights(
         ]
       : []),
   ];
+}
+
+export async function computeAndStoreInsights(
+  userId: string,
+  supabase: SupabaseClient<Database>,
+  options: { includePatternScans: boolean }
+): Promise<ComputeInsightsResult> {
+  const candidates = await computeInsightCandidates(userId, supabase, options);
   if (candidates.length === 0) return { created: 0, duplicates: 0, createdInsights: [] };
 
   // Dedupe against everything this user has ever been shown — dedupe_key

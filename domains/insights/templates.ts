@@ -12,6 +12,7 @@
 
 import { hashSeed } from "./stats";
 import { weekdayName } from "./dates";
+import type { FactSeries } from "./types";
 
 /** Display eyebrow per detector type -- the server-side source of truth
  * (added via /code-review, 2026-08-14): mobile's InsightFeed.tsx
@@ -37,6 +38,30 @@ export function typeLabelFor(type: string): string {
 
 function pick(variants: string[], dedupeKey: string): string {
   return variants[hashSeed(dedupeKey) % variants.length];
+}
+
+/** How long a milestone took to accumulate, in the coarsest honest unit.
+ * The point of a milestone card is the SPAN, not the count — "100
+ * workouts" is a usage counter, "100 workouts across 17 months" is
+ * perseverance. Returns null below ~2 weeks, where the span isn't the
+ * impressive part and saying it out loud would undercut the number. */
+function accumulationSpan(series: FactSeries | null | undefined): string | null {
+  if (!series || series.kind !== "accumulation") return null;
+  const from = new Date(`${series.firstDay}T00:00:00Z`);
+  const to = new Date(`${series.lastDay}T00:00:00Z`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
+
+  const months =
+    (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth());
+  if (months >= 24) {
+    const years = Math.floor(months / 12);
+    return `${years} years`;
+  }
+  if (months >= 2) return `${months} months`;
+
+  const days = Math.round((to.getTime() - from.getTime()) / 86_400_000);
+  if (days >= 14) return `${Math.round(days / 7)} weeks`;
+  return null;
 }
 
 function hoursLabel(minutes: number): string {
@@ -122,7 +147,13 @@ export function weekendShiftHeadline(
 }
 
 export function personalRecordHeadline(
-  facts: { kind: string; value: number; day?: string | null; milestone?: number | null },
+  facts: {
+    kind: string;
+    value: number;
+    day?: string | null;
+    milestone?: number | null;
+    series?: FactSeries | null;
+  },
   dedupeKey: string
 ): string {
   switch (facts.kind) {
@@ -142,22 +173,48 @@ export function personalRecordHeadline(
         ],
         dedupeKey
       );
-    case "workout_milestone":
-      return pick(
-        [
-          `That was your **${facts.milestone}th workout** logged with Areta.`,
-          `Milestone: **${facts.milestone} workouts** in the books.`,
-        ],
-        dedupeKey
-      );
-    case "steps_milestone":
-      return pick(
-        [
-          `You've now walked **${(facts.milestone ?? 0).toLocaleString("en-US")} steps** with Areta tracking along.`,
-          `Milestone: **${(facts.milestone ?? 0).toLocaleString("en-US")} total steps** logged.`,
-        ],
-        dedupeKey
-      );
+    // Milestone headlines lead with the time span rather than the app
+    // ("logged with Areta" made the achievement about product usage
+    // instead of the person). Insights written before series data
+    // existed have no span available and fall back to the count alone.
+    case "workout_milestone": {
+      const span = accumulationSpan(facts.series);
+      const count = facts.milestone ?? 0;
+      return span
+        ? pick(
+            [
+              `**${count} workouts** across ${span}.`,
+              `${span} of showing up — **${count} workouts** deep.`,
+            ],
+            dedupeKey
+          )
+        : pick(
+            [
+              `**${count} workouts** in. That's sustained effort.`,
+              `Milestone: **${count} workouts** behind you.`,
+            ],
+            dedupeKey
+          );
+    }
+    case "steps_milestone": {
+      const span = accumulationSpan(facts.series);
+      const steps = (facts.milestone ?? 0).toLocaleString("en-US");
+      return span
+        ? pick(
+            [
+              `**${steps} steps** across ${span}. One day at a time.`,
+              `${span} of moving — **${steps} steps** and counting.`,
+            ],
+            dedupeKey
+          )
+        : pick(
+            [
+              `**${steps} steps** walked. Every one of them yours.`,
+              `Milestone: **${steps} total steps**.`,
+            ],
+            dedupeKey
+          );
+    }
     default:
       return `New personal record.`;
   }

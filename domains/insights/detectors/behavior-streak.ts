@@ -1,6 +1,7 @@
 import { median } from "../stats";
 import { addDaysToDateString } from "../dates";
 import { behaviorStreakHeadline } from "../templates";
+import { PERSISTENCE_DAY_CELLS, buildPersistenceSeries } from "../series";
 import type { DetectorInput, InsightCandidate } from "../types";
 
 /** Day-grain behavioral streaks — deterministic, milestone-gated so a
@@ -28,9 +29,10 @@ export function detectBehaviorStreaks(input: DetectorInput): InsightCandidate[] 
   if (stepMedian !== null && stepMedian > 0) {
     // Same "today hasn't ended yet" allowance as streaks.ts's
     // currentStreak: an incomplete today doesn't zero a live streak.
-    let cursor = byDay.get(input.today) && byDay.get(input.today)!.stepsTotal >= stepMedian
+    const anchorDay = byDay.get(input.today) && byDay.get(input.today)!.stepsTotal >= stepMedian
       ? input.today
       : addDaysToDateString(input.today, -1);
+    let cursor = anchorDay;
     let streak = 0;
     while (true) {
       const day = byDay.get(cursor);
@@ -40,7 +42,20 @@ export function detectBehaviorStreaks(input: DetectorInput): InsightCandidate[] 
     }
     const milestone = [...STEP_STREAK_MILESTONES].reverse().find((m) => streak >= m);
     if (milestone !== undefined) {
-      const facts = { kind: "steps_above_median", length: milestone, currentStreak: streak, medianSteps: Math.round(stepMedian) };
+      // Cells end at the streak's own last day, not necessarily today —
+      // an as-yet-unqualifying today is allowed above, and trailing it as
+      // a broken cell would read as "the streak just ended". Walked by
+      // calendar day rather than over `summaries` so a gap in the data
+      // shows as an unmet cell instead of silently closing the gap.
+      const cells: { met: boolean }[] = [];
+      let cellCursor = anchorDay;
+      for (let i = 0; i < PERSISTENCE_DAY_CELLS; i++) {
+        const day = byDay.get(cellCursor);
+        cells.unshift({ met: !!day && day.stepsTotal >= stepMedian });
+        cellCursor = addDaysToDateString(cellCursor, -1);
+      }
+      const series = buildPersistenceSeries(cells, streak, "day");
+      const facts = { kind: "steps_above_median", length: milestone, currentStreak: streak, medianSteps: Math.round(stepMedian), series };
       const dedupeKey = `behavior_streak:steps_above_median:${milestone}`;
       candidates.push({
         type: "behavior_streak",
@@ -56,7 +71,11 @@ export function detectBehaviorStreaks(input: DetectorInput): InsightCandidate[] 
   }
 
   // --- Consecutive workout weeks --------------------------------------
-  let workoutWeeks = 0;
+  // Every week in range is evaluated rather than stopping at the first
+  // miss, so the card can show the weeks BEFORE the run for contrast.
+  // The streak is then the leading run of qualifying weeks, which is
+  // exactly what the earlier break-on-miss loop computed.
+  const weekMet: boolean[] = []; // newest week first
   let weekEnd = input.today;
   const maxWeeks = Math.floor(input.summaries.length / 7);
   for (let i = 0; i < maxWeeks; i++) {
@@ -68,13 +87,20 @@ export function detectBehaviorStreaks(input: DetectorInput): InsightCandidate[] 
       if (day && day.workoutCount > 0) workoutDays++;
       cursor = addDaysToDateString(cursor, 1);
     }
-    if (workoutDays < MIN_WORKOUT_DAYS_PER_WEEK) break;
-    workoutWeeks++;
+    weekMet.push(workoutDays >= MIN_WORKOUT_DAYS_PER_WEEK);
     weekEnd = addDaysToDateString(weekStart, -1);
   }
+  let workoutWeeks = 0;
+  while (workoutWeeks < weekMet.length && weekMet[workoutWeeks]) workoutWeeks++;
+
   const weekMilestone = [...WORKOUT_WEEK_MILESTONES].reverse().find((m) => workoutWeeks >= m);
   if (weekMilestone !== undefined) {
-    const facts = { kind: "workout_weeks", length: weekMilestone, currentStreak: workoutWeeks };
+    const series = buildPersistenceSeries(
+      [...weekMet].reverse().map((met) => ({ met })),
+      workoutWeeks,
+      "week"
+    );
+    const facts = { kind: "workout_weeks", length: weekMilestone, currentStreak: workoutWeeks, series };
     const dedupeKey = `behavior_streak:workout_weeks:${weekMilestone}`;
     candidates.push({
       type: "behavior_streak",

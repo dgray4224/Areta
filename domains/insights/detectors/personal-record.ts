@@ -1,5 +1,6 @@
 import { personalRecordHeadline } from "../templates";
 import { addDaysToDateString } from "../dates";
+import { buildAccumulationSeries, buildPeakSeries } from "../series";
 import type { DetectorInput, InsightCandidate } from "../types";
 
 /** Personal records and cumulative milestones — fully deterministic, no
@@ -15,8 +16,11 @@ import type { DetectorInput, InsightCandidate } from "../types";
 
 const MIN_HISTORY_DAYS_FOR_DAY_RECORD = 30;
 const MIN_WORKOUT_DAYS_FOR_RECORD = 10;
-const WORKOUT_MILESTONES = [10, 25, 50, 100, 250, 500, 1000];
-const STEP_MILESTONES = [1_000_000, 2_000_000, 5_000_000, 10_000_000];
+// Exported so the historical-achievement backfill emits exactly the same
+// ladder (and therefore the same dedupe_keys) as the live detector — a
+// second copy of these numbers would silently double-insert on drift.
+export const WORKOUT_MILESTONES = [10, 25, 50, 100, 250, 500, 1000];
+export const STEP_MILESTONES = [1_000_000, 2_000_000, 5_000_000, 10_000_000];
 
 export function detectPersonalRecords(input: DetectorInput): InsightCandidate[] {
   const candidates: InsightCandidate[] = [];
@@ -30,7 +34,11 @@ export function detectPersonalRecords(input: DetectorInput): InsightCandidate[] 
   if (stepDays.length >= MIN_HISTORY_DAYS_FOR_DAY_RECORD) {
     const recordDay = stepDays.reduce((best, s) => (s.stepsTotal > best.stepsTotal ? s : best));
     if (isFresh(recordDay.day)) {
-      const facts = { kind: "steps_day", value: recordDay.stepsTotal, day: recordDay.day, milestone: null };
+      const series = buildPeakSeries(
+        all.map((s) => ({ day: s.day, value: s.stepsTotal })),
+        recordDay.day
+      );
+      const facts = { kind: "steps_day", value: recordDay.stepsTotal, day: recordDay.day, milestone: null, series };
       const dedupeKey = `personal_record:steps_day:${recordDay.day}`;
       candidates.push({
         type: "personal_record",
@@ -49,7 +57,11 @@ export function detectPersonalRecords(input: DetectorInput): InsightCandidate[] 
   if (workoutDays.length >= MIN_WORKOUT_DAYS_FOR_RECORD) {
     const recordDay = workoutDays.reduce((best, s) => (s.workoutTotalMinutes > best.workoutTotalMinutes ? s : best));
     if (isFresh(recordDay.day)) {
-      const facts = { kind: "workout_minutes_day", value: recordDay.workoutTotalMinutes, day: recordDay.day, milestone: null };
+      const series = buildPeakSeries(
+        all.map((s) => ({ day: s.day, value: s.workoutTotalMinutes })),
+        recordDay.day
+      );
+      const facts = { kind: "workout_minutes_day", value: recordDay.workoutTotalMinutes, day: recordDay.day, milestone: null, series };
       const dedupeKey = `personal_record:workout_minutes_day:${recordDay.day}`;
       candidates.push({
         type: "personal_record",
@@ -68,7 +80,11 @@ export function detectPersonalRecords(input: DetectorInput): InsightCandidate[] 
   const totalWorkouts = all.reduce((sum, s) => sum + s.workoutCount, 0);
   const workoutMilestone = [...WORKOUT_MILESTONES].reverse().find((m) => totalWorkouts >= m);
   if (workoutMilestone !== undefined) {
-    const facts = { kind: "workout_milestone", value: totalWorkouts, day: null, milestone: workoutMilestone };
+    const series = buildAccumulationSeries(
+      all.map((s) => ({ day: s.day, value: s.workoutCount })),
+      workoutMilestone
+    );
+    const facts = { kind: "workout_milestone", value: totalWorkouts, day: null, milestone: workoutMilestone, series };
     const dedupeKey = `personal_record:workout_milestone:${workoutMilestone}`;
     candidates.push({
       type: "personal_record",
@@ -85,7 +101,11 @@ export function detectPersonalRecords(input: DetectorInput): InsightCandidate[] 
   const totalSteps = all.reduce((sum, s) => sum + s.stepsTotal, 0);
   const stepMilestone = [...STEP_MILESTONES].reverse().find((m) => totalSteps >= m);
   if (stepMilestone !== undefined) {
-    const facts = { kind: "steps_milestone", value: totalSteps, day: null, milestone: stepMilestone };
+    const series = buildAccumulationSeries(
+      all.map((s) => ({ day: s.day, value: s.stepsTotal })),
+      stepMilestone
+    );
+    const facts = { kind: "steps_milestone", value: totalSteps, day: null, milestone: stepMilestone, series };
     const dedupeKey = `personal_record:steps_milestone:${stepMilestone}`;
     candidates.push({
       type: "personal_record",
