@@ -2,10 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServerEnv } from "@/platform/env.server";
 import { createAdminClient } from "@/platform/supabase/admin";
 import { ensureWorkoutPlanWeeksAhead } from "@/domains/workoutplan/service";
-import { SELF_SERVICE_WEEKS_AHEAD } from "@/platform/ui/week-dates";
+import { SELF_SERVICE_WEEKS_AHEAD, weekStartFor } from "@/platform/ui/week-dates";
 
+/** Normalized to the week's Sunday. Used below purely as the "anything
+ * older than this is stale" cutoff -- with a raw current date, a plan
+ * anchored earlier in the SAME week (which every legacy row is, see
+ * weekStartFor) sorted below the cutoff and got treated as stale. */
 function currentWeekStart(): string {
-  return new Date().toISOString().slice(0, 10);
+  return weekStartFor(new Date().toISOString().slice(0, 10));
 }
 
 /**

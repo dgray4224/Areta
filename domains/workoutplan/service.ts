@@ -20,7 +20,7 @@ import { isLegacyExerciseShape } from "@/domains/exercise/legacy";
 import type { ExerciseInput } from "@/domains/exercise/schema";
 import { generateGoalFirstPlan } from "@/domains/recommendation/service";
 import { logScheduleEvent, hasActualScheduleEventToday } from "@/platform/scheduling/log-schedule-event";
-import { getWeekDates, addDays } from "@/platform/ui/week-dates";
+import { getWeekDates, addDays, weekStartFor } from "@/platform/ui/week-dates";
 import { todayForUser } from "@/domains/activity-summary/service";
 import { getExercisePickFrequency } from "@/domains/workoutplan/preferences";
 
@@ -427,7 +427,10 @@ export async function generateAndSaveWorkoutPlanWeeks(
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const supabase = client ?? (await createClient());
-  const startWeek = weekStart ?? (await todayForUser(supabase, userId));
+  // Normalized: a caller-supplied weekStart is "some date in the week they
+  // mean", and an un-normalized anchor here seeds a whole +7 ladder of
+  // off-boundary plans (see weekStartFor).
+  const startWeek = weekStartFor(weekStart ?? (await todayForUser(supabase, userId)));
   const warnings: string[] = [];
 
   for (let i = 0; i < weeks; i++) {
@@ -562,22 +565,44 @@ export async function getWorkoutPlanForWeek(
   };
 }
 
-/** "Does a real workout plan already exist for this exact week" -- shared
- * by domains/workoutplan/customize.ts's bootstrapIfMissing and
- * ensureWorkoutPlanWeeksAhead below's per-week skip check, so this rule (a
- * plan row with zero items doesn't count as "existing," matching a
- * partial/failed prior generation) only lives in one place. Lives here
- * rather than in customize.ts so customize.ts can import it without a
- * circular dependency (customize.ts already imports getWorkoutPlanForWeek
- * from this file). Mirrors domains/mealplan/customize.ts#mealPlanExistsForWeek. */
+/** "Is any real workout plan already covering the CALENDAR WEEK containing
+ * `weekStart`" -- shared by domains/workoutplan/customize.ts's
+ * bootstrapIfMissing and ensureWorkoutPlanWeeksAhead below's per-week skip
+ * check, so this rule (a plan row with zero items doesn't count as
+ * "existing," matching a partial/failed prior generation) only lives in
+ * one place. Lives here rather than in customize.ts so customize.ts can
+ * import it without a circular dependency (customize.ts already imports
+ * getWorkoutPlanForWeek from this file). Mirrors
+ * domains/mealplan/customize.ts#mealPlanExistsForWeek, including its
+ * whole-week window match -- see that function for why an exact-date check
+ * silently generated duplicate plans for one calendar week. */
 export async function workoutPlanExistsForWeek(
   userId: string,
   weekStart: string,
   client?: SupabaseClient<Database>
 ): Promise<boolean> {
   const supabase = client ?? (await createClient());
-  const plan = await getWorkoutPlanForWeek(userId, weekStart, supabase);
-  return plan !== null && plan.items.length > 0;
+  const week = getWeekDates(weekStart);
+
+  const { data: plans, error } = await supabase
+    .from("workout_plans")
+    .select("id")
+    .eq("user_id", userId)
+    .neq("status", "archived")
+    .gte("week_start", week[0])
+    .lte("week_start", week[6]);
+  if (error) throw new Error(`Failed to check for an existing workout plan: ${error.message}`);
+  if (!plans || plans.length === 0) return false;
+
+  const { count, error: itemsError } = await supabase
+    .from("workout_plan_items")
+    .select("id", { count: "exact", head: true })
+    .in(
+      "workout_plan_id",
+      plans.map((p) => p.id)
+    );
+  if (itemsError) throw new Error(`Failed to check for existing workout plan items: ${itemsError.message}`);
+  return (count ?? 0) > 0;
 }
 
 /**
@@ -604,7 +629,7 @@ export async function ensureWorkoutPlanWeeksAhead(
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ generatedWeeks: string[]; warnings: string[] }>> {
   const supabase = client ?? (await createClient());
-  const startWeek = await todayForUser(supabase, userId);
+  const startWeek = weekStartFor(await todayForUser(supabase, userId));
   const generatedWeeks: string[] = [];
   const warnings: string[] = [];
 

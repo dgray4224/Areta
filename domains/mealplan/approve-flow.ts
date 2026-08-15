@@ -9,11 +9,15 @@ import { mealPlanExistsForWeek } from "@/domains/mealplan/customize";
 import { generateAndSaveGroceryList } from "@/domains/grocery/service";
 import { generateAndSavePrepPlan } from "@/domains/prep/service";
 import type { RecipeCuisine } from "@/domains/recipes/types";
-import { addDays } from "@/platform/ui/week-dates";
+import { addDays, weekStartFor } from "@/platform/ui/week-dates";
 import { todayForUser } from "@/domains/activity-summary/service";
 
+/** The Sunday starting the current week. Normalized deliberately: this
+ * used to return today's raw date, which anchored an entire +7 ladder of
+ * generated plans to whatever weekday the generator happened to run on
+ * (see weekStartFor's doc comment for the damage that caused). */
 function currentWeekStart(): string {
-  return new Date().toISOString().slice(0, 10);
+  return weekStartFor(new Date().toISOString().slice(0, 10));
 }
 
 /** Approving a meal plan (CLAUDE.md rule 10: require approval before a
@@ -51,7 +55,9 @@ export async function generateAndSaveMealPlanWeeks(
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ warnings: string[] }>> {
   const supabase = client ?? (await createClient());
-  const startWeek = options.weekStart ?? currentWeekStart();
+  // A caller-supplied weekStart is normalized too -- callers pass "some
+  // date in the week they mean", not necessarily a week boundary.
+  const startWeek = weekStartFor(options.weekStart ?? currentWeekStart());
   const warnings: string[] = [];
 
   for (let i = 0; i < options.weeks; i++) {
@@ -102,7 +108,7 @@ export async function ensureMealPlanWeeksAhead(
   client?: SupabaseClient<Database>
 ): Promise<ActionResult<{ generatedWeeks: string[]; warnings: string[] }>> {
   const supabase = client ?? (await createClient());
-  const startWeek = await todayForUser(supabase, userId);
+  const startWeek = weekStartFor(await todayForUser(supabase, userId));
   const generatedWeeks: string[] = [];
   const warnings: string[] = [];
 

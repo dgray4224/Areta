@@ -8,6 +8,7 @@ import { generateAndSaveMealPlan, getMealPlanForWeek } from "@/domains/mealplan/
 import type { MealType } from "@/domains/mealplan/generate";
 import { generateAndSaveGroceryList } from "@/domains/grocery/service";
 import { generateAndSavePrepPlan } from "@/domains/prep/service";
+import { getWeekDates } from "@/platform/ui/week-dates";
 
 /**
  * Backs the mobile "Customize this week" meal flow (pick a recipe, assign
@@ -26,20 +27,47 @@ export type MealDayAssignmentInput = {
   daysOfWeek: number[];
 };
 
-/** "Does a real meal plan already exist for this exact week" -- shared by
- * assignMealPlanDays's bootstrap-if-missing below and
- * domains/mealplan/approve-flow.ts#ensureMealPlanWeeksAhead's per-week
- * skip check, so this rule (a plan row with zero items doesn't count as
- * "existing," matching a partial/failed prior generation) only lives in
- * one place. */
+/** "Is any real meal plan already covering the CALENDAR WEEK containing
+ * `weekStart`" -- shared by assignMealPlanDays's bootstrap-if-missing
+ * below and domains/mealplan/approve-flow.ts#ensureMealPlanWeeksAhead's
+ * per-week skip check, so this rule (a plan row with zero items doesn't
+ * count as "existing," matching a partial/failed prior generation) only
+ * lives in one place.
+ *
+ * Matches across the whole Sun-Sat window rather than on the exact date.
+ * This is load-bearing, not defensive: plans written before 2026-08-15
+ * are anchored to arbitrary weekdays (see weekStartFor), so an exact-date
+ * check asking for "2026-08-19" could not see the perfectly good
+ * 2026-08-16 plan covering the same week -- and generated a duplicate.
+ * Normalizing new writes alone would not have fixed that, because the
+ * legacy rows keep their old anchors. */
 export async function mealPlanExistsForWeek(
   userId: string,
   weekStart: string,
   client?: SupabaseClient<Database>
 ): Promise<boolean> {
   const supabase = client ?? (await createClient());
-  const plan = await getMealPlanForWeek(userId, weekStart, supabase);
-  return plan !== null && plan.items.length > 0;
+  const week = getWeekDates(weekStart);
+
+  const { data: plans, error } = await supabase
+    .from("meal_plans")
+    .select("id")
+    .eq("user_id", userId)
+    .neq("status", "archived")
+    .gte("week_start", week[0])
+    .lte("week_start", week[6]);
+  if (error) throw new Error(`Failed to check for an existing meal plan: ${error.message}`);
+  if (!plans || plans.length === 0) return false;
+
+  const { count, error: itemsError } = await supabase
+    .from("meal_plan_items")
+    .select("id", { count: "exact", head: true })
+    .in(
+      "meal_plan_id",
+      plans.map((p) => p.id)
+    );
+  if (itemsError) throw new Error(`Failed to check for existing meal plan items: ${itemsError.message}`);
+  return (count ?? 0) > 0;
 }
 
 /**

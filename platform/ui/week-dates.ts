@@ -11,6 +11,21 @@ export function getWeekDates(anchor: string): string[] {
   });
 }
 
+/** The Sunday that starts the week containing `anchor`.
+ *
+ * Every `week_start` written to meal_plans/workout_plans must go through
+ * this. Before 2026-08-15 the plan generators used the raw current date as
+ * a week_start and then stepped +7 from it, so a run on a Wednesday
+ * produced a Wednesday-anchored ladder and a Sunday run produced a
+ * Sunday-anchored one. Because the "does this week already exist?" guards
+ * matched on the exact date, neither ladder could see the other: real
+ * accounts accumulated several active plans covering the same calendar
+ * week, and the grocery list (which picks exactly one plan per week)
+ * then silently omitted the other plan's meals. */
+export function weekStartFor(anchor: string): string {
+  return getWeekDates(anchor)[0];
+}
+
 /** `anchor` shifted by `days` (negative to go backward), as a YYYY-MM-DD
  * string. UTC-based, same convention as getWeekDates, so chaining the two
  * (e.g. stepping a week_start forward by 7 repeatedly) never drifts across
