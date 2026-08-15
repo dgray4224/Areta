@@ -37,6 +37,10 @@ import { weekStartFor } from "@/platform/ui/week-dates";
 // way scripts/verify-plan-autoactivate.ts loads its domain modules.
 
 type PlanRow = { id: string; week_start: string; status: string };
+/** Literal union, not string: supabase-js's .from() is typed against the
+ * generated table names, so a widened string fails the Next build's type
+ * check (which, unlike `pnpm typecheck`, does cover scripts/). */
+type PlanTable = "meal_plans" | "workout_plans";
 
 function groupByCalendarWeek(rows: PlanRow[]): Map<string, PlanRow[]> {
   const byWeek = new Map<string, PlanRow[]>();
@@ -71,7 +75,7 @@ async function main() {
 
   console.log(`${apply ? "APPLYING" : "DRY RUN"} for ${email}, weeks from ${from} onward\n`);
 
-  const toArchive: { table: string; id: string; week_start: string }[] = [];
+  const toArchive: { table: PlanTable; id: string; week_start: string }[] = [];
   const keptMealWeeks: string[] = [];
 
   for (const [table, itemsTable, planFk] of [
