@@ -6,9 +6,10 @@ import { getAllExercises } from "@/domains/exerciselibrary/service";
  * Bearer-authenticated read of the full exercise library (mobile Exercise
  * tab's "change exercise" picker -- browse by muscle group, not just the
  * up-to-2 curated alternates GET /api/exercise already returns). Small
- * enough (under 100 rows) to return in full and let the client group/
- * filter locally rather than building server-side search/pagination for
- * it. Deliberately does NOT equipment-filter -- an explicit product
+ * enough (currently ~160 rows, comfortably under a few hundred) to
+ * return in full and let the client group/filter locally rather than
+ * building server-side search/pagination for it. Deliberately does NOT
+ * equipment-filter -- an explicit product
  * decision (unlike the curated-alternates path, which does) so a user
  * browsing by muscle group sees everything, not a pre-narrowed set.
  */
