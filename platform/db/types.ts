@@ -2141,6 +2141,8 @@ export type Database = {
           created_at: string
           created_by: string | null
           cuisine: string | null
+          dish_type: string
+          also_suitable_for: string[]
           dietary_tags: string[]
           fat_g: number
           fiber_g: number | null
@@ -2164,6 +2166,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           cuisine?: string | null
+          dish_type: string
+          also_suitable_for?: string[]
           dietary_tags?: string[]
           fat_g: number
           fiber_g?: number | null
@@ -2187,6 +2191,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           cuisine?: string | null
+          dish_type?: string
+          also_suitable_for?: string[]
           dietary_tags?: string[]
           fat_g?: number
           fiber_g?: number | null

@@ -11,6 +11,10 @@ export type RecipeForPlanning = {
   id: string;
   name: string;
   mealType: MealType;
+  /** Other slots this recipe also fits (recipes.also_suitable_for). The
+   * pools below union it with `mealType`, so a dinner marked lunch-safe
+   * is eligible for both. */
+  alsoSuitableFor: MealType[];
   cuisine: RecipeCuisine;
   calories: number;
   proteinG: number;
@@ -221,7 +225,11 @@ export function generateMealPlan(input: MealPlanGenerationInput): MealPlanGenera
   const excludeAllergens = input.excludeAllergens ?? [];
   const poolByType = new Map<MealType, RecipeForPlanning[]>();
   for (const mealType of MEAL_TYPES) {
-    const all = input.recipes.filter((r) => r.mealType === mealType);
+    // Union of "this is a <mealType> recipe" and "this recipe also
+    // works as <mealType>". Lunch and dinner overlap heavily in practice
+    // and a strict partition was roughly halving the pool for anyone
+    // with dietary restrictions -- see the also_suitable_for migration.
+    const all = input.recipes.filter((r) => r.mealType === mealType || r.alsoSuitableFor.includes(mealType));
     // Hard constraints first (allergens + dietary pattern) — these are
     // never relaxed. The keyword fallback below only relaxes dislikes,
     // and only WITHIN the hard-compliant pool.

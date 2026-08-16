@@ -18,6 +18,8 @@ function toRecipe(row: Database["public"]["Tables"]["recipes"]["Row"]): Recipe {
     // migration 0096 — the DB column stays nullable only so a future
     // schema change can't be blocked by an in-flight insert missing it.
     cuisine: row.cuisine as Recipe["cuisine"],
+    dishType: row.dish_type as Recipe["dishType"],
+    alsoSuitableFor: (row.also_suitable_for ?? []) as Recipe["alsoSuitableFor"],
     calories: row.calories,
     proteinG: row.protein_g,
     carbsG: row.carbs_g,
@@ -102,6 +104,8 @@ function toInsertRow(parsed: ReturnType<typeof recipeSchema.parse>) {
     name: parsed.name,
     meal_type: parsed.mealType,
     cuisine: parsed.cuisine,
+    dish_type: parsed.dishType,
+    also_suitable_for: parsed.alsoSuitableFor ?? [],
     calories: parsed.calories,
     protein_g: parsed.proteinG,
     carbs_g: parsed.carbsG,

@@ -32,6 +32,37 @@ function validateDays(daysOfWeek: number[]): string | null {
   return null;
 }
 
+type WorkoutPlanItemRow = Database["public"]["Tables"]["workout_plan_items"]["Row"];
+
+/** A whole day's workout_plan_items as they stood before an assignment
+ * rewrote them. Unlike the meal side's single-slot snapshot, both
+ * workout assign paths mutate the entire day (a session IS the day; a
+ * first-touch exercise pick clears the day), so the undo unit here is
+ * the day. An empty `items` means the day was genuinely empty before. */
+export type DisplacedWorkoutDay = { dayOfWeek: number; items: WorkoutPlanItemRow[] };
+
+/** Snapshot the given days before a caller mutates them -- one query for
+ * all of them, so a 5-day assignment isn't 5 extra round trips. */
+async function snapshotDays(
+  supabase: SupabaseClient<Database>,
+  planId: string,
+  daysOfWeek: number[]
+): Promise<{ ok: true; displaced: DisplacedWorkoutDay[] } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from("workout_plan_items")
+    .select("*")
+    .eq("workout_plan_id", planId)
+    .in("day_of_week", daysOfWeek);
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    displaced: daysOfWeek.map((day) => ({
+      dayOfWeek: day,
+      items: (data ?? []).filter((row) => row.day_of_week === day),
+    })),
+  };
+}
+
 async function bootstrapIfMissing(
   userId: string,
   weekStart: string,
@@ -67,7 +98,7 @@ export async function assignWorkoutPlanSessionDays(
   sessionId: string,
   daysOfWeek: number[],
   client?: SupabaseClient<Database>
-): Promise<ActionResult<{ warnings: string[] }>> {
+): Promise<ActionResult<{ warnings: string[]; displaced: DisplacedWorkoutDay[] }>> {
   const supabase = client ?? (await createClient());
   const daysError = validateDays(daysOfWeek);
   if (daysError) return { ok: false, error: daysError };
@@ -107,6 +138,10 @@ export async function assignWorkoutPlanSessionDays(
   if (!exerciseRows || exerciseRows.length === 0) {
     return { ok: false, error: "That session has no exercises to assign." };
   }
+
+  // Snapshot before the per-day delete below destroys it.
+  const snapshot = await snapshotDays(supabase, plan.id, daysOfWeek);
+  if (!snapshot.ok) return { ok: false, error: snapshot.error };
 
   for (const day of daysOfWeek) {
     const { error: deleteError } = await supabase
@@ -152,7 +187,7 @@ export async function assignWorkoutPlanSessionDays(
 
   const warnings = [...bootstrap.warnings];
   if (historyError) warnings.push(`Preference tracking failed: ${historyError.message}`);
-  return { ok: true, data: { warnings } };
+  return { ok: true, data: { warnings, displaced: snapshot.displaced } };
 }
 
 /**
@@ -184,7 +219,7 @@ export async function assignWorkoutPlanExerciseDays(
   input: CustomizeExerciseInput,
   daysOfWeek: number[],
   client?: SupabaseClient<Database>
-): Promise<ActionResult<{ warnings: string[] }>> {
+): Promise<ActionResult<{ warnings: string[]; displaced: DisplacedWorkoutDay[] }>> {
   const supabase = client ?? (await createClient());
   const daysError = validateDays(daysOfWeek);
   if (daysError) return { ok: false, error: daysError };
@@ -211,6 +246,11 @@ export async function assignWorkoutPlanExerciseDays(
     .maybeSingle();
   if (exerciseError) return { ok: false, error: exerciseError.message };
   if (!exerciseRow) return { ok: false, error: "Exercise not found." };
+
+  // Snapshot before the first-touch clear below (and before the append,
+  // so undo removes the appended row too).
+  const snapshot = await snapshotDays(supabase, plan.id, daysOfWeek);
+  if (!snapshot.ok) return { ok: false, error: snapshot.error };
 
   for (const day of daysOfWeek) {
     const { data: alreadyTouched, error: touchedError } = await supabase
@@ -276,5 +316,68 @@ export async function assignWorkoutPlanExerciseDays(
 
   const warnings = [...bootstrap.warnings];
   if (historyError) warnings.push(`Preference tracking failed: ${historyError.message}`);
-  return { ok: true, data: { warnings } };
+  return { ok: true, data: { warnings, displaced: snapshot.displaced } };
+}
+
+/**
+ * Undo counterpart to both assign functions above -- restores whole days
+ * to the snapshot the assign call returned. Per day: clear whatever is
+ * there now, then re-insert the captured rows verbatim (original ids
+ * included, so anything that referenced an item survives an
+ * assign-then-undo round trip). A day whose snapshot is empty is simply
+ * left cleared, which is correct: it was empty before the assignment.
+ *
+ * Ownership is not taken from the payload -- `user_id` and
+ * `workout_plan_id` are overwritten from the authenticated user and the
+ * freshly-resolved plan, so a tampered snapshot can't write rows into
+ * someone else's plan even before RLS gets a say.
+ *
+ * Writes no exercise_pick_history, for the same reason the meal-side
+ * restore doesn't: a taken-back pick isn't a preference signal.
+ */
+export async function restoreWorkoutPlanDays(
+  userId: string,
+  weekStart: string,
+  days: DisplacedWorkoutDay[],
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ warnings: string[] }>> {
+  const supabase = client ?? (await createClient());
+
+  if (days.length === 0) return { ok: true, data: { warnings: [] } };
+  const daysError = validateDays(days.map((d) => d.dayOfWeek));
+  if (daysError) return { ok: false, error: daysError };
+
+  const { data: plan, error: planError } = await supabase
+    .from("workout_plans")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+  if (planError) return { ok: false, error: planError.message };
+  // Same tolerance as the meal-side restore: if the week is gone, the
+  // state being undone is gone with it -- not an error.
+  if (!plan) {
+    return { ok: true, data: { warnings: ["That week's plan no longer exists, so there was nothing to undo."] } };
+  }
+
+  const { error: deleteError } = await supabase
+    .from("workout_plan_items")
+    .delete()
+    .eq("workout_plan_id", plan.id)
+    .eq("user_id", userId)
+    .in(
+      "day_of_week",
+      days.map((d) => d.dayOfWeek)
+    );
+  if (deleteError) return { ok: false, error: `Failed to clear those days: ${deleteError.message}` };
+
+  const rows = days.flatMap((day) =>
+    day.items.map((item) => ({ ...item, user_id: userId, workout_plan_id: plan.id, day_of_week: day.dayOfWeek }))
+  );
+  if (rows.length > 0) {
+    const { error: insertError } = await supabase.from("workout_plan_items").insert(rows);
+    if (insertError) return { ok: false, error: `Failed to restore those days: ${insertError.message}` };
+  }
+
+  return { ok: true, data: { warnings: [] } };
 }

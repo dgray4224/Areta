@@ -61,7 +61,7 @@ function yearMonth(): string {
 
 function emitRecipe(recipe: NewRecipeSpec): string {
   return (
-    `(${sqlString(recipe.name)}, ${sqlString(recipe.mealType)}, ${sqlString(recipe.cuisine)}, ` +
+    `(${sqlString(recipe.name)}, ${sqlString(recipe.mealType)}, ${sqlString(recipe.cuisine)}, ${sqlString(recipe.dishType)}, ${sqlStringArray(recipe.alsoSuitableFor ?? [])}, ` +
     `${sqlNumber(recipe.calories)}, ${sqlNumber(recipe.proteinG)}, ${sqlNumber(recipe.carbsG)}, ${sqlNumber(recipe.fatG)}, ${sqlNumber(recipe.fiberG ?? null)}, ` +
     `${sqlNumber(recipe.prepMinutes)}, ${sqlNumber(recipe.cookMinutes)}, ${sqlNumber(recipe.servings)}, ` +
     `${sqlStringArray(recipe.dietaryTags)}, ${sqlStringArray(recipe.allergens)}, ${sqlJsonb(recipe.ingredients)}, ${sqlStringArray(recipe.instructions)}, ` +
@@ -83,7 +83,7 @@ export function buildMigrationSql(batch: RecipeContentBatch): string {
 
   const insert =
     `insert into public.recipes\n` +
-    `  (name, meal_type, cuisine, calories, protein_g, carbs_g, fat_g, fiber_g, prep_minutes, cook_minutes, servings, dietary_tags, allergens, ingredients, instructions, storage_instructions, photo_url, status)\n` +
+    `  (name, meal_type, cuisine, dish_type, also_suitable_for, calories, protein_g, carbs_g, fat_g, fiber_g, prep_minutes, cook_minutes, servings, dietary_tags, allergens, ingredients, instructions, storage_instructions, photo_url, status)\n` +
     `values\n` +
     rows +
     `;\n`;
