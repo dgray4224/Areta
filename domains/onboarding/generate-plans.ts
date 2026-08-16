@@ -10,8 +10,6 @@ import {
   getNutritionCalculationBaseInputs,
 } from "@/domains/parameters/service";
 import { calculateNutritionParameters } from "@/domains/parameters/nutrition-calc";
-import { generateAndSaveMealPlan } from "@/domains/mealplan/service";
-import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
 import { generateAndSaveWorkoutPlan, approveWorkoutPlan } from "@/domains/workoutplan/service";
 import type { ExerciseInput } from "@/domains/exercise/schema";
 
@@ -88,13 +86,16 @@ export async function generatePlansAfterOnboarding(
     if (!approve.ok) {
       nutrition = { ok: false, error: approve.error };
     } else {
-      const mealPlan = await generateAndSaveMealPlan(userId, undefined, supabase);
-      if (!mealPlan.ok) {
-        nutrition = { ok: false, error: mealPlan.error };
-      } else {
-        const activate = await approveMealPlanAndGenerateDownstream(userId, supabase);
-        nutrition = activate.ok ? { ok: true } : { ok: false, error: activate.error };
-      }
+      // Meal plans are no longer generated automatically -- not here, not
+      // by the cron, not on review approval, and not as a side effect of
+      // customizing a week. The user asks for a week explicitly via
+      // POST /api/plan/meals/generate ("Auto-generate this week").
+      //
+      // Nutrition TARGETS are still derived and approved above; only the
+      // week of meals is withheld. Onboarding therefore finishes with
+      // calorie/protein targets in place and an empty Plan tab, which is
+      // the intended first-run state.
+      nutrition = { ok: true };
     }
   }
 

@@ -38,7 +38,20 @@ export const DIETARY_PATTERN_LABELS: Record<DietaryPattern, string> = {
   vegan: "Vegan",
 };
 
+/** Which weekdays the user wants meals planned on (0 = Sunday .. 6 =
+ * Saturday). Absent means all seven -- the behaviour every existing user
+ * already has, so no backfill is needed.
+ *
+ * Exists because "I eat out at weekends" is a standing fact about someone's
+ * life, not a per-week chore. Before this, the only way to express it was
+ * to delete the unwanted days again every single week, and there was no
+ * delete path at all. Generation skips unplanned days entirely, so the
+ * grocery list -- which is derived from meal_plan_items -- follows
+ * automatically. */
+export const PLANNED_MEAL_DAYS_DEFAULT = [0, 1, 2, 3, 4, 5, 6] as const;
+
 export const nutritionSchema = z.object({
+  plannedMealDays: z.array(z.number().int().min(0).max(6)).optional(),
   height: z.number().positive().optional(),
   currentWeight: z.number().positive().optional(),
   targetWeight: z.number().positive().optional(),

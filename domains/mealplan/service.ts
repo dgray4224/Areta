@@ -121,6 +121,11 @@ export async function generateAndSaveMealPlan(
     // week's plan rotates among equally-suitable recipes (4b).
     variantSeed: `${userId}:${weekStart}`,
     preferredCuisines: options?.preferredCuisines,
+    // Absent means all seven days -- see plannedMealDays in
+    // domains/nutrition/schema.ts. An explicit empty array is honoured as
+    // "plan nothing", which is why this checks for undefined rather than
+    // falling back on truthiness.
+    plannedDaysOfWeek: nutrition.plannedMealDays ?? undefined,
     recipes: planningRecipes,
     pickWeights,
   });

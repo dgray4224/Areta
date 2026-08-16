@@ -185,6 +185,63 @@ describe("generateMealPlan", () => {
 // --- Content-expansion 4a/4b (2026-08-14): hard dietary filters + variety ---
 import { mapAllergiesToAllergens } from "@/domains/mealplan/generate";
 
+describe("plannedDaysOfWeek", () => {
+  it("plans only the requested weekdays", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: SAMPLE_RECIPES,
+      plannedDaysOfWeek: [1, 2, 3, 4, 5],
+    });
+
+    expect(days.map((d) => d.dayOfWeek)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("omits unplanned days entirely rather than emitting empty ones", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: SAMPLE_RECIPES,
+      plannedDaysOfWeek: [1, 2, 3, 4, 5],
+    });
+
+    // A present-but-empty day would still read downstream as "this day is
+    // planned", which is the distinction the grocery list depends on.
+    expect(days).toHaveLength(5);
+    expect(days.some((d) => d.dayOfWeek === 0 || d.dayOfWeek === 6)).toBe(false);
+    expect(days.every((d) => d.meals.length > 0)).toBe(true);
+  });
+
+  it("plans all seven days when the preference is omitted", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: SAMPLE_RECIPES,
+    });
+
+    expect(days).toHaveLength(7);
+  });
+
+  it("treats an explicit empty array as plan nothing", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: SAMPLE_RECIPES,
+      plannedDaysOfWeek: [],
+    });
+
+    expect(days).toHaveLength(0);
+  });
+});
+
 describe("alsoSuitableFor crossover", () => {
   const dinnerOnly = recipe({
     id: "d-only",
