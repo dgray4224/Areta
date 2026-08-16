@@ -64,6 +64,12 @@ export type MealPlanGenerationInput = {
   preferredCuisines?: RecipeCuisine[];
   recipes: RecipeForPlanning[];
   days?: number;
+  /** Weekday indices (0 = Sunday) to actually plan meals for. Days left
+   * out get no meals at all rather than an empty-but-present day, so the
+   * grocery list (derived from meal_plan_items) reflects them too.
+   * Omitted means every day, preserving the previous behaviour for any
+   * caller that hasn't opted in. */
+  plannedDaysOfWeek?: number[];
   /** recipeId -> how many times the user has explicitly picked it
    * (domains/mealplan/preferences.ts#getRecipePickFrequency, a bounded
    * lookback over meal_pick_history) -- an inferred soft nudge, same
@@ -273,7 +279,13 @@ export function generateMealPlan(input: MealPlanGenerationInput): MealPlanGenera
 
   const planDays: MealPlanDay[] = [];
 
+  // A day the user does not want planned produces no MealPlanDay at all.
+  // Emitting an empty day instead would still write a (present, empty)
+  // day into the plan, and downstream code reads "has a day row" as
+  // "this day is planned".
+  const plannedDays = input.plannedDaysOfWeek;
   for (let day = 0; day < days; day++) {
+    if (plannedDays && !plannedDays.includes(day)) continue;
     const meals: PlannedMeal[] = [];
     const usedToday = new Set<string>();
     let totalCalories = 0;

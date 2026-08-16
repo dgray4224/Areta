@@ -5,10 +5,6 @@
       "schedule": "0 6 * * 1"
     },
     {
-      "path": "/api/cron/regenerate-meal-plans",
-      "schedule": "5 6 * * 1"
-    },
-    {
       "path": "/api/cron/generate-insights",
       "schedule": "30 11 * * *"
     },

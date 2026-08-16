@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/platform/supabase/server";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
-import { generateAndSaveMealPlan, getMealPlanForWeek } from "@/domains/mealplan/service";
+import { getMealPlanForWeek } from "@/domains/mealplan/service";
 import type { MealType } from "@/domains/mealplan/generate";
 import { generateAndSaveGroceryList } from "@/domains/grocery/service";
 import { generateAndSavePrepPlan } from "@/domains/prep/service";
@@ -76,6 +76,41 @@ export async function mealPlanExistsForWeek(
 }
 
 /**
+ * Ensures a meal_plans row exists for the week WITHOUT generating any
+ * meals into it. Callers that need somewhere to put an item use this;
+ * a week full of food only ever comes from an explicit user request.
+ *
+ * Idempotent, and deliberately does not touch an existing row's status
+ * or contents.
+ */
+export async function ensureEmptyMealPlanForWeek(
+  userId: string,
+  weekStart: string,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ planId: string }>> {
+  const supabase = client ?? (await createClient());
+
+  const { data: existing, error: readError } = await supabase
+    .from("meal_plans")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+  if (readError) return { ok: false, error: readError.message };
+  if (existing) return { ok: true, data: { planId: existing.id } };
+
+  const { data: created, error: insertError } = await supabase
+    .from("meal_plans")
+    .insert({ user_id: userId, week_start: weekStart, status: "active" })
+    .select("id")
+    .single();
+  if (insertError || !created) {
+    return { ok: false, error: insertError?.message ?? "Failed to create a plan for that week." };
+  }
+  return { ok: true, data: { planId: created.id } };
+}
+
+/**
  * Assigns one recipe to one or more days of one week for a given meal
  * type. Never regenerates a week that already has items -- only
  * bootstraps a missing week once (so "auto-fill the rest" happens via
@@ -108,26 +143,22 @@ export async function assignMealPlanDays(
     return { ok: false, error: "Invalid day of week." };
   }
 
-  // Bootstrap-if-missing: generateAndSaveMealPlan deletes+reinserts every
-  // item for the week, so it's only safe to call when nothing has been
-  // customized yet. A plan that already exists (whether from a prior
-  // generation or an earlier round of this same customization pass) is
-  // left untouched here -- this call only ever adds/updates the specific
-  // slots it targets.
+  // Create an EMPTY plan for the week if none exists -- do not generate
+  // one (2026-08-16).
   //
-  // activateImmediately: true (2026-08-09) -- without it, customizing a
-  // future week with no existing plan would bootstrap a 'draft' that
-  // nothing ever approves, so the customization would silently never show
-  // up as calendar dots. Same self-service auto-activate policy as the
-  // regenerate-meal-plans cron; harmless no-op for a trainer-assigned
-  // user since generateAndSaveMealPlan's own guard already refuses to run
-  // for them regardless of this flag.
+  // This used to call generateAndSaveMealPlan, so adding a single Monday
+  // breakfast silently populated all 21 slots of the week. That is the
+  // behaviour behind the original complaint: a user who only cooks
+  // Mon-Fri got Saturday and Sunday meals they never asked for, they
+  // could not delete them (no delete path existed at all), and the
+  // grocery list dutifully included the ingredients.
+  //
+  // An empty plan row is still required, since meal_plan_items are keyed
+  // to it. status 'active' matches the previous auto-activate policy, so
+  // the week shows up as calendar dots as soon as it has any content.
   let warnings: string[] = [];
-  if (!(await mealPlanExistsForWeek(userId, weekStart, supabase))) {
-    const generateResult = await generateAndSaveMealPlan(userId, { weekStart, activateImmediately: true }, supabase);
-    if (!generateResult.ok) return generateResult;
-    warnings = generateResult.data.warnings;
-  }
+  const planRow = await ensureEmptyMealPlanForWeek(userId, weekStart, supabase);
+  if (!planRow.ok) return planRow;
 
   const { data: recipe, error: recipeError } = await supabase
     .from("recipes")
@@ -317,4 +348,74 @@ export async function restoreMealPlanDays(
   }
 
   return { ok: true, data: { warnings } };
+}
+
+/**
+ * Removes planned meals. Two shapes, one function, because they are the
+ * same operation at different granularity:
+ *   - `mealType` given -> clear that one slot on those days
+ *   - `mealType` omitted -> clear the whole day
+ *
+ * This is the piece that did not exist before 2026-08-16. There was no
+ * way, anywhere in the app or its API, to remove a planned meal -- which
+ * is why "I only cook Mon-Fri" was unsatisfiable and the grocery list
+ * could not be made to match how someone actually eats.
+ *
+ * The grocery list needs no special handling: it is derived from
+ * meal_plan_items by getMealPlanForWeek, so deleting items is sufficient
+ * and the regeneration below just materializes that.
+ */
+export async function clearMealPlanDays(
+  userId: string,
+  input: { weekStart: string; daysOfWeek: number[]; mealType?: MealType },
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ warnings: string[]; removed: number }>> {
+  const supabase = client ?? (await createClient());
+  const { weekStart, daysOfWeek, mealType } = input;
+
+  if (daysOfWeek.length === 0) return { ok: false, error: "Pick at least one day to clear." };
+  if (daysOfWeek.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) {
+    return { ok: false, error: "Invalid day of week." };
+  }
+
+  const { data: plan, error: planError } = await supabase
+    .from("meal_plans")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+  if (planError) return { ok: false, error: planError.message };
+  // Nothing planned for that week is the desired end state already.
+  if (!plan) return { ok: true, data: { warnings: [], removed: 0 } };
+
+  let query = supabase
+    .from("meal_plan_items")
+    .delete()
+    .eq("meal_plan_id", plan.id)
+    .eq("user_id", userId)
+    .in("day_of_week", daysOfWeek);
+  if (mealType) query = query.eq("meal_type", mealType);
+
+  const { data: deleted, error: deleteError } = await query.select("id");
+  if (deleteError) return { ok: false, error: deleteError.message };
+
+  let warnings: string[] = [];
+
+  // Same downstream rule as assignMealPlanDays: only refresh what has
+  // already been materialized. A not-yet-approved week picks these up
+  // through the normal approve flow later.
+  const [{ data: groceryRow }, { data: prepRow }] = await Promise.all([
+    supabase.from("grocery_lists").select("id").eq("user_id", userId).eq("week_start", weekStart).maybeSingle(),
+    supabase.from("prep_plans").select("id").eq("user_id", userId).eq("week_start", weekStart).maybeSingle(),
+  ]);
+  if (groceryRow) {
+    const groceryResult = await generateAndSaveGroceryList(userId, supabase, weekStart);
+    if (!groceryResult.ok) warnings = [...warnings, `Grocery list update failed: ${groceryResult.error}`];
+  }
+  if (prepRow) {
+    const prepResult = await generateAndSavePrepPlan(userId, supabase, weekStart);
+    if (!prepResult.ok) warnings = [...warnings, `Prep plan update failed: ${prepResult.error}`];
+  }
+
+  return { ok: true, data: { warnings, removed: (deleted ?? []).length } };
 }

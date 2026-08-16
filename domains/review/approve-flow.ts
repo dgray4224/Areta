@@ -10,8 +10,6 @@ import {
   generateNutritionParameters,
   approveAllGeneratedParameters,
 } from "@/domains/parameters/service";
-import { generateAndSaveMealPlan } from "@/domains/mealplan/service";
-import { approveMealPlanAndGenerateDownstream } from "@/domains/mealplan/approve-flow";
 
 /**
  * Approving a generated weekly brief is the moment the whole regeneration
@@ -72,24 +70,15 @@ export async function approveWeeklyReview(
     await approveAllGeneratedParameters(userId, "nutrition", supabase);
   }
 
-  const { data: personalization } = await supabase
-    .from("personalization_profiles")
-    .select("never_recommend")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  const mealPlanResult = await generateAndSaveMealPlan(
-    userId,
-    {
-      extraExcludeKeywords: ((personalization?.never_recommend as string[] | null) ?? []).map((s) =>
-        s.toLowerCase()
-      ),
-    },
-    supabase
-  );
-  if (mealPlanResult.ok) {
-    await approveMealPlanAndGenerateDownstream(userId, supabase);
-  }
+  // Meal plans are no longer generated automatically on review approval
+  // (2026-08-16). Approving last week's review used to silently overwrite
+  // the upcoming week, which is exactly the "meals I didn't ask for"
+  // problem. A week is now produced only when the user asks, via
+  // POST /api/plan/meals/generate.
+  //
+  // The personalization_profiles read that lived here went with it --
+  // `never_recommend` is fetched by that endpoint instead, so the
+  // preference still applies; it is simply read at the point of use.
 
   const brief = review.brief as WeeklyBrief;
   const today = await todayIso(supabase, userId);
