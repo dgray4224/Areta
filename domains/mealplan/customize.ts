@@ -27,6 +27,11 @@ export type MealDayAssignmentInput = {
   daysOfWeek: number[];
 };
 
+/** What one day's slot held before an assignment overwrote it.
+ * `recipeId: null` = the slot didn't exist, so undoing means deleting
+ * the row the assignment inserted, not reverting it to something. */
+export type DisplacedMealSlot = { dayOfWeek: number; recipeId: string | null };
+
 /** "Is any real meal plan already covering the CALENDAR WEEK containing
  * `weekStart`" -- shared by assignMealPlanDays's bootstrap-if-missing
  * below and domains/mealplan/approve-flow.ts#ensureMealPlanWeeksAhead's
@@ -80,12 +85,19 @@ export async function mealPlanExistsForWeek(
  * with different recipes/days is how a user builds up "3 distinct
  * lunches this week" -- each call only ever touches its own days, never
  * wipes an earlier call's picks.
+ *
+ * Returns the slots it displaced (`displaced`), so a caller offering
+ * "undo this assignment" can put the week back exactly as it found it --
+ * see restoreMealPlanDays. `recipeId: null` means that day had no item
+ * at all before this call, so undoing it is a delete rather than a
+ * revert. Captured here rather than re-read later because the previous
+ * recipe is gone the moment the update lands.
  */
 export async function assignMealPlanDays(
   userId: string,
   input: MealDayAssignmentInput,
   client?: SupabaseClient<Database>
-): Promise<ActionResult<{ warnings: string[] }>> {
+): Promise<ActionResult<{ warnings: string[]; displaced: DisplacedMealSlot[] }>> {
   const supabase = client ?? (await createClient());
   const { weekStart, recipeId, mealType, daysOfWeek } = input;
 
@@ -119,15 +131,16 @@ export async function assignMealPlanDays(
 
   const { data: recipe, error: recipeError } = await supabase
     .from("recipes")
-    .select("id, meal_type, status")
+    .select("id, meal_type, status, also_suitable_for")
     .eq("id", recipeId)
     .maybeSingle();
   if (recipeError) return { ok: false, error: recipeError.message };
   if (!recipe || recipe.status !== "active") {
     return { ok: false, error: "Recipe not found or no longer available." };
   }
-  if (recipe.meal_type !== mealType) {
-    return { ok: false, error: `This is a ${mealType} slot, but that recipe is ${recipe.meal_type}.` };
+  // Same union rule as swapMealPlanItem and the picker API.
+  if (recipe.meal_type !== mealType && !(recipe.also_suitable_for ?? []).includes(mealType)) {
+    return { ok: false, error: `This is a ${mealType} slot, and that recipe isn't suitable for it.` };
   }
 
   const { data: plan, error: planError } = await supabase
@@ -141,18 +154,24 @@ export async function assignMealPlanDays(
 
   const { data: existingItems, error: itemsError } = await supabase
     .from("meal_plan_items")
-    .select("id, day_of_week")
+    .select("id, day_of_week, recipe_id")
     .eq("meal_plan_id", plan.id)
     .eq("meal_type", mealType)
     .in("day_of_week", daysOfWeek);
   if (itemsError) return { ok: false, error: itemsError.message };
 
-  const existingByDay = new Map((existingItems ?? []).map((i) => [i.day_of_week, i.id]));
+  const existingByDay = new Map((existingItems ?? []).map((i) => [i.day_of_week, i]));
   const daysToUpdate = daysOfWeek.filter((d) => existingByDay.has(d));
   const daysToInsert = daysOfWeek.filter((d) => !existingByDay.has(d));
 
+  // Snapshot before the writes below overwrite it.
+  const displaced: DisplacedMealSlot[] = daysOfWeek.map((day) => ({
+    dayOfWeek: day,
+    recipeId: existingByDay.get(day)?.recipe_id ?? null,
+  }));
+
   if (daysToUpdate.length > 0) {
-    const itemIds = daysToUpdate.map((d) => existingByDay.get(d)!);
+    const itemIds = daysToUpdate.map((d) => existingByDay.get(d)!.id);
     const { error: updateError } = await supabase
       .from("meal_plan_items")
       .update({ recipe_id: recipeId })
@@ -195,6 +214,95 @@ export async function assignMealPlanDays(
   // materialized grocery/prep row) -- an edit to a not-yet-approved
   // future week is picked up normally by approveMealPlanAndGenerateDownstream
   // later, same as any other pre-approval edit.
+  const [{ data: groceryRow }, { data: prepRow }] = await Promise.all([
+    supabase.from("grocery_lists").select("id").eq("user_id", userId).eq("week_start", weekStart).maybeSingle(),
+    supabase.from("prep_plans").select("id").eq("user_id", userId).eq("week_start", weekStart).maybeSingle(),
+  ]);
+  if (groceryRow) {
+    const groceryResult = await generateAndSaveGroceryList(userId, supabase, weekStart);
+    if (!groceryResult.ok) warnings = [...warnings, `Grocery list update failed: ${groceryResult.error}`];
+  }
+  if (prepRow) {
+    const prepResult = await generateAndSavePrepPlan(userId, supabase, weekStart);
+    if (!prepResult.ok) warnings = [...warnings, `Prep plan update failed: ${prepResult.error}`];
+  }
+
+  return { ok: true, data: { warnings, displaced } };
+}
+
+/**
+ * Undo half of assignMealPlanDays -- puts the given slots back to
+ * whatever `displaced` said was there before, so "delete this change" or
+ * "I meant Mon-Wed, not Sun-Tue" leaves the week exactly as the user
+ * found it rather than punching a hole in it or re-rolling the
+ * generator for a different recipe than the one they displaced.
+ *
+ * Deliberately writes no meal_pick_history: those rows are a preference
+ * signal feeding future generation, and a pick the user then took back
+ * is the opposite of a preference. The assign call already logged it;
+ * we can't un-log cleanly, but we at least don't double-count a
+ * reverted choice as two more signals.
+ */
+export async function restoreMealPlanDays(
+  userId: string,
+  input: { weekStart: string; mealType: MealType; slots: DisplacedMealSlot[] },
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ warnings: string[] }>> {
+  const supabase = client ?? (await createClient());
+  const { weekStart, mealType, slots } = input;
+
+  if (slots.length === 0) return { ok: true, data: { warnings: [] } };
+  if (slots.some((s) => !Number.isInteger(s.dayOfWeek) || s.dayOfWeek < 0 || s.dayOfWeek > 6)) {
+    return { ok: false, error: "Invalid day of week." };
+  }
+
+  const { data: plan, error: planError } = await supabase
+    .from("meal_plans")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+  if (planError) return { ok: false, error: planError.message };
+  // Nothing to restore into -- the week was deleted out from under us
+  // (e.g. a regeneration elsewhere). Not an error worth blocking on:
+  // the state the caller wanted to undo is already gone.
+  if (!plan) return { ok: true, data: { warnings: ["That week's plan no longer exists, so there was nothing to undo."] } };
+
+  const daysToClear = slots.filter((s) => s.recipeId === null).map((s) => s.dayOfWeek);
+  const slotsToRevert = slots.filter((s): s is { dayOfWeek: number; recipeId: string } => s.recipeId !== null);
+
+  let warnings: string[] = [];
+
+  if (daysToClear.length > 0) {
+    const { error: deleteError } = await supabase
+      .from("meal_plan_items")
+      .delete()
+      .eq("meal_plan_id", plan.id)
+      .eq("user_id", userId)
+      .eq("meal_type", mealType)
+      .in("day_of_week", daysToClear);
+    if (deleteError) return { ok: false, error: deleteError.message };
+  }
+
+  // One update per distinct recipe rather than per slot -- an undo of
+  // "this recipe on 5 days" collapses to a single statement.
+  const daysByRecipe = new Map<string, number[]>();
+  for (const slot of slotsToRevert) {
+    daysByRecipe.set(slot.recipeId, [...(daysByRecipe.get(slot.recipeId) ?? []), slot.dayOfWeek]);
+  }
+  for (const [restoreRecipeId, days] of daysByRecipe) {
+    const { error: updateError } = await supabase
+      .from("meal_plan_items")
+      .update({ recipe_id: restoreRecipeId })
+      .eq("meal_plan_id", plan.id)
+      .eq("user_id", userId)
+      .eq("meal_type", mealType)
+      .in("day_of_week", days);
+    if (updateError) return { ok: false, error: updateError.message };
+  }
+
+  // Same downstream-refresh rule as assignMealPlanDays -- an undo
+  // changes the week's contents just as much as the original edit did.
   const [{ data: groceryRow }, { data: prepRow }] = await Promise.all([
     supabase.from("grocery_lists").select("id").eq("user_id", userId).eq("week_start", weekStart).maybeSingle(),
     supabase.from("prep_plans").select("id").eq("user_id", userId).eq("week_start", weekStart).maybeSingle(),
