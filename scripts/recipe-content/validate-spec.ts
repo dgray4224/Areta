@@ -56,6 +56,22 @@ const KEYWORD_EXCLUDE_PREFIXES: Partial<Record<string, string[]>> = {
   milk: ["soy", "almond", "oat", "coconut", "rice", "cashew", "hemp", "pea"],
 };
 
+/** The mirror image of KEYWORD_EXCLUDE_PREFIXES: a compound term where
+ * the keyword comes FIRST and the following word changes what it means.
+ * "Goat cheese" is dairy, not the meat keyword "goat" — without this, a
+ * perfectly vegetarian salad fails the vegetarian check. Kept separate
+ * from the prefix map rather than merged, because the regex has to look
+ * the other way (lookahead, not lookbehind). */
+const KEYWORD_EXCLUDE_SUFFIXES: Partial<Record<string, string[]>> = {
+  goat: ["cheese"],
+  // Oyster mushrooms are a fungus named for their shape, not shellfish --
+  // and they're a common meat substitute, so without this a genuinely
+  // vegan recipe fails both the allergen and the vegan check. Note that
+  // oyster SAUCE really does contain oyster extract and must still be
+  // caught, which is why this excludes only the "mushroom" suffix.
+  oyster: ["mushroom"],
+};
+
 /** Word-boundary match (allowing a trailing "s"/"es" plural), not a plain
  * substring check -- "eggplant" must not match the "egg" keyword the way
  * a naive `.includes()` would, while "Eggs" still must match "egg". Each
@@ -66,7 +82,9 @@ function matchesAny(text: string, keywords: string[]): string | null {
     keywords.find((k) => {
       const excludePrefixes = KEYWORD_EXCLUDE_PREFIXES[k];
       const lookbehinds = excludePrefixes ? excludePrefixes.map((p) => `(?<!${escapeRegExp(p)} )`).join("") : "";
-      return new RegExp(`${lookbehinds}\\b${escapeRegExp(k)}(e?s)?\\b`).test(text);
+      const excludeSuffixes = KEYWORD_EXCLUDE_SUFFIXES[k];
+      const lookaheads = excludeSuffixes ? excludeSuffixes.map((suffix) => `(?! ${escapeRegExp(suffix)})`).join("") : "";
+      return new RegExp(`${lookbehinds}\\b${escapeRegExp(k)}(e?s)?\\b${lookaheads}`).test(text);
     }) ?? null
   );
 }
@@ -118,6 +136,17 @@ export async function crossReferenceBatch(
       errors.push(
         `${label}: stated calories (${recipe.calories}) don't match macros (${recipe.proteinG}p/${recipe.carbsG}c/${recipe.fatG}f ≈ ${Math.round(computedCalories)} kcal) within tolerance (±${Math.round(tolerance)})`
       );
+    }
+
+    // alsoSuitableFor must not repeat mealType -- the DB has the same
+    // CHECK, but failing here names the recipe instead of surfacing a
+    // constraint violation halfway through a batch insert.
+    if (recipe.alsoSuitableFor?.includes(recipe.mealType)) {
+      errors.push(`${label}: alsoSuitableFor repeats its own mealType ("${recipe.mealType}")`);
+    }
+    const crossover = recipe.alsoSuitableFor ?? [];
+    if (new Set(crossover).size !== crossover.length) {
+      errors.push(`${label}: alsoSuitableFor contains duplicates`);
     }
 
     // Meal-type-appropriate calorie range.
