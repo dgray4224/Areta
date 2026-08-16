@@ -89,6 +89,7 @@ export async function generateAndSaveMealPlan(
     id: r.id,
     name: r.name,
     mealType: r.mealType,
+    alsoSuitableFor: r.alsoSuitableFor,
     cuisine: r.cuisine,
     calories: r.calories,
     proteinG: r.proteinG,
@@ -573,7 +574,7 @@ export async function swapMealPlanItem(
 
   const { data: recipe, error: recipeError } = await supabase
     .from("recipes")
-    .select("id, meal_type, status")
+    .select("id, meal_type, status, also_suitable_for")
     .eq("id", recipeId)
     .maybeSingle();
 
@@ -581,8 +582,14 @@ export async function swapMealPlanItem(
   if (!recipe || recipe.status !== "active") {
     return { ok: false, error: "Recipe not found or no longer available." };
   }
-  if (recipe.meal_type !== item.meal_type) {
-    return { ok: false, error: `This slot needs a ${item.meal_type} recipe, not ${recipe.meal_type}.` };
+  // A recipe fits a slot if it IS that meal type, or declares the slot in
+  // also_suitable_for. Keep both branches -- the picker unions the same
+  // way, and if these two disagree the UI offers options the server then
+  // refuses.
+  const fitsSlot =
+    recipe.meal_type === item.meal_type || (recipe.also_suitable_for ?? []).includes(item.meal_type);
+  if (!fitsSlot) {
+    return { ok: false, error: `This slot needs a ${item.meal_type} recipe, and that one isn't suitable for it.` };
   }
 
   const { error: updateError } = await supabase

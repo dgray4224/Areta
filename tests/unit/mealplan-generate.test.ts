@@ -6,6 +6,7 @@ function recipe(overrides: Partial<RecipeForPlanning>): RecipeForPlanning {
     id: "r1",
     name: "Test Recipe",
     mealType: "breakfast",
+    alsoSuitableFor: [],
     cuisine: "american",
     calories: 400,
     proteinG: 25,
@@ -183,6 +184,88 @@ describe("generateMealPlan", () => {
 
 // --- Content-expansion 4a/4b (2026-08-14): hard dietary filters + variety ---
 import { mapAllergiesToAllergens } from "@/domains/mealplan/generate";
+
+describe("alsoSuitableFor crossover", () => {
+  const dinnerOnly = recipe({
+    id: "d-only",
+    name: "All-Day Braise",
+    mealType: "dinner",
+    alsoSuitableFor: [],
+    calories: 600,
+    proteinG: 45,
+    searchableText: "beef braise",
+  });
+  const dinnerCrossover = recipe({
+    id: "d-cross",
+    name: "Chicken Bowl",
+    mealType: "dinner",
+    alsoSuitableFor: ["lunch"],
+    calories: 550,
+    proteinG: 40,
+    searchableText: "chicken rice bowl",
+  });
+  const breakfasts = [
+    recipe({ id: "bk1", mealType: "breakfast", calories: 400, searchableText: "eggs" }),
+    recipe({ id: "bk2", mealType: "breakfast", calories: 420, searchableText: "oats" }),
+    recipe({ id: "bk3", mealType: "breakfast", calories: 380, searchableText: "yogurt" }),
+    recipe({ id: "bk4", mealType: "breakfast", calories: 360, searchableText: "smoothie" }),
+  ];
+
+  it("uses a crossover dinner to fill lunch when no lunch recipes exist", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: [...breakfasts, dinnerOnly, dinnerCrossover],
+    });
+
+    // Without crossover the lunch pool would be empty and the slot dropped
+    // entirely (see "does not add a meal slot when no recipes exist").
+    const lunches = days.flatMap((d) => d.meals.filter((m) => m.mealType === "lunch"));
+    expect(lunches.length).toBeGreaterThan(0);
+    expect(lunches.every((m) => m.recipeId === "d-cross")).toBe(true);
+  });
+
+  it("never uses a dinner that did not opt in to lunch", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: [...breakfasts, dinnerOnly, dinnerCrossover],
+    });
+
+    const lunchRecipeIds = days.flatMap((d) => d.meals.filter((m) => m.mealType === "lunch")).map((m) => m.recipeId);
+    expect(lunchRecipeIds).not.toContain("d-only");
+  });
+
+  it("still fills the primary slot from its own meal type", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: [...breakfasts, dinnerOnly, dinnerCrossover],
+    });
+
+    const dinnerIds = new Set(days.flatMap((d) => d.meals.filter((m) => m.mealType === "dinner")).map((m) => m.recipeId));
+    expect([...dinnerIds].every((id) => id === "d-only" || id === "d-cross")).toBe(true);
+  });
+
+  it("does not let crossover leak across breakfast", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: [...breakfasts, dinnerOnly, dinnerCrossover],
+    });
+
+    const breakfastIds = days.flatMap((d) => d.meals.filter((m) => m.mealType === "breakfast")).map((m) => m.recipeId);
+    expect(breakfastIds.every((id) => id.startsWith("bk"))).toBe(true);
+  });
+});
 
 describe("mapAllergiesToAllergens", () => {
   it("maps common free-text allergy phrasings onto the Big 9", () => {
