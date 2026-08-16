@@ -24,6 +24,59 @@ export const RECIPE_CUISINES = [
   "mediterranean",
 ] as const;
 
+/**
+ * What form a dish takes, independent of where it comes from — the axis
+ * people actually browse on when deciding what to eat ("I want a soup"),
+ * which cuisine alone can't answer. Every recipe carries exactly one, so
+ * this partitions the library rather than tagging it: pick the dominant
+ * form when a dish could arguably be two things (a taco salad is
+ * `salad`; a chicken parm sub is `sandwich`).
+ *
+ * Fine-grained on purpose — `noodles` separate from `pasta`, `chili`
+ * from `stew` — so a filtered list is short enough to scan without
+ * further narrowing. The accepted cost is a horizontally-scrolling chip
+ * row and some thin buckets.
+ */
+export const RECIPE_DISH_TYPES = [
+  // Hot bowls, descending brothiness
+  "soup",
+  "stew",
+  "chili",
+  "curry",
+  // Cold plates
+  "salad",
+  // Handhelds
+  "sandwich",
+  "burger",
+  "wrap",
+  "burrito",
+  "tacos",
+  "pizza",
+  // Starch-led plates
+  "pasta",
+  "noodles",
+  "rice",
+  "bowl",
+  // Method-led mains
+  "stir_fry",
+  "grilled",
+  "bbq",
+  "casserole",
+  "seafood",
+  // Breakfast forms
+  "eggs",
+  "pancakes",
+  "oatmeal",
+  "toast",
+  // Oven / sweet
+  "baked",
+  // Drinkable
+  "smoothie",
+  // Snack forms
+  "dip",
+  "snack_bite",
+] as const;
+
 /** FDA "Big 9" major food allergens — a fixed vocabulary, not free text
  * like dietaryTags, so it stays filterable and so the recipe-content
  * pipeline's allergen cross-check (scripts/recipe-content/validate-spec.ts)
@@ -45,10 +98,31 @@ export const RECIPE_ALLERGENS = [
 // what lets zodResolver and useForm<RecipeInput>()'s single generic agree.
 const stringArray = z.array(z.string());
 
+/** The meal slots a recipe can occupy. Declared here rather than inline
+ * so `mealType` and `alsoSuitableFor` below cannot drift apart. */
+export const RECIPE_MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
+
 export const recipeSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+  mealType: z.enum(RECIPE_MEAL_TYPES),
   cuisine: z.enum(RECIPE_CUISINES),
+  dishType: z.enum(RECIPE_DISH_TYPES),
+  /**
+   * Other slots this recipe is also a reasonable choice for. `mealType`
+   * stays the primary/default; this is the crossover list.
+   *
+   * Exists because lunch and dinner are largely the same food, and a hard
+   * partition was halving the effective library for anyone with dietary
+   * restrictions — a vegan planning lunch saw 25 recipes when 48 were
+   * suitable. Per-recipe rather than a blanket lunch/dinner merge, so a
+   * dish that genuinely belongs to one slot (pancakes, an all-day braise)
+   * can say so.
+   *
+   * Optional: absent means "no crossover", which is the conservative
+   * default and keeps every existing draft valid. Must not repeat
+   * `mealType` — the DB enforces that too.
+   */
+  alsoSuitableFor: z.array(z.enum(RECIPE_MEAL_TYPES)).optional(),
   calories: z.number().int().min(0),
   proteinG: z.number().min(0),
   carbsG: z.number().min(0),

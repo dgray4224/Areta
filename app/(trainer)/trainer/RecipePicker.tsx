@@ -5,7 +5,8 @@ import { createRecipeAsTrainer } from "@/domains/trainermealprogram/service";
 import { FormField, TextInput, SelectInput, TextArea } from "@/platform/ui/FormField";
 import { Button } from "@/platform/ui/Button";
 import type { Recipe, Ingredient } from "@/domains/recipes/types";
-import { RECIPE_CUISINES } from "@/domains/recipes/schema";
+import { RECIPE_CUISINES, RECIPE_DISH_TYPES, RECIPE_MEAL_TYPES } from "@/domains/recipes/schema";
+import { DISH_TYPE_LABELS } from "@/domains/recipes/labels";
 import type { MealType } from "@/domains/trainermealprogram/types";
 
 const MEAL_TYPE_LABEL: Record<MealType, string> = {
@@ -176,6 +177,8 @@ function NewRecipeInline({
   const [name, setName] = useState("");
   const [recipeMealType, setRecipeMealType] = useState<MealType>(mealType);
   const [cuisine, setCuisine] = useState<(typeof RECIPE_CUISINES)[number]>("american");
+  const [dishType, setDishType] = useState<(typeof RECIPE_DISH_TYPES)[number]>("bowl");
+  const [alsoSuitableFor, setAlsoSuitableFor] = useState<MealType[]>([]);
   const [calories, setCalories] = useState("");
   const [proteinG, setProteinG] = useState("");
   const [carbsG, setCarbsG] = useState("");
@@ -213,6 +216,11 @@ function NewRecipeInline({
         name,
         mealType: recipeMealType,
         cuisine,
+        dishType,
+        // Guard against stale state: switching the primary meal type
+        // hides its checkbox but leaves any prior selection behind, and
+        // the DB rejects a recipe listed as also-suitable-for itself.
+        alsoSuitableFor: alsoSuitableFor.filter((m) => m !== recipeMealType),
         calories: Number(calories),
         proteinG: Number(proteinG),
         carbsG: Number(carbsG),
@@ -234,6 +242,11 @@ function NewRecipeInline({
         name,
         mealType: recipeMealType,
         cuisine,
+        dishType,
+        // Guard against stale state: switching the primary meal type
+        // hides its checkbox but leaves any prior selection behind, and
+        // the DB rejects a recipe listed as also-suitable-for itself.
+        alsoSuitableFor: alsoSuitableFor.filter((m) => m !== recipeMealType),
         calories: Number(calories),
         proteinG: Number(proteinG),
         carbsG: Number(carbsG),
@@ -280,6 +293,38 @@ function NewRecipeInline({
             {RECIPE_CUISINES.map((c) => (
               <option key={c} value={c}>
                 {CUISINE_LABEL[c]}
+              </option>
+            ))}
+          </SelectInput>
+        </FormField>
+        <FormField label="Also suitable for" htmlFor="new-recipe-also-suitable">
+          {/* Crossover slots. Lunch and dinner are usually interchangeable,
+              so marking them here roughly doubles the pool the planner and
+              picker can draw from without writing another recipe. */}
+          <div id="new-recipe-also-suitable" className="flex flex-wrap gap-3">
+            {RECIPE_MEAL_TYPES.filter((m) => m !== recipeMealType).map((m) => (
+              <label key={m} className="flex items-center gap-1.5 text-sm capitalize">
+                <input
+                  type="checkbox"
+                  checked={alsoSuitableFor.includes(m)}
+                  onChange={(e) =>
+                    setAlsoSuitableFor((prev) => (e.target.checked ? [...prev, m] : prev.filter((x) => x !== m)))
+                  }
+                />
+                {m}
+              </label>
+            ))}
+          </div>
+        </FormField>
+        <FormField label="Dish type" htmlFor="new-recipe-dish-type">
+          <SelectInput
+            id="new-recipe-dish-type"
+            value={dishType}
+            onChange={(e) => setDishType(e.target.value as (typeof RECIPE_DISH_TYPES)[number])}
+          >
+            {RECIPE_DISH_TYPES.map((d) => (
+              <option key={d} value={d}>
+                {DISH_TYPE_LABELS[d]}
               </option>
             ))}
           </SelectInput>
