@@ -3,6 +3,8 @@
  * InsightCandidates; domains/insights/service.ts owns fetching the input
  * once and persisting the survivors to the `insights` table. */
 
+import type { DataTier, ScoreComponents } from "./scoring";
+
 export type InsightGrain = "day" | "week" | "lifetime";
 
 /** One local calendar day of already-aggregated activity — a straight
@@ -79,4 +81,18 @@ export type InsightCandidate = {
    * (Phase 3) push eligibility. */
   score: number;
   dedupeKey: string;
+  /** Data tier this finding required. Recorded for analysis only —
+   * ranking is tier-blind (domains/insights/scoring.ts). Optional so the
+   * pre-2026-08-17 detectors keep compiling untouched; they record no
+   * tier until migrated onto the shared scorer. */
+  tier?: DataTier;
+  /** Stable generator identity, independent of the display `type` —
+   * several generators can emit the same type. Paired with a version so a
+   * scoring change is attributable after the fact. */
+  generatorKey?: string;
+  generatorVersion?: number;
+  /** The five inputs that produced `score`. Persisted per row so "why did
+   * this outrank that" is answerable in SQL rather than by re-reading the
+   * detector. */
+  scoreComponents?: ScoreComponents;
 };

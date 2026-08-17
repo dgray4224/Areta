@@ -241,6 +241,68 @@ export type Database = {
         }
         Relationships: []
       }
+      changepoints: {
+        Row: {
+          confidence: number
+          created_at: string
+          days_after: number
+          days_before: number
+          detected_at: string
+          direction: string
+          id: string
+          label: string | null
+          labeled_at: string | null
+          mean_after: number
+          mean_before: number
+          memory_id: string | null
+          metric: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          days_after: number
+          days_before: number
+          detected_at: string
+          direction: string
+          id?: string
+          label?: string | null
+          labeled_at?: string | null
+          mean_after: number
+          mean_before: number
+          memory_id?: string | null
+          metric: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          days_after?: number
+          days_before?: number
+          detected_at?: string
+          direction?: string
+          id?: string
+          label?: string | null
+          labeled_at?: string | null
+          mean_after?: number
+          mean_before?: number
+          memory_id?: string | null
+          metric?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "changepoints_memory_id_fkey"
+            columns: ["memory_id"]
+            isOneToOne: false
+            referencedRelation: "memories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       custom_timeline_events: {
         Row: {
           completed_at: string | null
@@ -1179,6 +1241,101 @@ export type Database = {
         }
         Relationships: []
       }
+      insights: {
+        Row: {
+          created_at: string
+          dedupe_key: string
+          facts: Json
+          generator_key: string | null
+          generator_version: number
+          graduated_at: string | null
+          grain: string
+          headline: string
+          id: string
+          memory_id: string | null
+          period_end: string | null
+          period_start: string | null
+          pushed_at: string | null
+          score: number
+          score_actionability: number | null
+          score_effect_size: number | null
+          score_goal_relevance: number | null
+          score_sample_size: number | null
+          score_surprise: number | null
+          seen_at: string | null
+          shared_at: string | null
+          status: string
+          tier: number | null
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dedupe_key: string
+          facts: Json
+          generator_key?: string | null
+          generator_version?: number
+          graduated_at?: string | null
+          grain: string
+          headline: string
+          id?: string
+          memory_id?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          pushed_at?: string | null
+          score?: number
+          score_actionability?: number | null
+          score_effect_size?: number | null
+          score_goal_relevance?: number | null
+          score_sample_size?: number | null
+          score_surprise?: number | null
+          seen_at?: string | null
+          shared_at?: string | null
+          status?: string
+          tier?: number | null
+          type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dedupe_key?: string
+          facts?: Json
+          generator_key?: string | null
+          generator_version?: number
+          graduated_at?: string | null
+          grain?: string
+          headline?: string
+          id?: string
+          memory_id?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          pushed_at?: string | null
+          score?: number
+          score_actionability?: number | null
+          score_effect_size?: number | null
+          score_goal_relevance?: number | null
+          score_sample_size?: number | null
+          score_surprise?: number | null
+          seen_at?: string | null
+          shared_at?: string | null
+          status?: string
+          tier?: number | null
+          type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insights_memory_id_fkey"
+            columns: ["memory_id"]
+            isOneToOne: false
+            referencedRelation: "memories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_items: {
         Row: {
           id: string
@@ -1201,63 +1358,6 @@ export type Database = {
           name?: string
           quantity?: number
           unit?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      insights: {
-        Row: {
-          created_at: string
-          dedupe_key: string
-          facts: Json
-          grain: string
-          headline: string
-          id: string
-          period_end: string | null
-          period_start: string | null
-          pushed_at: string | null
-          score: number
-          seen_at: string | null
-          shared_at: string | null
-          status: string
-          type: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          dedupe_key: string
-          facts: Json
-          grain: string
-          headline: string
-          id?: string
-          period_end?: string | null
-          period_start?: string | null
-          pushed_at?: string | null
-          score?: number
-          seen_at?: string | null
-          shared_at?: string | null
-          status?: string
-          type: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          dedupe_key?: string
-          facts?: Json
-          grain?: string
-          headline?: string
-          id?: string
-          period_end?: string | null
-          period_start?: string | null
-          pushed_at?: string | null
-          score?: number
-          seen_at?: string | null
-          shared_at?: string | null
-          status?: string
-          type?: string
           updated_at?: string
           user_id?: string
         }
@@ -2135,15 +2235,15 @@ export type Database = {
       recipes: {
         Row: {
           allergens: string[]
+          also_suitable_for: string[]
           calories: number
           carbs_g: number
           cook_minutes: number
           created_at: string
           created_by: string | null
           cuisine: string | null
-          dish_type: string
-          also_suitable_for: string[]
           dietary_tags: string[]
+          dish_type: string
           fat_g: number
           fiber_g: number | null
           id: string
@@ -2160,15 +2260,15 @@ export type Database = {
         }
         Insert: {
           allergens?: string[]
+          also_suitable_for?: string[]
           calories: number
           carbs_g: number
           cook_minutes?: number
           created_at?: string
           created_by?: string | null
           cuisine?: string | null
-          dish_type: string
-          also_suitable_for?: string[]
           dietary_tags?: string[]
+          dish_type: string
           fat_g: number
           fiber_g?: number | null
           id?: string
@@ -2185,15 +2285,15 @@ export type Database = {
         }
         Update: {
           allergens?: string[]
+          also_suitable_for?: string[]
           calories?: number
           carbs_g?: number
           cook_minutes?: number
           created_at?: string
           created_by?: string | null
           cuisine?: string | null
-          dish_type?: string
-          also_suitable_for?: string[]
           dietary_tags?: string[]
+          dish_type?: string
           fat_g?: number
           fiber_g?: number | null
           id?: string

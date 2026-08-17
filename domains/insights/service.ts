@@ -10,6 +10,8 @@ import { detectWorkoutTimingSleep } from "./detectors/workout-timing-sleep";
 import { detectWeekendShift } from "./detectors/weekend-shift";
 import { detectPersonalRecords } from "./detectors/personal-record";
 import { detectBehaviorStreaks } from "./detectors/behavior-streak";
+import { generateStepPortrait, normalizeDailySeries } from "./generators/step-portrait";
+import type { Changepoint } from "./generators/changepoint";
 
 /** Insight Engine v2 orchestrator (2026-08-14) — fetches each user's
  * day-grain data once, fans out to the pure detector battery in
@@ -69,11 +71,11 @@ export type ComputeInsightsResult = {
  * (e.g. to attach share-card series to insights that fired before those
  * existed) without going through the insert path, which deliberately
  * drops any candidate whose dedupe_key already fired. */
-export async function computeInsightCandidates(
+export async function computeInsightBundle(
   userId: string,
   supabase: SupabaseClient<Database>,
   options: { includePatternScans: boolean }
-): Promise<InsightCandidate[]> {
+): Promise<{ candidates: InsightCandidate[]; changepoints: Changepoint[] }> {
   const timezone = await resolveTimezone(supabase, userId);
   const today = localDateString(new Date(), timezone);
   const windowStart = addDaysToDateString(today, -WINDOW_DAYS);
@@ -90,7 +92,11 @@ export async function computeInsightCandidates(
         .order("day", { ascending: true }),
       supabase
         .from("activity_daily_summaries")
-        .select("day, steps_total, workout_count, workout_total_minutes")
+        // day_of_week and steps_most_active_local_hour ride along for the
+        // Tier 0/1 generators, which reason over the WHOLE history rather
+        // than the 120-day window the older detectors use — a weekday
+        // signature or a seasonal shape is meaningless inside 17 weeks.
+        .select("day, steps_total, workout_count, workout_total_minutes, day_of_week, steps_most_active_local_hour")
         .eq("user_id", userId)
         .order("day", { ascending: true })
         .limit(ALL_TIME_ROW_LIMIT),
@@ -129,18 +135,111 @@ export async function computeInsightCandidates(
     seedKey: userId,
   };
 
-  return [
-    ...detectPersonalRecords(input),
-    ...detectBehaviorStreaks(input),
-    ...(options.includePatternScans
-      ? [
-          ...detectSleepNextDayCompletion(input),
-          ...detectWeekdayPattern(input),
-          ...detectWorkoutTimingSleep(input),
-          ...detectWeekendShift(input),
-        ]
-      : []),
-  ];
+  // Tier 0/1 portrait runs over full history, not the rolling window, and
+  // is deliberately NOT gated behind includePatternScans: these findings
+  // are the launch surface for a user who never logs anything, so they
+  // cannot be reserved for the weekly slow path.
+  const allTime = allTimeRows ?? [];
+  const portrait = generateStepPortrait({
+    series: normalizeDailySeries(allTime.map((r) => ({ day: r.day, value: r.steps_total }))),
+    dayOfWeek: new Map(allTime.filter((r) => r.day_of_week !== null).map((r) => [r.day, r.day_of_week as number])),
+    mostActiveHour: new Map(
+      allTime
+        .filter((r) => r.steps_most_active_local_hour !== null)
+        .map((r) => [r.day, r.steps_most_active_local_hour as number])
+    ),
+    activeGoalDomains: await fetchActiveGoalDomains(userId, supabase),
+    today,
+  });
+
+  return {
+    candidates: [
+      ...detectPersonalRecords(input),
+      ...detectBehaviorStreaks(input),
+      ...portrait.candidates,
+      ...(options.includePatternScans
+        ? [
+            ...detectSleepNextDayCompletion(input),
+            ...detectWeekdayPattern(input),
+            ...detectWorkoutTimingSleep(input),
+            ...detectWeekendShift(input),
+          ]
+        : []),
+    ],
+    changepoints: portrait.changepoints,
+  };
+}
+
+/**
+ * Domain keys the user currently has an active goal in, for the scorer's
+ * goal-relevance dimension. Empty set on any failure: goal relevance is
+ * one of five inputs and never worth failing a whole insight run over.
+ */
+async function fetchActiveGoalDomains(userId: string, supabase: SupabaseClient<Database>): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("goals")
+    .select("domains(key)")
+    .eq("user_id", userId)
+    .eq("status", "active");
+  if (error || !data) return new Set();
+
+  const keys = new Set<string>();
+  for (const row of data) {
+    const domain = row.domains as { key: string } | { key: string }[] | null;
+    if (!domain) continue;
+    if (Array.isArray(domain)) domain.forEach((d) => keys.add(d.key));
+    else keys.add(domain.key);
+  }
+  return keys;
+}
+
+/** Back-compat wrapper: ops tooling recomputes candidates without caring
+ * about changepoints. */
+export async function computeInsightCandidates(
+  userId: string,
+  supabase: SupabaseClient<Database>,
+  options: { includePatternScans: boolean }
+): Promise<InsightCandidate[]> {
+  return (await computeInsightBundle(userId, supabase, options)).candidates;
+}
+
+/**
+ * Upserts detected changepoints, preserving any label the user has
+ * already written.
+ *
+ * Re-running detection on a longer series can shift a changepoint's
+ * estimated means, so the numbers are refreshed — but `label`,
+ * `labeled_at` and `memory_id` are never written here. A user's answer to
+ * "what changed in September?" is the single most valuable piece of
+ * context this app can hold, and a routine cron must not be able to
+ * clobber it.
+ */
+async function persistChangepoints(
+  userId: string,
+  supabase: SupabaseClient<Database>,
+  changepoints: Changepoint[]
+): Promise<void> {
+  if (changepoints.length === 0) return;
+
+  const { error } = await supabase.from("changepoints").upsert(
+    changepoints.map((c) => ({
+      user_id: userId,
+      metric: "steps",
+      detected_at: c.day,
+      direction: c.direction,
+      mean_before: Math.round(c.meanBefore),
+      mean_after: Math.round(c.meanAfter),
+      days_before: c.daysBefore,
+      days_after: c.daysAfter,
+      confidence: Math.round(Math.min(1, c.tStatistic / 10) * 100) / 100,
+    })),
+    { onConflict: "user_id,metric,detected_at" }
+  );
+  if (error) {
+    // Non-fatal: the insight card still ships, it just cannot be annotated
+    // until the next run succeeds.
+    console.error(`[insights] changepoint upsert failed for ${userId}: ${error.message}`);
+  }
 }
 
 export async function computeAndStoreInsights(
@@ -148,7 +247,12 @@ export async function computeAndStoreInsights(
   supabase: SupabaseClient<Database>,
   options: { includePatternScans: boolean }
 ): Promise<ComputeInsightsResult> {
-  const candidates = await computeInsightCandidates(userId, supabase, options);
+  const { candidates, changepoints } = await computeInsightBundle(userId, supabase, options);
+
+  // Persisted before the early return: a user can have a changepoint worth
+  // annotating even when every insight candidate is a duplicate this run.
+  await persistChangepoints(userId, supabase, changepoints);
+
   if (candidates.length === 0) return { created: 0, duplicates: 0, createdInsights: [] };
 
   // Dedupe against everything this user has ever been shown — dedupe_key
@@ -186,6 +290,18 @@ export async function computeAndStoreInsights(
         headline: c.headline,
         score: c.score,
         dedupe_key: c.dedupeKey,
+        // Null for the pre-2026-08-17 detectors, which still pick their
+        // own score. Nullable rather than defaulted so "has not been
+        // migrated onto the shared scorer yet" stays distinguishable from
+        // "scored zero on that dimension".
+        tier: c.tier ?? null,
+        generator_key: c.generatorKey ?? null,
+        generator_version: c.generatorVersion ?? 1,
+        score_effect_size: c.scoreComponents?.effectSize ?? null,
+        score_sample_size: c.scoreComponents?.sampleSize ?? null,
+        score_actionability: c.scoreComponents?.actionability ?? null,
+        score_goal_relevance: c.scoreComponents?.goalRelevance ?? null,
+        score_surprise: c.scoreComponents?.surprise ?? null,
       }))
     )
     .select("id, type, score, headline");
