@@ -223,6 +223,91 @@ async function userHasManualOverrides(
   return cached;
 }
 
+/**
+ * Bulk variant of insertImportedHealthMetric for one metric type.
+ *
+ * Same rules, one round trip. The per-sample function costs a query per
+ * sample even when the sample merely dedupes; a historical backfill posts
+ * tens of thousands, which is what depleted this project's Supabase Disk
+ * IO budget on 2026-08-17. Here the override lookups happen once for the
+ * whole batch and the writes collapse into a single upsert.
+ *
+ * Deliberately does NOT recompute activity daily summaries — the caller
+ * does that once per distinct DAY. Doing it per sample was the larger
+ * half of the same problem: a day holding 25 step samples recomputed that
+ * day 25 times, at several queries each.
+ */
+export async function insertImportedHealthMetricsBatch(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  metricType: MetricType,
+  items: (HealthMetricFields & { source: string; device?: string | null; dedupKey: string })[]
+): Promise<ActionResult<{ inserted: number; skipped: number }>> {
+  const inWindow = items.filter((i) => !isOlderThanHealthImportRetentionWindow(i.startedAt));
+  let admissible = inWindow;
+  let skipped = items.length - inWindow.length;
+
+  // Both override guards, batched. Skipped entirely for users with no
+  // manual corrections, exactly as the per-sample path does.
+  if (inWindow.length > 0 && (await userHasManualOverrides(supabase, userId, metricType))) {
+    const timezone = await resolveTimezone(supabase, userId);
+
+    const { data: overrideRows } = await supabase
+      .from("health_metrics")
+      .select("override_day")
+      .eq("user_id", userId)
+      .eq("metric_type", metricType)
+      .eq("user_override", true);
+    const overrideDays = new Set((overrideRows ?? []).map((r) => r.override_day).filter(Boolean) as string[]);
+
+    const { data: overriddenRows } = await supabase
+      .from("health_metrics")
+      .select("dedup_key")
+      .eq("user_id", userId)
+      .eq("metric_type", metricType)
+      .eq("user_override", true)
+      .in(
+        "dedup_key",
+        inWindow.map((i) => i.dedupKey)
+      );
+    const overriddenKeys = new Set((overriddenRows ?? []).map((r) => r.dedup_key));
+
+    admissible = inWindow.filter(
+      (i) =>
+        !overrideDays.has(localDateString(new Date(i.startedAt), timezone)) && !overriddenKeys.has(i.dedupKey)
+    );
+    skipped += inWindow.length - admissible.length;
+  }
+
+  if (admissible.length === 0) return { ok: true, data: { inserted: 0, skipped } };
+
+  // Collapse duplicate dedup_keys WITHIN the batch. Postgres rejects an
+  // ON CONFLICT DO UPDATE that would touch the same row twice in one
+  // statement ("cannot affect row a second time"), and HealthKit can hand
+  // back the same uuid across page boundaries, so this is reachable in
+  // practice rather than theoretical. Last occurrence wins, matching the
+  // per-sample path's sequential upserts.
+  const byKey = new Map<string, (typeof admissible)[number]>();
+  for (const item of admissible) byKey.set(item.dedupKey, item);
+  const deduped = [...byKey.values()];
+  skipped += admissible.length - deduped.length;
+
+  const importedAt = new Date().toISOString();
+  const { error } = await supabase.from("health_metrics").upsert(
+    deduped.map((i) => ({
+      ...toRow(userId, metricType, i),
+      source: i.source,
+      device: i.device ?? null,
+      imported_at: importedAt,
+      dedup_key: i.dedupKey,
+    })),
+    { onConflict: "user_id,metric_type,dedup_key" }
+  );
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, data: { inserted: deduped.length, skipped } };
+}
+
 export async function insertImportedHealthMetric(
   supabase: SupabaseClient<Database>,
   userId: string,
