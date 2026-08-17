@@ -5,7 +5,7 @@
 // only future writer to these tables. Manual-entry paths (logWeight,
 // logSleep, etc.) are intentionally untouched — a user must always be able
 // to log old data by hand.
-export const HEALTH_IMPORT_RETENTION_YEARS = 3;
+export const HEALTH_IMPORT_RETENTION_YEARS = 10;
 
 export function isOlderThanHealthImportRetentionWindow(date: Date | string): boolean {
   const cutoff = new Date();
