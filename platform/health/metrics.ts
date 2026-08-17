@@ -173,6 +173,56 @@ export async function upsertManualHealthMetricOverride(
  * sleep/workout's day-vs-instant recompute) stay in each domain's own
  * service.ts — this only owns what was previously duplicated identically
  * five times. */
+/**
+ * Whether this user has ANY manual override for this metric type.
+ *
+ * Both guards inside insertImportedHealthMetric exist only to stop an
+ * import clobbering a hand-corrected value. When a user has never
+ * corrected anything for this metric -- the overwhelming majority -- both
+ * are provably no-ops, and skipping them takes the cost of an imported
+ * sample from three queries to one.
+ *
+ * That matters at import scale rather than at steady state. A historical
+ * backfill posts tens of thousands of samples, and a sample that simply
+ * dedupes was still paying full price for two SELECTs that could not
+ * change the outcome. Real consequence, observed 2026-08-17: a device
+ * backfill depleted the project's Supabase Disk IO budget.
+ *
+ * Cached per (client, user, metric type). The client is per request, so
+ * the cache lives exactly as long as one import batch -- long enough to
+ * pay for itself, short enough that an override created mid-flight is
+ * picked up by the very next request.
+ */
+const overridePresenceCache = new WeakMap<SupabaseClient<Database>, Map<string, Promise<boolean>>>();
+
+async function userHasManualOverrides(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  metricType: MetricType
+): Promise<boolean> {
+  let perClient = overridePresenceCache.get(supabase);
+  if (!perClient) {
+    perClient = new Map();
+    overridePresenceCache.set(supabase, perClient);
+  }
+  const key = `${userId}:${metricType}`;
+  let cached = perClient.get(key);
+  if (!cached) {
+    cached = Promise.resolve(
+      supabase
+        .from("health_metrics")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("metric_type", metricType)
+        .eq("user_override", true)
+        .limit(1)
+        .then(({ data }) => (data?.length ?? 0) > 0)
+    );
+    perClient.set(key, cached);
+  }
+  return cached;
+}
+
 export async function insertImportedHealthMetric(
   supabase: SupabaseClient<Database>,
   userId: string,
@@ -189,30 +239,34 @@ export async function insertImportedHealthMetric(
   // sample's own dedup_key, so only a day-scoped lookup can catch this.
   // See upsertManualHealthMetricOverride's doc comment for why this is
   // day-granularity rather than per-sample.
-  const timezone = await resolveTimezone(supabase, userId);
-  const day = localDateString(new Date(fields.startedAt), timezone);
-  const { data: dayOverride } = await supabase
-    .from("health_metrics")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("metric_type", metricType)
-    .eq("override_day", day)
-    .eq("user_override", true)
-    .maybeSingle();
-  if (dayOverride) {
-    return { ok: true, data: { skipped: true } };
-  }
+  // Skipped wholesale when this user has no overrides for this metric --
+  // see userHasManualOverrides. Semantics are unchanged when they do.
+  if (await userHasManualOverrides(supabase, userId, metricType)) {
+    const timezone = await resolveTimezone(supabase, userId);
+    const day = localDateString(new Date(fields.startedAt), timezone);
+    const { data: dayOverride } = await supabase
+      .from("health_metrics")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("metric_type", metricType)
+      .eq("override_day", day)
+      .eq("user_override", true)
+      .maybeSingle();
+    if (dayOverride) {
+      return { ok: true, data: { skipped: true } };
+    }
 
-  const { data: existing } = await supabase
-    .from("health_metrics")
-    .select("user_override")
-    .eq("user_id", userId)
-    .eq("metric_type", metricType)
-    .eq("dedup_key", fields.dedupKey)
-    .maybeSingle();
+    const { data: existing } = await supabase
+      .from("health_metrics")
+      .select("user_override")
+      .eq("user_id", userId)
+      .eq("metric_type", metricType)
+      .eq("dedup_key", fields.dedupKey)
+      .maybeSingle();
 
-  if (existing?.user_override) {
-    return { ok: true, data: { skipped: true } };
+    if (existing?.user_override) {
+      return { ok: true, data: { skipped: true } };
+    }
   }
 
   const { error } = await supabase.from("health_metrics").upsert(
