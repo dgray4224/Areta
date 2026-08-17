@@ -1,16 +1,25 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { recoveryLogSchema } from "@/domains/recovery/log-schema";
 import { createClient } from "@/platform/supabase/server";
+import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
-export async function logRecovery(userId: string, input: unknown): Promise<ActionResult> {
+/** `client` is supplied by the mobile bearer route (/api/log/recovery);
+ * see domains/weight/service.ts#logWeight for why the cookie-bound
+ * default can't serve a native app. */
+export async function logRecovery(
+  userId: string,
+  input: unknown,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
   const parsed = recoveryLogSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const d = parsed.data;
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { error } = await supabase.from("recovery_logs").insert({
     user_id: userId,
     date: d.date,

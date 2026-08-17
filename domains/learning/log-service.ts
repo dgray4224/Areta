@@ -1,16 +1,25 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { studySessionSchema } from "@/domains/learning/log-schema";
 import { createClient } from "@/platform/supabase/server";
+import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
-export async function logStudySession(userId: string, input: unknown): Promise<ActionResult> {
+/** `client` is supplied by the mobile bearer route (/api/log/learning);
+ * see domains/weight/service.ts#logWeight for why the cookie-bound
+ * default can't serve a native app. */
+export async function logStudySession(
+  userId: string,
+  input: unknown,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
   const parsed = studySessionSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const d = parsed.data;
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { error } = await supabase.from("study_sessions").insert({
     user_id: userId,
     date: d.date,

@@ -16,7 +16,13 @@ function sleepStartedAt(date: string, bedtime?: string): string {
   return bedtime ? new Date(bedtime).toISOString() : new Date(date).toISOString();
 }
 
-export async function logSleep(userId: string, input: unknown): Promise<ActionResult> {
+/** `client` is supplied by the mobile bearer route (/api/log/sleep); see
+ * logWeight's note on why the cookie-bound default doesn't work there. */
+export async function logSleep(
+  userId: string,
+  input: unknown,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
   const parsed = sleepLogSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -31,7 +37,7 @@ export async function logSleep(userId: string, input: unknown): Promise<ActionRe
   const duration =
     totalDurationMinutes ?? (bedtime && wakeTime ? computeSleepDurationMinutes(bedtime, wakeTime) : undefined);
 
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const result = await insertManualHealthMetric(supabase, userId, "sleep", {
     startedAt: sleepStartedAt(date, bedtime),
     endedAt: wakeTime ? new Date(wakeTime).toISOString() : null,

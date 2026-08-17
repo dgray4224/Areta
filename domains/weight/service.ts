@@ -8,13 +8,24 @@ import { recomputeActivityDailySummaryForInstant } from "@/domains/activity-summ
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 
-export async function logWeight(userId: string, input: unknown): Promise<ActionResult> {
+/**
+ * `client` is optional for the same reason insertImportedWeightLog takes
+ * one outright: the cookie-bound createClient() only works for browser
+ * requests, so the mobile bearer route (/api/log/weight) has to supply a
+ * client already scoped to that user's RLS context. Web's own form omits
+ * it and is unaffected.
+ */
+export async function logWeight(
+  userId: string,
+  input: unknown,
+  client?: SupabaseClient<Database>
+): Promise<ActionResult> {
   const parsed = weightLogSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const result = await insertManualHealthMetric(supabase, userId, "weight", {
     startedAt: new Date(parsed.data.loggedAt).toISOString(),
     value: parsed.data.weight,
