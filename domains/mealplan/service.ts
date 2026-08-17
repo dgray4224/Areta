@@ -371,6 +371,48 @@ export async function getCurrentMealPlan(
 }
 
 /**
+ * The calendar date a plan item actually falls on. meal_plan_items has no
+ * date column of its own -- it carries day_of_week (0=Sunday, matching
+ * getUTCDay) and belongs to a plan stamped with a week_start -- so the
+ * real date is week_start + day_of_week days.
+ *
+ * Used instead of "today" wherever a plan item produces dated data.
+ * Ticking Thursday's dinner on Saturday has to write Thursday's log row,
+ * or the whole retroactive catch-up flow silently books the calories on
+ * the wrong day: domains/review/energy-balance.ts and streaks.ts both
+ * group nutrition_logs by date, so a mis-dated row skews both the day
+ * that stays empty and the day that gains food the user never ate.
+ *
+ * Computed in UTC throughout: week_start and day_of_week are both plain
+ * calendar values with no time component, so going through a local-time
+ * Date here would shift the result by a day for anyone west of UTC.
+ */
+async function resolvePlanItemDate(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  itemId: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("meal_plan_items")
+    .select("day_of_week, meal_plans!inner(week_start)")
+    .eq("id", itemId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  // The embed is typed as an array by the generated types even though
+  // meal_plan_id is a to-one FK, so accept either shape.
+  const plan = Array.isArray(data.meal_plans) ? data.meal_plans[0] : data.meal_plans;
+  const weekStart = plan?.week_start;
+  if (!weekStart || data.day_of_week === null) return null;
+
+  const date = new Date(`${weekStart}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + data.day_of_week);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
  * Marks a planned meal eaten/not-eaten (mobile Nutrition tab). Unlike
  * workout-plan completion, there's no auto-sync data source for food, so
  * completing also writes a real nutrition_logs row derived from the
@@ -380,6 +422,10 @@ export async function getCurrentMealPlan(
  * different instead uses the existing freeform logNutrition. Un-completing
  * deletes the auto-generated log row, which only ever represented this
  * checkbox's own state.
+ *
+ * The log row is dated to the item's own plan day, not to now -- see
+ * resolvePlanItemDate. `completed_at` stays a real timestamp, since that
+ * genuinely means "when the user ticked it".
  */
 export async function setMealPlanItemCompleted(
   userId: string,
@@ -430,12 +476,19 @@ export async function setMealPlanItemCompleted(
     return { ok: false, error: "Recipe not found for this meal plan item" };
   }
 
-  const today = await todayForUser(supabase, userId);
+  // Deliberately an error rather than a fall back to today: a silently
+  // mis-dated log row is exactly the corruption this resolves, and it is
+  // invisible to the user once written.
+  const itemDate = await resolvePlanItemDate(supabase, userId, itemId);
+  if (!itemDate) {
+    return { ok: false, error: "Could not determine which day this planned meal belongs to" };
+  }
+
   const { data: log, error: logError } = await supabase
     .from("nutrition_logs")
     .insert({
       user_id: userId,
-      date: today,
+      date: itemDate,
       meal: item.meal_type,
       food: recipe.name,
       quantity: item.servings,
