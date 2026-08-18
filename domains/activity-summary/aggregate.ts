@@ -4,7 +4,15 @@ export type WorkoutLogRow = { start_date: string; duration_minutes: number; acti
 export type WeightLogRow = { logged_at: string; weight: number; unit: "lb" | "kg" };
 export type StepLogRow = { logged_at: string; count: number };
 export type SleepLogRow = { total_duration_minutes: number | null; quality: number | null };
-export type HeartRateLogRow = { bpm: number };
+export type HeartRateLogRow = { bpm: number; dedupKey?: string | null };
+
+/** An ambient daily rollup written by the mobile import instead of that
+ * day's several hundred background samples (areta-mobile's
+ * reduceHeartRateSamples). Keyed by dedup_key prefix because that is the
+ * only field the import controls end to end. */
+function isAmbientRollup(row: HeartRateLogRow): boolean {
+  return (row.dedupKey ?? "").startsWith("daily-avg-heart_rate-");
+}
 
 export type ActivityDailySummaryInsert = {
   user_id: string;
@@ -87,9 +95,18 @@ export function aggregateActivityDailySummary(input: {
   const avgQuality =
     qualityValues.length > 0 ? Math.round(qualityValues.reduce((a, b) => a + b, 0) / qualityValues.length) : null;
 
+  // Prefer the ambient rollup where one exists. The import keeps
+  // workout-period samples at full resolution and collapses the rest, so
+  // a day with a workout holds a handful of ~146 bpm rows alongside one
+  // ambient row -- averaging them together reads as ~132 bpm against a
+  // true ~77. The rollup already IS that day's ambient mean, so it stands
+  // alone rather than being averaged with the exercise samples it
+  // deliberately excludes.
+  const ambientRollups = heartRateLogs.filter(isAmbientRollup);
+  const heartRateSource = ambientRollups.length > 0 ? ambientRollups : heartRateLogs;
   const heartRateAvg =
-    heartRateLogs.length > 0
-      ? heartRateLogs.reduce((sum, h) => sum + Number(h.bpm), 0) / heartRateLogs.length
+    heartRateSource.length > 0
+      ? heartRateSource.reduce((sum, h) => sum + Number(h.bpm), 0) / heartRateSource.length
       : null;
 
   return {

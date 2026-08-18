@@ -112,8 +112,11 @@ async function recomputeForDayAndTimezone(
         .gte("started_at", startIso)
         .lt("started_at", endIso),
       supabase
+        // dedup_key rides along so the aggregator can tell an ambient
+        // daily rollup from a raw workout-period sample -- see
+        // aggregateActivityDailySummary.
         .from("health_metrics")
-        .select("value")
+        .select("value, dedup_key")
         .eq("user_id", userId)
         .eq("metric_type", "heart_rate")
         .gte("started_at", startIso)
@@ -144,7 +147,7 @@ async function recomputeForDayAndTimezone(
       total_duration_minutes: r.value != null ? Number(r.value) : null,
       quality: r.sleep_quality,
     })),
-    heartRateLogs: (heartRateRows ?? []).map((r) => ({ bpm: Number(r.value) })),
+    heartRateLogs: (heartRateRows ?? []).map((r) => ({ bpm: Number(r.value), dedupKey: r.dedup_key })),
   });
 
   const { error } = await supabase.from("activity_daily_summaries").upsert(summary, { onConflict: "user_id,day" });
