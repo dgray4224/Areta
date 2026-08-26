@@ -4388,6 +4388,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      health_monthly_totals: {
+        Args: { p_timezone?: string; p_user_id: string }
+        Returns: {
+          average: number | null
+          first_at: string | null
+          last_at: string | null
+          maximum: number | null
+          metric_type: string
+          minimum: number | null
+          month: string
+          sample_count: number
+          total: number | null
+        }[]
+      }
       get_visible_profile_names: {
         Args: { target_ids: string[] }
         Returns: {
