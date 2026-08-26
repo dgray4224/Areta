@@ -5,6 +5,7 @@ import {
   type SeriesPoint,
 } from "@/domains/insights/generators/changepoint";
 import { generateStepPortrait } from "@/domains/insights/generators/step-portrait";
+import { orphanedChangepointIds } from "@/domains/insights/service";
 
 /**
  * The measurement discount: what happens after a user answers the
@@ -135,5 +136,55 @@ describe("generateStepPortrait after a measurement change", () => {
     const afterCompared = (after?.facts as { comparedTo: number }).comparedTo;
     expect(beforeCompared).toBeLessThan(afterCompared);
     expect(after?.score).toBeLessThan(before?.score ?? 1);
+  });
+});
+
+/**
+ * The annotation queue has to be able to shrink. Detection runs against a
+ * growing series, so the same break lands on a different day as history
+ * arrives — and every stale row is another time the loop asks a question
+ * the user has effectively already been asked.
+ */
+describe("orphanedChangepointIds", () => {
+  const untouched = (id: string, day: string) => ({
+    id,
+    detected_at: day,
+    kind: null,
+    label: null,
+    labeled_at: null,
+    memory_id: null,
+  });
+
+  it("sweeps an un-annotated row detection no longer produces", () => {
+    const stored = [untouched("a", "2022-01-21"), untouched("b", "2021-02-04")];
+    expect(orphanedChangepointIds(stored, ["2021-02-04"])).toEqual(["a"]);
+  });
+
+  it("sweeps the one-day-off duplicate, keeping the day detection now agrees on", () => {
+    const stored = [untouched("old", "2021-07-29"), untouched("new", "2021-07-30")];
+    expect(orphanedChangepointIds(stored, ["2021-07-30"])).toEqual(["old"]);
+  });
+
+  it("keeps every row the user has answered, however they answered it", () => {
+    const stored = [
+      { ...untouched("measurement", "2021-02-04"), kind: "measurement" },
+      { ...untouched("unknown", "2020-05-18"), kind: "unknown" },
+      { ...untouched("event", "2022-01-21"), kind: "life_event", label: "new job", memory_id: "m1" },
+    ];
+    expect(orphanedChangepointIds(stored, [])).toEqual([]);
+  });
+
+  it("keeps an answer written before the kind column existed", () => {
+    // Pre-2026-08-19 annotations set only label/labeled_at/memory_id.
+    // These are the oldest answers in the table and the easiest to lose.
+    const stored = [
+      { ...untouched("legacy", "2022-05-02"), label: "moved house", labeled_at: "2026-08-18T00:00:00Z" },
+    ];
+    expect(orphanedChangepointIds(stored, [])).toEqual([]);
+  });
+
+  it("keeps everything detection still produces", () => {
+    const stored = [untouched("a", "2021-02-04"), untouched("b", "2026-07-30")];
+    expect(orphanedChangepointIds(stored, ["2021-02-04", "2026-07-30"])).toEqual([]);
   });
 });

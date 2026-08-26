@@ -249,17 +249,101 @@ export async function computeInsightCandidates(
  * context this app can hold, and a routine cron must not be able to
  * clobber it.
  */
+/** The only metric changepoint detection currently runs on. Named because
+ * both the upsert and the orphan sweep below have to agree on it. */
+const CHANGEPOINT_METRIC = "steps";
+
+/**
+ * Un-annotated changepoints that the current detection run no longer
+ * produces, and can therefore be swept.
+ *
+ * Pure so the sweep's one dangerous property — that it must never take a
+ * row the user has touched — is testable without a database.
+ *
+ * A row counts as touched if ANY of the four annotation columns is set,
+ * not just `kind`. Answers written before the `kind` column existed
+ * (2026-08-19) set only `label`/`labeled_at`/`memory_id`, and those are
+ * the oldest and most considered answers in the table.
+ */
+export function orphanedChangepointIds(
+  stored: {
+    id: string;
+    detected_at: string;
+    kind: string | null;
+    label: string | null;
+    labeled_at: string | null;
+    memory_id: string | null;
+  }[],
+  detectedDays: Iterable<string>
+): string[] {
+  const keep = new Set(detectedDays);
+  return stored
+    .filter(
+      (row) =>
+        !keep.has(row.detected_at) &&
+        row.kind === null &&
+        row.label === null &&
+        row.labeled_at === null &&
+        row.memory_id === null
+    )
+    .map((row) => row.id);
+}
+
+/**
+ * Drops un-annotated changepoints that detection no longer finds.
+ *
+ * Detection runs against a growing series, and the same underlying break
+ * lands on a different day as more history arrives — the account this was
+ * built against has a July 2021 break stored at the 29th and detected at
+ * the 30th after the full-history import completed. Without this, the
+ * annotation loop asks about both, one day apart, in near-identical
+ * words, and adds two more from a 2022 the detector no longer believes
+ * in. Being asked the same question twice is what makes someone stop
+ * answering, so the queue has to be able to shrink.
+ *
+ * Only untouched rows go. An annotated changepoint is the user's own
+ * answer and outlives whatever the detector currently thinks.
+ */
+async function sweepOrphanedChangepoints(
+  userId: string,
+  supabase: SupabaseClient<Database>,
+  detectedDays: string[]
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("changepoints")
+    .select("id, detected_at, kind, label, labeled_at, memory_id")
+    .eq("user_id", userId)
+    .eq("metric", CHANGEPOINT_METRIC);
+  if (error || !data) return;
+
+  const orphans = orphanedChangepointIds(data, detectedDays);
+  if (orphans.length === 0) return;
+
+  const { error: deleteError } = await supabase
+    .from("changepoints")
+    .delete()
+    .eq("user_id", userId)
+    .in("id", orphans);
+  if (deleteError) {
+    // Non-fatal, and self-healing: the next run sweeps the same rows.
+    console.error(`[insights] changepoint sweep failed for ${userId}: ${deleteError.message}`);
+  }
+}
+
 async function persistChangepoints(
   userId: string,
   supabase: SupabaseClient<Database>,
   changepoints: Changepoint[]
 ): Promise<void> {
+  // A run that found nothing is the one case where sweeping would empty
+  // the whole queue, and it is far more likely to mean the series failed
+  // to load than that every break the user has ever had stopped existing.
   if (changepoints.length === 0) return;
 
   const { error } = await supabase.from("changepoints").upsert(
     changepoints.map((c) => ({
       user_id: userId,
-      metric: "steps",
+      metric: CHANGEPOINT_METRIC,
       detected_at: c.day,
       direction: c.direction,
       mean_before: Math.round(c.meanBefore),
@@ -274,7 +358,17 @@ async function persistChangepoints(
     // Non-fatal: the insight card still ships, it just cannot be annotated
     // until the next run succeeds.
     console.error(`[insights] changepoint upsert failed for ${userId}: ${error.message}`);
+    // Skip the sweep: if the upsert failed, the rows it would have kept
+    // alive may not be there, and deleting against a half-written table
+    // is how a user loses a question they were about to answer.
+    return;
   }
+
+  await sweepOrphanedChangepoints(
+    userId,
+    supabase,
+    changepoints.map((c) => c.day)
+  );
 }
 
 /**
