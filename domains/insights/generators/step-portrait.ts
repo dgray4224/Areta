@@ -14,7 +14,13 @@
 
 import type { InsightCandidate } from "../types";
 import { goalRelevanceScore, sampleSizeScore, scoreCandidate, surpriseScore } from "../scoring";
-import { detectChangepoints, normalizeDailySeries, type Changepoint, type SeriesPoint } from "./changepoint";
+import {
+  detectChangepoints,
+  normalizeDailySeries,
+  seriesSinceLastMeasurementChange,
+  type Changepoint,
+  type SeriesPoint,
+} from "./changepoint";
 
 const GENERATOR_VERSION = 1;
 
@@ -33,6 +39,15 @@ export type StepPortraitInput = {
   dayOfWeek: Map<string, number>;
   /** Most-active local hour per day, where known. */
   mostActiveHour: Map<string, number>;
+  /**
+   * Days the user has confirmed were an instrument change -- "it was a new
+   * watch or phone" in the annotation loop -- rather than a change in
+   * their life.
+   *
+   * Optional so callers with no annotations (ops tooling, tests) behave
+   * exactly as they did before the annotation loop existed.
+   */
+  measurementChangeDays?: string[];
   activeGoalDomains: Set<string>;
   today: string;
 };
@@ -360,13 +375,33 @@ export function generateStepPortrait(input: StepPortraitInput): {
   candidates: InsightCandidate[];
   changepoints: Changepoint[];
 } {
-  const changepoints = detectChangepoints(input.series);
+  const measurementChangeDays = input.measurementChangeDays ?? [];
+  const changepoints = detectChangepoints(input.series, { measurementChangeDays });
+
+  // The four generators below all rank one slice of the record against
+  // another: this month against every other month, this weekday against
+  // the rest of the week, this year's most-active hour against the first
+  // year's. Every one of those comparisons breaks across an instrument
+  // change -- a phone in a pocket and a watch on a wrist do not count the
+  // same walk the same way -- so left alone, "your most active month"
+  // resolves to "the month you started wearing a watch", every time, for
+  // everyone. They see only the current instrument's record.
+  //
+  // generateChangepointInsight deliberately keeps the FULL series. A break
+  // in 2020 was a real break in a real life and stays worth asking about,
+  // even though an older device is what noticed it; detectChangepoints
+  // already refuses to test across the seam itself.
+  const comparable: StepPortraitInput =
+    measurementChangeDays.length === 0
+      ? input
+      : { ...input, series: seriesSinceLastMeasurementChange(input.series, measurementChangeDays) };
+
   const candidates = [
     generateChangepointInsight(input, changepoints),
-    generatePeakMonth(input),
-    generateWeekdaySignature(input),
-    generateSeasonalShape(input),
-    generateTimeOfDayPattern(input),
+    generatePeakMonth(comparable),
+    generateWeekdaySignature(comparable),
+    generateSeasonalShape(comparable),
+    generateTimeOfDayPattern(comparable),
   ].filter((c): c is InsightCandidate => c !== null);
 
   return { candidates, changepoints };

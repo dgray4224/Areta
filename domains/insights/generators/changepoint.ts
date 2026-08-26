@@ -88,7 +88,25 @@ function strongestSplit(values: number[], start: number, end: number): { index: 
  * missing day is not a zero-step day, and treating it as one manufactures
  * breaks at every holiday. See fillDailyGaps below.
  */
-export function detectChangepoints(series: SeriesPoint[], maxPoints = 5): Changepoint[] {
+export type DetectChangepointsOptions = {
+  maxPoints?: number;
+  /**
+   * Days the user has confirmed were an instrument change -- the day a
+   * watch or a phone arrived -- rather than a change in their life.
+   *
+   * Treated exactly like a recording gap below: a run ends the day before
+   * one and a new run begins on it. Steps counted by a wrist and steps
+   * counted by a pocket are not the same quantity, so a t-test spanning
+   * that day compares two instruments, not two periods of a life.
+   */
+  measurementChangeDays?: Iterable<string>;
+};
+
+export function detectChangepoints(
+  series: SeriesPoint[],
+  options: DetectChangepointsOptions = {}
+): Changepoint[] {
+  const maxPoints = options.maxPoints ?? 5;
   // Detect WITHIN contiguous stretches only, never across a recording gap.
   //
   // Found while testing against real data: a user's history is not one
@@ -103,7 +121,10 @@ export function detectChangepoints(series: SeriesPoint[], maxPoints = 5): Change
   // That class of false finding is the worst one this feature can produce:
   // it is maximally confident, and it asks the user "what changed in June
   // 2026?" when the honest answer is "nothing, we just started watching".
-  return splitOnGaps(series)
+  //
+  // A user-confirmed measurement change is the same event, told to us
+  // instead of inferred: see DetectChangepointsOptions above.
+  return splitIntoRegimes(series, new Set(options.measurementChangeDays ?? []))
     .flatMap((run) => detectWithinContiguousRun(run, maxPoints))
     .sort((a, b) => b.tStatistic - a.tStatistic)
     .slice(0, maxPoints);
@@ -119,12 +140,19 @@ function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 }
 
-function splitOnGaps(series: SeriesPoint[]): SeriesPoint[][] {
+/** Splits the series wherever the record stops being one continuous
+ * measurement of one continuous life: a long recording gap, or a day the
+ * user told us the instrument changed. */
+function splitIntoRegimes(series: SeriesPoint[], measurementChangeDays: Set<string>): SeriesPoint[][] {
   const runs: SeriesPoint[][] = [];
   let current: SeriesPoint[] = [];
   for (const point of series) {
     const previous = current[current.length - 1];
-    if (previous && daysBetween(previous.day, point.day) > MAX_GAP_DAYS) {
+    const gapped = previous !== undefined && daysBetween(previous.day, point.day) > MAX_GAP_DAYS;
+    // Nothing to split when the change lands on the first day we have:
+    // there is no earlier instrument to separate it from.
+    const instrumentChanged = previous !== undefined && measurementChangeDays.has(point.day);
+    if (gapped || instrumentChanged) {
       runs.push(current);
       current = [];
     }
@@ -132,6 +160,33 @@ function splitOnGaps(series: SeriesPoint[]): SeriesPoint[][] {
   }
   if (current.length > 0) runs.push(current);
   return runs;
+}
+
+/**
+ * The stretch of the series recorded by the instrument still in use --
+ * everything from the most recent confirmed measurement change onward.
+ *
+ * For callers that rank one slice of the record against another. Those
+ * comparisons are only meaningful within a single instrument, and this is
+ * the honest window for them.
+ *
+ * Deliberately unguarded against returning very little: if the watch
+ * arrived last week then a week is all the comparable record there is,
+ * and every caller already falls silent below its own minimum. Silence is
+ * the correct output there, not a comparison against a different sensor.
+ */
+export function seriesSinceLastMeasurementChange(
+  series: SeriesPoint[],
+  measurementChangeDays: Iterable<string>
+): SeriesPoint[] {
+  const lastDay = series[series.length - 1]?.day;
+  if (lastDay === undefined) return series;
+  const boundary = [...measurementChangeDays]
+    .filter((day) => day <= lastDay)
+    .sort()
+    .pop();
+  if (boundary === undefined) return series;
+  return series.filter((point) => point.day >= boundary);
 }
 
 function detectWithinContiguousRun(series: SeriesPoint[], maxPoints: number): Changepoint[] {

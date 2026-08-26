@@ -75,7 +75,14 @@ export async function computeInsightBundle(
   userId: string,
   supabase: SupabaseClient<Database>,
   options: { includePatternScans: boolean }
-): Promise<{ candidates: InsightCandidate[]; changepoints: Changepoint[] }> {
+): Promise<{
+  candidates: InsightCandidate[];
+  changepoints: Changepoint[];
+  /** Days this user has confirmed were an instrument change — returned so
+   * computeAndStoreInsights can retract cards it already shipped for
+   * them. */
+  measurementChangeDays: string[];
+}> {
   const timezone = await resolveTimezone(supabase, userId);
   const today = localDateString(new Date(), timezone);
   const windowStart = addDaysToDateString(today, -WINDOW_DAYS);
@@ -140,6 +147,10 @@ export async function computeInsightBundle(
   // are the launch surface for a user who never logs anything, so they
   // cannot be reserved for the weekly slow path.
   const allTime = allTimeRows ?? [];
+  const [measurementChangeDays, activeGoalDomains] = await Promise.all([
+    fetchMeasurementChangeDays(userId, supabase),
+    fetchActiveGoalDomains(userId, supabase),
+  ]);
   const portrait = generateStepPortrait({
     series: normalizeDailySeries(allTime.map((r) => ({ day: r.day, value: r.steps_total }))),
     dayOfWeek: new Map(allTime.filter((r) => r.day_of_week !== null).map((r) => [r.day, r.day_of_week as number])),
@@ -148,11 +159,13 @@ export async function computeInsightBundle(
         .filter((r) => r.steps_most_active_local_hour !== null)
         .map((r) => [r.day, r.steps_most_active_local_hour as number])
     ),
-    activeGoalDomains: await fetchActiveGoalDomains(userId, supabase),
+    measurementChangeDays,
+    activeGoalDomains,
     today,
   });
 
   return {
+    measurementChangeDays,
     candidates: [
       ...detectPersonalRecords(input),
       ...detectBehaviorStreaks(input),
@@ -168,6 +181,28 @@ export async function computeInsightBundle(
     ],
     changepoints: portrait.changepoints,
   };
+}
+
+/**
+ * Days this user answered the annotation loop's "it was a new watch or
+ * phone" on — the record of when the instrument changed, as opposed to
+ * when their life did.
+ *
+ * Empty on any failure. Losing these reverts the portrait to its
+ * pre-annotation behaviour, which is worse but not worth failing a whole
+ * insight run over.
+ */
+async function fetchMeasurementChangeDays(
+  userId: string,
+  supabase: SupabaseClient<Database>
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("changepoints")
+    .select("detected_at")
+    .eq("user_id", userId)
+    .eq("kind", "measurement");
+  if (error || !data) return [];
+  return data.map((row) => row.detected_at);
 }
 
 /**
@@ -242,16 +277,59 @@ async function persistChangepoints(
   }
 }
 
+/**
+ * Retires cards this app already published for a break the user has since
+ * told us was a device swap.
+ *
+ * The annotation loop asks "do you know what changed?" about a break the
+ * feed has usually already announced in a headline. When the answer comes
+ * back "I got a watch", that headline is now known to be false, and
+ * leaving it standing teaches the user that answering honestly changes
+ * nothing — which is the one lesson that would kill the loop.
+ *
+ * Reuses `dismissed` rather than adding a status: it already means "not in
+ * the feed", nothing reads it as a signal of user intent, and a dismissed
+ * dedupe_key still blocks the card from firing again.
+ */
+async function retractMeasurementArtifacts(
+  userId: string,
+  supabase: SupabaseClient<Database>,
+  measurementChangeDays: string[]
+): Promise<void> {
+  if (measurementChangeDays.length === 0) return;
+
+  const { error } = await supabase
+    .from("insights")
+    .update({ status: "dismissed" })
+    .eq("user_id", userId)
+    .eq("type", "changepoint")
+    .neq("status", "dismissed")
+    .in(
+      "dedupe_key",
+      measurementChangeDays.map((day) => `changepoint:steps:${day}`)
+    );
+  if (error) {
+    // Non-fatal, and self-healing: the next run retries the same update.
+    console.error(`[insights] measurement retraction failed for ${userId}: ${error.message}`);
+  }
+}
+
 export async function computeAndStoreInsights(
   userId: string,
   supabase: SupabaseClient<Database>,
   options: { includePatternScans: boolean }
 ): Promise<ComputeInsightsResult> {
-  const { candidates, changepoints } = await computeInsightBundle(userId, supabase, options);
+  const { candidates, changepoints, measurementChangeDays } = await computeInsightBundle(
+    userId,
+    supabase,
+    options
+  );
 
-  // Persisted before the early return: a user can have a changepoint worth
-  // annotating even when every insight candidate is a duplicate this run.
+  // Both run before the early return: a user can have a changepoint worth
+  // annotating, or a stale card worth retracting, even when every insight
+  // candidate is a duplicate this run.
   await persistChangepoints(userId, supabase, changepoints);
+  await retractMeasurementArtifacts(userId, supabase, measurementChangeDays);
 
   if (candidates.length === 0) return { created: 0, duplicates: 0, createdInsights: [] };
 

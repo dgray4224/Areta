@@ -250,6 +250,7 @@ export type Database = {
           detected_at: string
           direction: string
           id: string
+          kind: string | null
           label: string | null
           labeled_at: string | null
           mean_after: number
@@ -267,6 +268,7 @@ export type Database = {
           detected_at: string
           direction: string
           id?: string
+          kind?: string | null
           label?: string | null
           labeled_at?: string | null
           mean_after: number
@@ -284,6 +286,7 @@ export type Database = {
           detected_at?: string
           direction?: string
           id?: string
+          kind?: string | null
           label?: string | null
           labeled_at?: string | null
           mean_after?: number
