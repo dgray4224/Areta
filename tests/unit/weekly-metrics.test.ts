@@ -34,6 +34,42 @@ describe("computeWeeklyMetrics", () => {
     expect(result.averageWeightThisWeek).toBeCloseTo((220 + 222 + 218.5) / 3, 1);
   });
 
+  it("computes the weight arc against this week's average", () => {
+    const result = computeWeeklyMetrics(
+      baseInput({
+        weightLogs: [
+          { loggedAt: "2026-07-21T08:00:00Z", weight: 219 },
+          { loggedAt: "2026-07-25T08:00:00Z", weight: 217 },
+        ],
+        baselineWeight: { loggedAt: "2026-02-10T08:00:00Z", weight: 231 },
+        weightTwelveWeeksAgo: { loggedAt: "2026-04-26T08:00:00Z", weight: 224 },
+      })
+    );
+    // This week's average is 218.
+    expect(result.weightChangeSinceStartLb).toBe(-13);
+    expect(result.weightTrackingSince).toBe("2026-02-10T08:00:00Z");
+    expect(result.weightChange12WeekLb).toBe(-6);
+  });
+
+  it("leaves the weight arc null without a weigh-in this week or without anchors", () => {
+    const noWeighIn = computeWeeklyMetrics(
+      baseInput({
+        weightLogs: [],
+        baselineWeight: { loggedAt: "2026-02-10T08:00:00Z", weight: 231 },
+        weightTwelveWeeksAgo: { loggedAt: "2026-04-26T08:00:00Z", weight: 224 },
+      })
+    );
+    expect(noWeighIn.weightChangeSinceStartLb).toBeNull();
+    expect(noWeighIn.weightChange12WeekLb).toBeNull();
+
+    const noAnchors = computeWeeklyMetrics(
+      baseInput({ weightLogs: [{ loggedAt: "2026-07-22T08:00:00Z", weight: 220 }] })
+    );
+    expect(noAnchors.weightChangeSinceStartLb).toBeNull();
+    expect(noAnchors.weightTrackingSince).toBeNull();
+    expect(noAnchors.weightChange12WeekLb).toBeNull();
+  });
+
   it("returns null weight change with fewer than 2 logs", () => {
     const zero = computeWeeklyMetrics(baseInput({ weightLogs: [] }));
     const one = computeWeeklyMetrics(

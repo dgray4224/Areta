@@ -20,6 +20,16 @@ export type WeeklyMetricsInput = {
   restingHeartRateLogs: { value: number | null }[];
   heartRateVariabilityLogs: { value: number | null }[];
   vo2MaxLogs: { value: number | null }[];
+  /** Long-horizon weight anchors (2026-09-03). Weight moves too slowly to
+   * judge inside one week, so the brief also gets the arc. Baseline = the
+   * first weight logged on/after the account was created — imported
+   * HealthKit history reaches years before signup, and anchoring there
+   * would attribute pre-Areta change to Areta. Twelve weeks = nearest
+   * sample at or before ~12 weeks ago (imported rows allowed: their
+   * weight then is their weight then). Optional so week-pure callers and
+   * fixtures keep working unchanged. */
+  baselineWeight?: { loggedAt: string; weight: number } | null;
+  weightTwelveWeeksAgo?: { loggedAt: string; weight: number } | null;
 };
 
 export type Trend = "improving" | "worsening" | "stable" | "insufficient_data";
@@ -52,6 +62,12 @@ export type WeeklyMetrics = {
   averageRestingHeartRate: number | null;
   averageHeartRateVariability: number | null;
   averageVo2Max: number | null;
+  /** The weight arc (see WeeklyMetricsInput.baselineWeight). Null when the
+   * corresponding anchor is missing or nothing was weighed this week.
+   * Rows stored before 2026-09-03 lack these keys entirely (jsonb). */
+  weightChangeSinceStartLb: number | null;
+  weightTrackingSince: string | null;
+  weightChange12WeekLb: number | null;
 };
 
 function average(values: number[]): number | null {
@@ -95,6 +111,16 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
       : null;
   const averageWeightThisWeek =
     sortedWeights.length > 0 ? round1(average(sortedWeights.map((w) => w.weight))!) : null;
+
+  // Arc deltas compare against this week's average, so a week with no
+  // weigh-in yields null rather than a stale "arc" ending weeks ago.
+  const baseline = input.baselineWeight ?? null;
+  const twelveWeeksAgo = input.weightTwelveWeeksAgo ?? null;
+  const weightChangeSinceStartLb =
+    averageWeightThisWeek !== null && baseline ? round1(averageWeightThisWeek - baseline.weight) : null;
+  const weightTrackingSince = baseline?.loggedAt ?? null;
+  const weightChange12WeekLb =
+    averageWeightThisWeek !== null && twelveWeeksAgo ? round1(averageWeightThisWeek - twelveWeeksAgo.weight) : null;
 
   const nutritionLoggingDays = new Set(input.nutritionLogs.map((n) => n.date)).size;
 
@@ -193,5 +219,8 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
     averageRestingHeartRate,
     averageHeartRateVariability,
     averageVo2Max,
+    weightChangeSinceStartLb,
+    weightTrackingSince,
+    weightChange12WeekLb,
   };
 }

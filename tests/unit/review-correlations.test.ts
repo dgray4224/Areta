@@ -25,6 +25,9 @@ function week(weekStart: string, overrides: Partial<WeeklyMetrics>): { weekStart
       averageRestingHeartRate: null,
       averageHeartRateVariability: null,
       averageVo2Max: null,
+      weightChangeSinceStartLb: null,
+      weightTrackingSince: null,
+      weightChange12WeekLb: null,
       ...overrides,
     },
   };

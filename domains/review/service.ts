@@ -77,6 +77,10 @@ Output format — narrative (2-3 short paragraphs, no bullet lists, no headers):
   in experimentOutcomes narration (did last week's change help, verbatim per its given
   classification — never re-classify it yourself) and interviewAnswers (the user's own
   words this week, if present — use them to explain *why*, not just *that*).
+- Weight is slow-moving: never judge it by the single week. When
+  metrics.weightChangeSinceStartLb or metrics.weightChange12WeekLb is present, frame
+  this week's weight inside that longer arc (restating those numbers exactly), and
+  treat the weekly delta as noise unless the longer trend agrees with it.
 - Distinguish adherence issues, plan-design issues, outcome issues, and data-quality
   issues in how you frame things — never default to blaming the user's discipline when
   metrics point elsewhere. If metrics.isDataSparse is true, say plainly there isn't
@@ -210,9 +214,46 @@ async function fetchMetrics(
     weight: w.unit === "kg" ? Number(w.value) * LB_PER_KG : Number(w.value),
   }));
 
+  // Long-horizon weight anchors (see WeeklyMetricsInput.baselineWeight).
+  // Baseline waits on profiles.created_at, so these two run after the
+  // batch above; both are limit(1) index hits.
+  const { data: profileRow } = await supabase.from("profiles").select("created_at").eq("id", userId).maybeSingle();
+  const accountStart = profileRow?.created_at ?? null;
+  const twelveWeeksAgoIso = new Date(
+    new Date(`${weekStart}T00:00:00.000Z`).getTime() - 84 * 24 * 60 * 60 * 1000
+  ).toISOString();
+  const [{ data: baselineRow }, { data: twelveWeekRow }] = await Promise.all([
+    accountStart
+      ? supabase
+          .from("health_metrics")
+          .select("started_at, value, unit")
+          .eq("user_id", userId)
+          .eq("metric_type", "weight")
+          .gte("started_at", accountStart)
+          .order("started_at", { ascending: true })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("health_metrics")
+      .select("started_at, value, unit")
+      .eq("user_id", userId)
+      .eq("metric_type", "weight")
+      .lte("started_at", twelveWeeksAgoIso)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const toWeightAnchor = (row: { started_at: string; value: number | null; unit: string | null } | null) =>
+    row && row.value != null
+      ? { loggedAt: row.started_at, weight: row.unit === "kg" ? Number(row.value) * LB_PER_KG : Number(row.value) }
+      : null;
+
   return computeWeeklyMetrics({
     weekStart,
     weightLogs,
+    baselineWeight: toWeightAnchor(baselineRow),
+    weightTwelveWeeksAgo: toWeightAnchor(twelveWeekRow),
     sleepLogs: (sleepLogs ?? []).map((s) => ({ totalDurationMinutes: s.value != null ? Number(s.value) : null })),
     restingHeartRateLogs: (restingHeartRateLogs ?? []).map((r) => ({ value: r.value != null ? Number(r.value) : null })),
     heartRateVariabilityLogs: (heartRateVariabilityLogs ?? []).map((r) => ({
