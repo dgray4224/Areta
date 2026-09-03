@@ -8,6 +8,7 @@ import { detectWeekendShift } from "@/domains/insights/detectors/weekend-shift";
 import { detectPersonalRecords } from "@/domains/insights/detectors/personal-record";
 import { detectBehaviorStreaks } from "@/domains/insights/detectors/behavior-streak";
 import { computeTaskCompletions } from "@/domains/insights/service";
+import { computeAvailability } from "@/domains/insights/availability";
 
 const TODAY = "2026-08-14";
 
@@ -55,6 +56,7 @@ function baseInput(overrides: Partial<DetectorInput> = {}): DetectorInput {
     allTimeSummaries: [],
     today: TODAY,
     seedKey: "test-user",
+    availability: computeAvailability({ rows: [], nutritionDays: [], taskDays: [], today: TODAY }),
     ...overrides,
   };
 }

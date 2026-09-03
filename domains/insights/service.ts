@@ -11,6 +11,8 @@ import { detectWeekendShift } from "./detectors/weekend-shift";
 import { detectPersonalRecords } from "./detectors/personal-record";
 import { detectBehaviorStreaks } from "./detectors/behavior-streak";
 import { generateStepPortrait, normalizeDailySeries } from "./generators/step-portrait";
+import { generateTranslations } from "./generators/translations";
+import { computeAvailability } from "./availability";
 import type { Changepoint } from "./generators/changepoint";
 
 /** Insight Engine v2 orchestrator (2026-08-14) — fetches each user's
@@ -32,9 +34,13 @@ import type { Changepoint } from "./generators/changepoint";
  * ago shouldn't drive a present-tense headline). */
 const WINDOW_DAYS = 120;
 
-/** Retention caps health imports at 3 years (platform/health/retention.ts),
- * so 1200 rows covers the densest possible all-time summary history. */
-const ALL_TIME_ROW_LIMIT = 1200;
+/** Hard ceiling on all-time summary rows, as a runaway guard only. The
+ * old 1200 assumed 3-year retention AND was silently cut to 1,000 by
+ * PostgREST's response cap — ascending order meant lifetime records were
+ * computed over the OLDEST thousand days once retention went to 10 years
+ * (2026-08-26). The fetch pages now; this cap is ~11 years of days. */
+const ALL_TIME_ROW_LIMIT = 4000;
+const PAGE_SIZE = 1000;
 
 /** At most this many NEW pattern insights persist per run — the third
  * layer of multiple-comparison control after per-detector effect floors
@@ -87,7 +93,8 @@ export async function computeInsightBundle(
   const today = localDateString(new Date(), timezone);
   const windowStart = addDaysToDateString(today, -WINDOW_DAYS);
 
-  const [{ data: windowRows, error: windowError }, { data: allTimeRows, error: allTimeError }, { data: actions, error: actionsError }] =
+  const nutritionWindowStart = addDaysToDateString(today, -365);
+  const [{ data: windowRows, error: windowError }, allTimeRows, { data: actions, error: actionsError }, nutritionDayRows, { data: profileRow }] =
     await Promise.all([
       supabase
         .from("activity_daily_summaries")
@@ -97,22 +104,20 @@ export async function computeInsightBundle(
         .eq("user_id", userId)
         .gte("day", windowStart)
         .order("day", { ascending: true }),
-      supabase
-        .from("activity_daily_summaries")
-        // day_of_week and steps_most_active_local_hour ride along for the
-        // Tier 0/1 generators, which reason over the WHOLE history rather
-        // than the 120-day window the older detectors use — a weekday
-        // signature or a seasonal shape is meaningless inside 17 weeks.
-        .select("day, steps_total, workout_count, workout_total_minutes, day_of_week, steps_most_active_local_hour")
-        .eq("user_id", userId)
-        .order("day", { ascending: true })
-        .limit(ALL_TIME_ROW_LIMIT),
+      // day_of_week and steps_most_active_local_hour ride along for the
+      // Tier 0/1 generators, which reason over the WHOLE history rather
+      // than the 120-day window the older detectors use — a weekday
+      // signature or a seasonal shape is meaningless inside 17 weeks.
+      // sleep_logged / weight_logged / heart_rate_sample_count feed
+      // availability. Paged: PostgREST silently caps a response at 1,000
+      // rows, and full history is several times that.
+      fetchAllTimeSummaryRows(supabase, userId),
       supabase.from("daily_actions").select("date, status").eq("user_id", userId).gte("date", windowStart),
+      fetchNutritionDays(supabase, userId, nutritionWindowStart),
+      supabase.from("profiles").select("units").eq("id", userId).maybeSingle(),
     ]);
-  if (windowError || allTimeError || actionsError) {
-    throw new Error(
-      `insights fetch failed: ${windowError?.message ?? allTimeError?.message ?? actionsError?.message}`
-    );
+  if (windowError || actionsError) {
+    throw new Error(`insights fetch failed: ${windowError?.message ?? actionsError?.message}`);
   }
 
   const summaries: DaySummary[] = (windowRows ?? []).map((r) => ({
@@ -129,10 +134,26 @@ export async function computeInsightBundle(
 
   const taskCompletions = computeTaskCompletions(actions ?? []);
 
+  const availability = computeAvailability({
+    rows: allTimeRows.map((r) => ({
+      day: r.day,
+      hasSteps: r.steps_total > 0,
+      hasSleep: r.sleep_logged,
+      hasWorkout: r.workout_count > 0,
+      hasWeight: r.weight_logged,
+      hasHeartRate: r.heart_rate_sample_count > 0,
+    })),
+    nutritionDays: nutritionDayRows,
+    // Task availability sees the 120-day window, not all time — tasks are
+    // app-native, so the window is where "does this user use tasks" lives.
+    taskDays: [...new Set((actions ?? []).map((a) => a.date))],
+    today,
+  });
+
   const input: DetectorInput = {
     summaries,
     taskCompletions,
-    allTimeSummaries: (allTimeRows ?? []).map((r) => ({
+    allTimeSummaries: allTimeRows.map((r) => ({
       day: r.day,
       stepsTotal: r.steps_total,
       workoutCount: r.workout_count,
@@ -140,13 +161,14 @@ export async function computeInsightBundle(
     })),
     today,
     seedKey: userId,
+    availability,
   };
 
   // Tier 0/1 portrait runs over full history, not the rolling window, and
   // is deliberately NOT gated behind includePatternScans: these findings
   // are the launch surface for a user who never logs anything, so they
   // cannot be reserved for the weekly slow path.
-  const allTime = allTimeRows ?? [];
+  const allTime = allTimeRows;
   const [measurementChangeDays, activeGoalDomains] = await Promise.all([
     fetchMeasurementChangeDays(userId, supabase),
     fetchActiveGoalDomains(userId, supabase),
@@ -169,6 +191,11 @@ export async function computeInsightBundle(
     candidates: [
       ...detectPersonalRecords(input),
       ...detectBehaviorStreaks(input),
+      ...generateTranslations({
+        allTimeSummaries: input.allTimeSummaries,
+        availability,
+        units: profileRow?.units ?? null,
+      }),
       ...portrait.candidates,
       ...(options.includePatternScans
         ? [
@@ -505,4 +532,61 @@ export function computeTaskCompletions(actions: { date: string; status: string }
       completionPercent: Math.round((done / total) * 100),
     }))
     .sort((a, b) => (a.day < b.day ? -1 : 1));
+}
+
+type AllTimeSummaryRow = {
+  day: string;
+  steps_total: number;
+  workout_count: number;
+  workout_total_minutes: number;
+  day_of_week: number | null;
+  steps_most_active_local_hour: number | null;
+  sleep_logged: boolean;
+  weight_logged: boolean;
+  heart_rate_sample_count: number;
+};
+
+async function fetchAllTimeSummaryRows(
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<AllTimeSummaryRow[]> {
+  const rows: AllTimeSummaryRow[] = [];
+  for (let from = 0; from < ALL_TIME_ROW_LIMIT; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("activity_daily_summaries")
+      .select(
+        "day, steps_total, workout_count, workout_total_minutes, day_of_week, steps_most_active_local_hour, sleep_logged, weight_logged, heart_rate_sample_count"
+      )
+      .eq("user_id", userId)
+      .order("day", { ascending: true })
+      .range(from, Math.min(from + PAGE_SIZE, ALL_TIME_ROW_LIMIT) - 1);
+    if (error) throw new Error(`insights fetch failed: ${error.message}`);
+    rows.push(...(data ?? []));
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+/** Distinct days with >=1 nutrition log since `since` — availability
+ * input only. Paged for the same PostgREST cap; rows are per food entry,
+ * so a year of real logging is several thousand rows. */
+async function fetchNutritionDays(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  since: string
+): Promise<string[]> {
+  const days = new Set<string>();
+  for (let from = 0; from < 10_000; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("nutrition_logs")
+      .select("date")
+      .eq("user_id", userId)
+      .gte("date", since)
+      .order("date", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(`insights fetch failed: ${error.message}`);
+    for (const row of data ?? []) days.add(row.date);
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+  return [...days];
 }

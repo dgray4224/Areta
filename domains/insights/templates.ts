@@ -25,6 +25,7 @@ import type { FactSeries } from "./types";
  * with any new detector added to domains/insights/detectors/. */
 export const TYPE_LABELS: Record<string, string> = {
   personal_record: "Personal record",
+  translation: "Perspective",
   behavior_streak: "Streak",
   sleep_next_day_completion: "Pattern",
   weekday_pattern: "Pattern",

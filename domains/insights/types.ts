@@ -4,6 +4,7 @@
  * once and persisting the survivors to the `insights` table. */
 
 import type { DataTier, ScoreComponents } from "./scoring";
+import type { DataAvailability } from "./availability";
 
 export type InsightGrain = "day" | "week" | "lifetime";
 
@@ -42,6 +43,10 @@ export type DetectorInput = {
   today: string;
   /** Seed base so permutation p-values are reproducible per user+run. */
   seedKey: string;
+  /** Which domains this user actually has data for — the gate every
+   * availability-sensitive generator checks before running. See
+   * domains/insights/availability.ts. */
+  availability: DataAvailability;
 };
 
 /** Series payloads backing the share-card visualizations (archetype
