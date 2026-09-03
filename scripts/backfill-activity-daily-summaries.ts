@@ -24,6 +24,29 @@ import { recomputeActivityDailySummaryForDay } from "@/domains/activity-summary/
 
 const DEFAULT_TIMEZONE = "UTC";
 
+// PostgREST silently caps any response at 1,000 rows, so a plain select over
+// full history only ever sees the first page. Page explicitly.
+const PAGE_SIZE = 1000;
+async function fetchAllStartedAt(
+  supabase: ReturnType<typeof createScriptAdminClient>,
+  userId: string,
+  metricType: string,
+): Promise<{ started_at: string }[]> {
+  const rows: { started_at: string }[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("health_metrics")
+      .select("started_at")
+      .eq("user_id", userId)
+      .eq("metric_type", metricType)
+      .order("started_at", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < PAGE_SIZE) return rows;
+  }
+}
+
 async function main() {
   const supabase = createScriptAdminClient();
 
@@ -34,14 +57,13 @@ async function main() {
     const userId = profile.id;
     const timezone = profile.time_zone ?? DEFAULT_TIMEZONE;
 
-    const [{ data: workoutLogs }, { data: weightLogs }, { data: stepLogs }, { data: sleepLogs }, { data: heartRateLogs }] =
-      await Promise.all([
-        supabase.from("health_metrics").select("started_at").eq("user_id", userId).eq("metric_type", "workout"),
-        supabase.from("health_metrics").select("started_at").eq("user_id", userId).eq("metric_type", "weight"),
-        supabase.from("health_metrics").select("started_at").eq("user_id", userId).eq("metric_type", "steps"),
-        supabase.from("health_metrics").select("started_at").eq("user_id", userId).eq("metric_type", "sleep"),
-        supabase.from("health_metrics").select("started_at").eq("user_id", userId).eq("metric_type", "heart_rate"),
-      ]);
+    const [workoutLogs, weightLogs, stepLogs, sleepLogs, heartRateLogs] = await Promise.all([
+      fetchAllStartedAt(supabase, userId, "workout"),
+      fetchAllStartedAt(supabase, userId, "weight"),
+      fetchAllStartedAt(supabase, userId, "steps"),
+      fetchAllStartedAt(supabase, userId, "sleep"),
+      fetchAllStartedAt(supabase, userId, "heart_rate"),
+    ]);
 
     const days = new Set<string>();
     for (const row of workoutLogs ?? []) days.add(localDateString(new Date(row.started_at), timezone));
