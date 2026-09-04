@@ -2,7 +2,7 @@ import { localHour } from "@/domains/activity-summary/timezone";
 
 export type WorkoutLogRow = { start_date: string; duration_minutes: number; activity_type: string };
 export type WeightLogRow = { logged_at: string; weight: number; unit: "lb" | "kg" };
-export type StepLogRow = { logged_at: string; count: number };
+export type StepLogRow = { logged_at: string; count: number; dedupKey?: string | null };
 export type SleepLogRow = { total_duration_minutes: number | null; quality: number | null };
 export type HeartRateLogRow = { bpm: number; dedupKey?: string | null };
 
@@ -12,6 +12,15 @@ export type HeartRateLogRow = { bpm: number; dedupKey?: string | null };
  * only field the import controls end to end. */
 function isAmbientRollup(row: HeartRateLogRow): boolean {
   return (row.dedupKey ?? "").startsWith("daily-avg-heart_rate-");
+}
+
+/** A whole-day step total written by the mobile import from HealthKit's
+ * own statistics query (areta-mobile's fetchRecentDailyTotals) — the
+ * number the Health app itself shows, with overlapping iPhone/Watch
+ * sources already merged. Where one exists it is the day's truth; the raw
+ * samples for that day (if any) only contribute the most-active hour. */
+function isDailyStepRollup(row: StepLogRow): boolean {
+  return (row.dedupKey ?? "").startsWith("daily-steps-");
 }
 
 export type ActivityDailySummaryInsert = {
@@ -71,9 +80,15 @@ export function aggregateActivityDailySummary(input: {
   const firstWeight = weightSorted[0] ?? null;
   const lastWeight = weightSorted[weightSorted.length - 1] ?? null;
 
-  const stepsTotal = stepLogs.reduce((sum, s) => sum + s.count, 0);
+  // A daily rollup wins over the sum of raw samples (found 2026-09-04:
+  // the anchored sample stream strands whole days when HealthKit access
+  // is lost and regained, and summing phone+watch samples can double
+  // count where the statistics query does not).
+  const stepRollup = stepLogs.filter(isDailyStepRollup).at(-1) ?? null;
+  const rawStepLogs = stepLogs.filter((s) => !isDailyStepRollup(s));
+  const stepsTotal = stepRollup ? stepRollup.count : rawStepLogs.reduce((sum, s) => sum + s.count, 0);
   const stepsByHour = new Map<number, number>();
-  for (const s of stepLogs) {
+  for (const s of rawStepLogs) {
     const hour = localHour(new Date(s.logged_at), timezone);
     stepsByHour.set(hour, (stepsByHour.get(hour) ?? 0) + s.count);
   }

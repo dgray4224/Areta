@@ -108,3 +108,50 @@ describe("aggregateActivityDailySummary", () => {
     expect(result.heart_rate_sample_count).toBe(2);
   });
 });
+
+describe("aggregateActivityDailySummary step rollups", () => {
+  const base = {
+    userId: "user-1",
+    day: "2026-09-04",
+    timezone: "America/Los_Angeles",
+    workoutLogs: [],
+    weightLogs: [],
+    sleepLogs: [],
+    heartRateLogs: [],
+  };
+
+  it("sums raw samples when no rollup exists", () => {
+    const result = aggregateActivityDailySummary({
+      ...base,
+      stepLogs: [
+        { logged_at: "2026-09-04T15:00:00Z", count: 1200, dedupKey: "uuid-1" },
+        { logged_at: "2026-09-04T16:00:00Z", count: 800, dedupKey: "uuid-2" },
+      ],
+    });
+    expect(result.steps_total).toBe(2000);
+    expect(result.steps_most_active_local_hour).toBe(8);
+  });
+
+  it("prefers a whole-day rollup over the raw samples, keeping the raw most-active hour", () => {
+    const result = aggregateActivityDailySummary({
+      ...base,
+      stepLogs: [
+        { logged_at: "2026-09-04T15:00:00Z", count: 1200, dedupKey: "uuid-1" },
+        { logged_at: "2026-09-04T16:00:00Z", count: 800, dedupKey: "uuid-2" },
+        { logged_at: "2026-09-04T19:00:00Z", count: 9430, dedupKey: "daily-steps-2026-09-04" },
+      ],
+    });
+    // Not 1200 + 800 + 9430: the rollup already IS the day.
+    expect(result.steps_total).toBe(9430);
+    expect(result.steps_most_active_local_hour).toBe(8);
+  });
+
+  it("uses the rollup alone on a day with no raw samples", () => {
+    const result = aggregateActivityDailySummary({
+      ...base,
+      stepLogs: [{ logged_at: "2026-09-04T19:00:00Z", count: 6100, dedupKey: "daily-steps-2026-09-04" }],
+    });
+    expect(result.steps_total).toBe(6100);
+    expect(result.steps_most_active_local_hour).toBeNull();
+  });
+});

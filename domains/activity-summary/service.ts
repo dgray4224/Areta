@@ -98,8 +98,10 @@ async function recomputeForDayAndTimezone(
         .gte("started_at", startIso)
         .lt("started_at", endIso),
       supabase
+        // dedup_key distinguishes a whole-day rollup from raw samples --
+        // see aggregateActivityDailySummary's step precedence.
         .from("health_metrics")
-        .select("started_at, value")
+        .select("started_at, value, dedup_key")
         .eq("user_id", userId)
         .eq("metric_type", "steps")
         .gte("started_at", startIso)
@@ -142,7 +144,7 @@ async function recomputeForDayAndTimezone(
       weight: Number(r.value),
       unit: r.unit as "lb" | "kg",
     })),
-    stepLogs: (stepRows ?? []).map((r) => ({ logged_at: r.started_at, count: Number(r.value) })),
+    stepLogs: (stepRows ?? []).map((r) => ({ logged_at: r.started_at, count: Number(r.value), dedupKey: r.dedup_key })),
     sleepLogs: (sleepRows ?? []).map((r) => ({
       total_duration_minutes: r.value != null ? Number(r.value) : null,
       quality: r.sleep_quality,
