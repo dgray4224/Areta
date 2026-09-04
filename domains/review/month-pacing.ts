@@ -65,6 +65,9 @@ export type MonthMetric = {
   direction: "ahead" | "behind" | "even" | null;
   /** Both this month and at least one baseline month have data. */
   usable: boolean;
+  /** The trailing three months' full values, oldest first — the bars a
+   * month-end card draws next to this month. */
+  trailingMonths: { month: string; label: string; value: number | null }[];
 };
 
 export type MonthPacing = {
@@ -170,6 +173,41 @@ function round(value: number | null, kind: "total" | "average"): number | null {
   return kind === "average" ? Math.round(value * 10) / 10 : Math.round(value);
 }
 
+/** Lead-metric order for a recap: the metric most people have, first. */
+const RECAP_PRIORITY: MonthMetricKey[] = ["steps", "workouts", "trainingMinutes", "sleepHours", "foodDays"];
+
+export function formatMonthValue(metric: Pick<MonthMetric, "key">, value: number): string {
+  switch (metric.key) {
+    case "steps":
+      return `${value.toLocaleString("en-US")} steps`;
+    case "workouts":
+      return `${value} ${value === 1 ? "workout" : "workouts"}`;
+    case "trainingMinutes":
+      return `${value.toLocaleString("en-US")} minutes of training`;
+    case "sleepHours":
+      return `${value}h of sleep a night`;
+    case "foodDays":
+      return `${value} ${value === 1 ? "day" : "days"} with food logged`;
+  }
+}
+
+/** "15% more than your usual month" / "about your usual" / "12% less than
+ * your usual month". Neutral on purpose: less sleep is not "worse" in a
+ * sentence the app cannot contextualize. */
+export function describeMonthDelta(metric: Pick<MonthMetric, "deltaPercent" | "direction">): string | null {
+  if (metric.deltaPercent === null || metric.direction === null) return null;
+  if (metric.direction === "even") return "about your usual";
+  const magnitude = Math.abs(metric.deltaPercent);
+  return metric.direction === "ahead" ? `${magnitude}% more than your usual month` : `${magnitude}% less than your usual month`;
+}
+
+/** The usable metrics of a completed month in recap order, lead first. */
+export function recapMetrics(pacing: MonthPacing): MonthMetric[] {
+  return RECAP_PRIORITY.map((key) => pacing.metrics.find((m) => m.key === key)).filter(
+    (m): m is MonthMetric => m !== undefined && m.usable
+  );
+}
+
 export function computeMonthPacing(input: MonthPacingInput): MonthPacing {
   const { month, today } = input;
   const totalDays = daysInMonth(month);
@@ -190,8 +228,13 @@ export function computeMonthPacing(input: MonthPacingInput): MonthPacing {
 
     const sameDayTrailing = mean(trailing.map((m) => valueOf(def, aggregate(def, byDay, nutritionDays, m, daysElapsed))));
     const sameDayLastYear = valueOf(def, aggregate(def, byDay, nutritionDays, lastYear, daysElapsed));
-    const trailingFull = mean(trailing.map((m) => valueOf(def, aggregate(def, byDay, nutritionDays, m, daysInMonth(m)))));
-    const lastMonthFull = valueOf(def, aggregate(def, byDay, nutritionDays, trailing[0], daysInMonth(trailing[0])));
+    const trailingMonths = [...trailing].reverse().map((m) => ({
+      month: m,
+      label: monthLabel(m, false).slice(0, 3),
+      value: round(valueOf(def, aggregate(def, byDay, nutritionDays, m, daysInMonth(m))), def.kind),
+    }));
+    const trailingFull = mean(trailingMonths.map((m) => m.value));
+    const lastMonthFull = trailingMonths[trailingMonths.length - 1]?.value ?? null;
 
     let projected: number | null = null;
     if (toDateValue !== null && daysElapsed > 0) {
@@ -218,6 +261,7 @@ export function computeMonthPacing(input: MonthPacingInput): MonthPacing {
       deltaPercent,
       direction,
       usable: toDateValue !== null && (sameDayTrailing !== null || sameDayLastYear !== null),
+      trailingMonths,
     };
   });
 

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { computeMonthPacing, daysInMonth, shiftMonth, type MonthPacingRow } from "@/domains/review/month-pacing";
+import {
+  computeMonthPacing,
+  daysInMonth,
+  describeMonthDelta,
+  formatMonthValue,
+  recapMetrics,
+  shiftMonth,
+  type MonthPacingRow,
+} from "@/domains/review/month-pacing";
 
 function day(month: string, d: number): string {
   return `${month}-${String(d).padStart(2, "0")}`;
@@ -106,6 +114,21 @@ describe("computeMonthPacing", () => {
     expect(result.daysElapsed).toBe(31);
     expect(metric(result, "steps").toDate).toBe(279_000);
     expect(metric(result, "steps").projected).toBe(279_000);
+    // The bars: May (no data), June (no data), July, oldest first.
+    expect(metric(result, "steps").trailingMonths.map((m) => m.label)).toEqual(["May", "Jun", "Jul"]);
+    expect(metric(result, "steps").trailingMonths.map((m) => m.value)).toEqual([null, null, 248_000]);
+  });
+
+  it("phrases a recap neutrally and leads with the most common metric", () => {
+    const rows = [...fillMonth("2026-07", 8000), ...fillMonth("2026-08", 9200)];
+    const result = computeMonthPacing({ rows, nutritionDays: [], month: "2026-08", today: "2026-09-04" });
+    const lead = recapMetrics(result)[0];
+    expect(lead.key).toBe("steps");
+    expect(formatMonthValue(lead, lead.toDate)).toBe("285,200 steps");
+    expect(describeMonthDelta(lead)).toBe("15% more than your usual month");
+    expect(describeMonthDelta({ deltaPercent: -12, direction: "behind" })).toBe("12% less than your usual month");
+    expect(describeMonthDelta({ deltaPercent: 2, direction: "even" })).toBe("about your usual");
+    expect(describeMonthDelta({ deltaPercent: null, direction: null })).toBeNull();
   });
 
   it("month arithmetic crosses year boundaries", () => {

@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/generate-weekly-reviews",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/month-recap",
+      "schedule": "0 16 1 * *"
     }
   ]
 }
