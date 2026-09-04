@@ -84,7 +84,7 @@ export async function getVitalsTrend(
 
   const { data: rows, error } = await supabase
     .from("health_metrics")
-    .select("metric_type, started_at, value, unit")
+    .select("metric_type, started_at, value, unit, dedup_key")
     .eq("user_id", userId)
     .in("metric_type", metricTypes)
     .gte("started_at", windowStart);
@@ -97,12 +97,25 @@ export async function getVitalsTrend(
   // (summed or averaged) before being flattened into the response series.
   const byMetricByDay = new Map<MetricType, Map<string, number[]>>();
   for (const type of metricTypes) byMetricByDay.set(type, new Map());
+  // A day that has a whole-day figure from the mobile import (dedup_key
+  // `daily-<type>-<day>`, from HealthKit's own statistics query) is that
+  // figure alone -- raw samples for the same day would otherwise be
+  // counted on top of it (found 2026-09-04, when a stale anchor re-walked
+  // 2022 energy samples onto days the backfill had already summarised).
+  const rollupDays = new Set<string>();
+  for (const row of rows ?? []) {
+    if ((row.dedup_key ?? "").startsWith("daily-")) {
+      rollupDays.add(`${row.metric_type}|${localDateString(new Date(row.started_at), timezone)}`);
+    }
+  }
 
   for (const row of rows ?? []) {
     const type = row.metric_type as MetricType;
     const byDay = byMetricByDay.get(type);
     if (!byDay || row.value === null) continue;
     const day = localDateString(new Date(row.started_at), timezone);
+    const isRollup = (row.dedup_key ?? "").startsWith("daily-");
+    if (!isRollup && rollupDays.has(`${type}|${day}`)) continue;
     const value = type === "weight" && row.unit === "kg" ? Number(row.value) * LB_PER_KG : Number(row.value);
     if (!byDay.has(day)) byDay.set(day, []);
     byDay.get(day)!.push(value);
