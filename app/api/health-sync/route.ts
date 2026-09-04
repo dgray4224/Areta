@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { publicEnv } from "@/platform/env";
@@ -19,6 +19,7 @@ import { importedWeightLogSchema } from "@/domains/weight/schema";
 import { importedVitalSampleSchema } from "@/domains/vitals/schema";
 import { recomputeActivityDailySummaryForDay, resolveTimezone } from "@/domains/activity-summary/service";
 import { localDateString } from "@/domains/activity-summary/timezone";
+import { checkSameDayRecords } from "@/domains/insights/same-day-records";
 
 type Handler = (
   supabase: SupabaseClient<Database>,
@@ -111,6 +112,9 @@ export async function POST(request: NextRequest) {
   // That, not the insert itself, was the bulk of a backfill's database
   // load.
   const touchedDays = new Set<string>();
+  // Days whose records are worth re-checking once the summaries are
+  // rebuilt: touchedDays plus any day a workout landed on.
+  const recordDays = new Set<string>();
 
   for (const [metricType, entries] of Object.entries(body) as [MetricType, unknown[] | undefined][]) {
     if (!entries) continue;
@@ -140,10 +144,31 @@ export async function POST(request: NextRequest) {
     if (!handler) continue;
     const results = await Promise.all(entries.map((entry) => handler(supabase, user.id, entry)));
     response[metricType] = summarize(results);
+
+    // Workouts recompute their own day inside insertImportedWorkoutLog,
+    // so they never enter touchedDays -- but a workout-only sync is
+    // exactly when a training-day or pace record lands, so the record
+    // check has to hear about those days too.
+    if (metricType === "workout") {
+      const timezone = await resolveTimezone(supabase, user.id);
+      for (const entry of entries) {
+        const start = (entry as { startDate?: unknown } | null)?.startDate;
+        if (typeof start === "string" && !Number.isNaN(Date.parse(start))) {
+          recordDays.add(localDateString(new Date(start), timezone));
+        }
+      }
+    }
   }
 
   for (const day of touchedDays) {
     await recomputeActivityDailySummaryForDay(supabase, user.id, day);
+    recordDays.add(day);
+  }
+
+  // After the response: the phone's sync must not wait on the record
+  // check, and the check itself never throws (see same-day-records.ts).
+  if (recordDays.size > 0) {
+    after(() => checkSameDayRecords(supabase, user.id, recordDays));
   }
 
   return NextResponse.json(response);

@@ -534,7 +534,7 @@ export function computeTaskCompletions(actions: { date: string; status: string }
     .sort((a, b) => (a.day < b.day ? -1 : 1));
 }
 
-type AllTimeSummaryRow = {
+export type AllTimeSummaryRow = {
   day: string;
   steps_total: number;
   workout_count: number;
@@ -546,7 +546,9 @@ type AllTimeSummaryRow = {
   heart_rate_sample_count: number;
 };
 
-async function fetchAllTimeSummaryRows(
+/** Exported for the same-day record check (same-day-records.ts), which
+ * needs the full history but none of the rest of the bundle. */
+export async function fetchAllTimeSummaryRows(
   supabase: SupabaseClient<Database>,
   userId: string
 ): Promise<AllTimeSummaryRow[]> {

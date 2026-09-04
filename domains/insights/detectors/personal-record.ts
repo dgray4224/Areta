@@ -22,7 +22,10 @@ const MIN_WORKOUT_DAYS_FOR_RECORD = 10;
 export const WORKOUT_MILESTONES = [10, 25, 50, 100, 250, 500, 1000];
 export const STEP_MILESTONES = [1_000_000, 2_000_000, 5_000_000, 10_000_000];
 
-export function detectPersonalRecords(input: DetectorInput): InsightCandidate[] {
+// Takes only the two fields it reads, so the same-day path (same-day-
+// records.ts, run on every health sync) can call it with one paged
+// history fetch instead of assembling the whole DetectorInput.
+export function detectPersonalRecords(input: Pick<DetectorInput, "allTimeSummaries" | "today">): InsightCandidate[] {
   const candidates: InsightCandidate[] = [];
   const all = input.allTimeSummaries;
   if (all.length === 0) return [];

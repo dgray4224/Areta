@@ -147,6 +147,14 @@ export function weekendShiftHeadline(
   );
 }
 
+/** "7:42 /mi" from seconds per mile. */
+export function formatPace(secondsPerMile: number): string {
+  const total = Math.round(secondsPerMile);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")} /mi`;
+}
+
 export function personalRecordHeadline(
   facts: {
     kind: string;
@@ -154,10 +162,22 @@ export function personalRecordHeadline(
     day?: string | null;
     milestone?: number | null;
     series?: FactSeries | null;
+    distanceMiles?: number | null;
   },
   dedupeKey: string
 ): string {
   switch (facts.kind) {
+    case "running_pace_mile": {
+      const pace = formatPace(facts.value);
+      const distance = facts.distanceMiles ? ` over a ${facts.distanceMiles.toFixed(1)}-mile run` : "";
+      return pick(
+        [
+          `Fastest pace yet: **${pace}**${distance}.`,
+          `New pace record — **${pace}**, your quickest ever over a mile or more.`,
+        ],
+        dedupeKey
+      );
+    }
     case "steps_day":
       return pick(
         [
