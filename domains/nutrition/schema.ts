@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RECIPE_CUISINES } from "@/domains/recipes/schema";
 
 /** Phase 1 onboarding only captures preferences and current/target state —
  * deterministic calorie/protein targets are derived in Phase 3's
@@ -63,6 +64,11 @@ export const nutritionSchema = z.object({
   allergies: z.array(z.string()).optional(),
   dietaryPattern: z.enum(DIETARY_PATTERNS).optional(),
   dislikedFoods: z.array(z.string()).optional(),
+  /** Cuisines the person actually likes to eat (2026-09-09). A standing
+   * preference the generator scores toward on every rebuild -- not a
+   * filter, so a thin cuisine never leaves a slot empty. Absent or empty
+   * means no preference. Editable via PATCH /api/plan/meals/preferences. */
+  preferredCuisines: z.array(z.enum(RECIPE_CUISINES)).optional(),
   mealsPerDay: z.number().int().min(1).max(10).optional(),
   trackingPreference: z.enum(["detailed", "simple", "none"]).optional(),
   proteinTargetGrams: z.number().positive().optional(),

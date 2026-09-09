@@ -120,7 +120,10 @@ export async function generateAndSaveMealPlan(
     // Per-user, per-week seed: same-week regenerations stay stable; next
     // week's plan rotates among equally-suitable recipes (4b).
     variantSeed: `${userId}:${weekStart}`,
-    preferredCuisines: options?.preferredCuisines,
+    // A per-call override (the web regenerate button) wins; otherwise the
+    // standing preference from onboarding / Settings, so the weekly
+    // rebuild and the onboarding build both honour it.
+    preferredCuisines: options?.preferredCuisines ?? nutrition.preferredCuisines,
     // Absent means all seven days -- see plannedMealDays in
     // domains/nutrition/schema.ts. An explicit empty array is honoured as
     // "plan nothing", which is why this checks for undefined rather than
