@@ -4,6 +4,7 @@ import { createAdminClient } from "@/platform/supabase/admin";
 import { localDateString } from "@/domains/activity-summary/timezone";
 import { getOrCreateWeeklyReview, generateWeeklyBrief } from "@/domains/review/service";
 import { sendPushToUsers } from "@/platform/push/send";
+import { REVIEW_PUSH_TITLE, reviewPushBody } from "@/domains/review/push-copy";
 
 /**
  * Daily cron (see vercel.json): generates each user's weekly brief
@@ -69,14 +70,18 @@ export async function GET(request: NextRequest) {
       }
       const result = await generateWeeklyBrief(userId, supabase);
       if (!result.ok) throw new Error(result.error);
-      return { userId, skipped: false as const };
+      // Re-read for the brief itself: the push below leads with its
+      // highest-leverage action, the one specific sentence this week's
+      // rewrite hangs on, rather than a generic "your review is ready".
+      const generated = await getOrCreateWeeklyReview(userId, supabase);
+      return { userId, skipped: false as const, action: generated.brief?.highestLeverageAction ?? null };
     })
   );
 
   let generated = 0;
   let alreadyDone = 0;
   const failures: { userId: string; error: string }[] = [];
-  const newlyGeneratedUserIds: string[] = [];
+  const newlyGenerated: { userId: string; action: string | null }[] = [];
   results.forEach((r, i) => {
     if (r.status === "rejected") {
       failures.push({ userId: dueUserIds[i], error: String(r.reason) });
@@ -84,7 +89,7 @@ export async function GET(request: NextRequest) {
       alreadyDone++;
     } else {
       generated++;
-      newlyGeneratedUserIds.push(r.value.userId);
+      newlyGenerated.push({ userId: r.value.userId, action: r.value.action });
     }
   });
 
@@ -93,10 +98,10 @@ export async function GET(request: NextRequest) {
   // blocks/fails the cron result itself, so this runs after (not inside)
   // the generation loop above.
   await sendPushToUsers(
-    newlyGeneratedUserIds.map((userId) => ({
+    newlyGenerated.map(({ userId, action }) => ({
       userId,
-      title: "Your weekly review is ready",
-      body: "See how this week went and what's next.",
+      title: REVIEW_PUSH_TITLE,
+      body: reviewPushBody(action),
       screen: "review" as const,
     })),
     supabase
