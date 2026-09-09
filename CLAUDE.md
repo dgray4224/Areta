@@ -1058,6 +1058,14 @@ Use fast manual entry for:
 - Weight
 - Steps or activity if desired
 
+## Mobile-first (decided 2026-09-09)
+
+The consumer product is the iPhone app (`areta-mobile`). This web app is the landing
+page, the account and privacy pages, the trainer and admin consoles, and the backend.
+Consumer features ship on mobile; the web consumer screens are not kept at parity
+and should not receive new consumer work. Who the product is for, and what it is, is
+written down in `docs/persona.md` — read it before any product-facing change.
+
 ## Later — in progress
 
 The `areta-mobile` repo (Expo/React Native, standalone — see its own
