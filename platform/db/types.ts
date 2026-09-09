@@ -1946,9 +1946,11 @@ export type Database = {
           is_admin: boolean
           is_trainer: boolean
           learning_time_minutes_per_week: number | null
+          meal_planning_enabled: boolean
           meal_prep_day: number | null
           onboarding_completed_at: string | null
           school_commitments: string | null
+          shopping_horizon_weeks: number
           time_zone: string | null
           units: string | null
           updated_at: string
@@ -1968,9 +1970,11 @@ export type Database = {
           is_admin?: boolean
           is_trainer?: boolean
           learning_time_minutes_per_week?: number | null
+          meal_planning_enabled?: boolean
           meal_prep_day?: number | null
           onboarding_completed_at?: string | null
           school_commitments?: string | null
+          shopping_horizon_weeks?: number
           time_zone?: string | null
           units?: string | null
           updated_at?: string
@@ -1990,9 +1994,11 @@ export type Database = {
           is_admin?: boolean
           is_trainer?: boolean
           learning_time_minutes_per_week?: number | null
+          meal_planning_enabled?: boolean
           meal_prep_day?: number | null
           onboarding_completed_at?: string | null
           school_commitments?: string | null
+          shopping_horizon_weeks?: number
           time_zone?: string | null
           units?: string | null
           updated_at?: string

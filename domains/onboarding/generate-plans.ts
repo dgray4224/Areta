@@ -11,6 +11,7 @@ import {
 } from "@/domains/parameters/service";
 import { calculateNutritionParameters } from "@/domains/parameters/nutrition-calc";
 import { generateAndSaveWorkoutPlan, approveWorkoutPlan } from "@/domains/workoutplan/service";
+import { ensureMealPlanWeeksAhead } from "@/domains/mealplan/approve-flow";
 import type { ExerciseInput } from "@/domains/exercise/schema";
 
 export type PlanReadiness = {
@@ -50,6 +51,8 @@ export async function getPlanReadiness(userId: string, client?: SupabaseClient<D
 export type GeneratePlansResult = {
   nutrition: { ok: boolean; error?: string };
   workout: { ok: boolean; error?: string; warnings?: string[] };
+  /** `skipped: true` when the user chose training only (meal planning off). */
+  meals: { ok: boolean; skipped?: boolean; error?: string; weeks?: string[]; warnings?: string[] };
 };
 
 /**
@@ -78,6 +81,7 @@ export async function generatePlansAfterOnboarding(
 
   // --- Nutrition chain -------------------------------------------------
   let nutrition: GeneratePlansResult["nutrition"];
+  let meals: GeneratePlansResult["meals"] = { ok: false, skipped: true };
   const nutritionParams = await generateNutritionParameters(userId, supabase);
   if (!nutritionParams.ok) {
     nutrition = { ok: false, error: nutritionParams.error };
@@ -86,16 +90,29 @@ export async function generatePlansAfterOnboarding(
     if (!approve.ok) {
       nutrition = { ok: false, error: approve.error };
     } else {
-      // Meal plans are no longer generated automatically -- not here, not
-      // by the cron, not on review approval, and not as a side effect of
-      // customizing a week. The user asks for a week explicitly via
-      // POST /api/plan/meals/generate ("Auto-generate this week").
-      //
-      // Nutrition TARGETS are still derived and approved above; only the
-      // week of meals is withheld. Onboarding therefore finishes with
-      // calorie/protein targets in place and an empty Plan tab, which is
-      // the intended first-run state.
       nutrition = { ok: true };
+
+      // The first week of meals IS the day-one product ("tap the meal we
+      // planned"), so it is generated here, active immediately, with the
+      // grocery list and prep plan cascaded -- the same path the Plan tab's
+      // regenerate uses. Two preferences the week bends to (2026-09-09):
+      // training-only users get no meal chain at all, and the shopping
+      // horizon decides how many weeks are planned and consolidated. The
+      // meal CRON stays off; weeks beyond the horizon are the user's call.
+      const { data: prefs } = await supabase
+        .from("profiles")
+        .select("meal_planning_enabled, shopping_horizon_weeks")
+        .eq("id", userId)
+        .maybeSingle();
+      if (prefs?.meal_planning_enabled === false) {
+        meals = { ok: true, skipped: true };
+      } else {
+        const horizon = Math.min(4, Math.max(1, prefs?.shopping_horizon_weeks ?? 1));
+        const generated = await ensureMealPlanWeeksAhead(userId, horizon, supabase);
+        meals = generated.ok
+          ? { ok: true, weeks: generated.data.generatedWeeks, warnings: generated.data.warnings }
+          : { ok: false, error: generated.error };
+      }
     }
   }
 
@@ -119,5 +136,5 @@ export async function generatePlansAfterOnboarding(
     }
   }
 
-  return { nutrition, workout };
+  return { nutrition, workout, meals };
 }
