@@ -9,6 +9,7 @@ import {
 } from "@/domains/mealplan/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
 import { logNutrition, getNutritionLogsForDate, getNutritionDailyTotals } from "@/domains/nutrition/log-service";
+import { getApprovedParameterValue } from "@/domains/parameters/service";
 import { todayForUser } from "@/domains/activity-summary/service";
 
 /**
@@ -77,16 +78,69 @@ export async function GET(request: NextRequest) {
 
   let logs: Awaited<ReturnType<typeof getNutritionLogsForDate>>;
   let totals: Awaited<ReturnType<typeof getNutritionDailyTotals>>;
+  let calorieTarget: number | null;
+  let proteinTarget: number | null;
   try {
-    [logs, totals] = await Promise.all([
+    [logs, totals, calorieTarget, proteinTarget] = await Promise.all([
       getNutritionLogsForDate(userId, date, supabase),
       getNutritionDailyTotals(userId, 30, supabase),
+      // The approved daily targets, so the phone's quick estimate ("ate
+      // out, normal meal") is a share of this person's day rather than a
+      // generic number.
+      getApprovedParameterValue(userId, "nutrition", "calorie_target", supabase),
+      getApprovedParameterValue(userId, "nutrition", "protein_target_g", supabase),
     ]);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load nutrition data" }, { status: 500 });
   }
 
-  return NextResponse.json({ plan: plannedMeals, logs, totals });
+  // Rows the planned-meal checkbox wrote are removed by unticking the
+  // meal, never by deleting the log, so the phone needs to tell them apart.
+  const planLogIds = new Set((plan?.items ?? []).map((item) => item.nutritionLogId).filter((id): id is string => id !== null));
+
+  return NextResponse.json({
+    plan: plannedMeals,
+    logs: logs.map((log) => ({ ...log, fromPlan: planLogIds.has(log.id) })),
+    totals,
+    targets: { calories: calorieTarget, protein: proteinTarget },
+  });
+}
+
+/**
+ * Removes one off-plan log row -- a mis-tapped favourite or quick
+ * estimate. A row a planned meal owns is refused: unticking the meal is
+ * the path that also clears the plan item's completion.
+ */
+export async function DELETE(request: NextRequest) {
+  const auth = await authenticateBearerRequest(request);
+  if (!auth) {
+    return NextResponse.json({ error: "Missing or invalid bearer token" }, { status: 401 });
+  }
+  const { supabase, userId } = auth;
+
+  let body: { logId?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  if (typeof body.logId !== "string") {
+    return NextResponse.json({ error: "logId (string) is required" }, { status: 400 });
+  }
+
+  const { data: owner } = await supabase
+    .from("meal_plan_items")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("nutrition_log_id", body.logId)
+    .maybeSingle();
+  if (owner) {
+    return NextResponse.json({ error: "This entry belongs to a planned meal — untick the meal instead." }, { status: 409 });
+  }
+
+  const { error } = await supabase.from("nutrition_logs").delete().eq("id", body.logId).eq("user_id", userId);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }
 
 export async function POST(request: NextRequest) {
