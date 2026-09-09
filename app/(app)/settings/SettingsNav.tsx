@@ -4,10 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navTabClass, ADMIN_LINK, COACHING_LINK } from "../nav-links";
 
+// The trainer layer is parked (product decision 2026-09-09): the code stays,
+// the entry point is gated to people who already are trainers. /settings/
+// trainer and /trainers remain reachable by URL.
+const TRAINER_TAB = { href: "/settings/trainer", label: "Trainer" } as const;
+
 const TABS = [
   { href: "/settings/profile", label: "Profile" },
   { href: "/settings/personalization", label: "Personalization" },
-  { href: "/settings/trainer", label: "Trainer" },
   { href: "/settings/calendar", label: "Calendar" },
   { href: "/settings/appearance", label: "Appearance" },
   { href: "/settings/health-data", label: "Health Data" },
@@ -22,7 +26,7 @@ const JUMP_OUT_HREFS = new Set<string>([ADMIN_LINK.href, COACHING_LINK.href]);
 
 export function SettingsNav({ isAdmin, isTrainer }: { isAdmin: boolean; isTrainer: boolean }) {
   const pathname = usePathname();
-  const tabs = [...(isAdmin ? [ADMIN_LINK] : []), ...(isTrainer ? [COACHING_LINK] : []), ...TABS];
+  const tabs = [...(isAdmin ? [ADMIN_LINK] : []), ...(isTrainer ? [COACHING_LINK, TRAINER_TAB] : []), ...TABS];
 
   return (
     <nav className="flex items-center gap-1 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
