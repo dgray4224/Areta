@@ -77,7 +77,20 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const favorites = Array.from(byFood.values())
+  // Regenerating a week replaces its items, which orphans any completion
+  // rows already written for it -- the plan link above no longer knows
+  // them. A row that carries a library recipe's exact name in "serving"
+  // units is that kind of row, not something the person typed.
+  const candidates = Array.from(byFood.values());
+  const servingNamed = candidates.filter((f) => f.unit === "serving").map((f) => f.food);
+  const recipeNames = new Set<string>();
+  if (servingNamed.length > 0) {
+    const { data: recipes } = await supabase.from("recipes").select("name").in("name", servingNamed);
+    for (const r of recipes ?? []) recipeNames.add(r.name.toLowerCase());
+  }
+
+  const favorites = candidates
+    .filter((f) => !(f.unit === "serving" && recipeNames.has(f.food.toLowerCase())))
     .sort((a, b) => b.count - a.count)
     .slice(0, MAX_FAVORITES);
 
