@@ -43,8 +43,21 @@ export async function GET(request: NextRequest) {
     supabase
   );
 
+  // Batch cooks eat the same dish on consecutive days; "day 2 of 3" on the
+  // card says so, so tapping "ate it" on leftovers stays honest and the
+  // person knows the plan meant it. Derived here from the week's items
+  // rather than stored: which day of a run today is depends only on the
+  // plan as it stands.
+  const runFor = (recipeId: string, mealType: string) =>
+    (plan?.items ?? [])
+      .filter((i) => i.recipeId === recipeId && i.mealType === mealType)
+      .map((i) => i.dayOfWeek)
+      .sort((a, b) => a - b);
+
   const plannedMeals = todaysItems.map((item) => {
     const recipe = recipeMap.get(item.recipeId);
+    const run = runFor(item.recipeId, item.mealType);
+    const leftover = run.length > 1 ? { day: run.indexOf(item.dayOfWeek) + 1, of: run.length } : null;
     return {
       id: item.id,
       recipeId: item.recipeId,
@@ -54,6 +67,7 @@ export async function GET(request: NextRequest) {
       photoUrl: recipe?.photoUrl ?? null,
       mealType: item.mealType,
       servings: item.servings,
+      leftover,
       completedAt: item.completedAt,
       scheduledTime: item.scheduledTime,
       endTime: item.endTime,

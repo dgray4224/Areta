@@ -6,7 +6,7 @@ import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { getApprovedParameterValue } from "@/domains/parameters/service";
 import { getAllRecipes, getRecipesByIds } from "@/domains/recipes/service";
-import { generateMealPlan, mapAllergiesToAllergens, type RecipeForPlanning } from "@/domains/mealplan/generate";
+import { COOKING_STYLES, generateMealPlan, mapAllergiesToAllergens, type RecipeForPlanning } from "@/domains/mealplan/generate";
 import type { NutritionInput } from "@/domains/nutrition/schema";
 import type { RecipeCuisine } from "@/domains/recipes/types";
 import { logScheduleEvent } from "@/platform/scheduling/log-schedule-event";
@@ -77,12 +77,12 @@ export async function generateAndSaveMealPlan(
     return { ok: false, error: "Approve your nutrition targets before generating a meal plan." };
   }
 
-  const { data: responses } = await supabase
-    .from("onboarding_responses")
-    .select("nutrition")
-    .eq("user_id", userId)
-    .single();
+  const [{ data: responses }, { data: profile }] = await Promise.all([
+    supabase.from("onboarding_responses").select("nutrition").eq("user_id", userId).single(),
+    supabase.from("profiles").select("cooking_style").eq("id", userId).maybeSingle(),
+  ]);
   const nutrition = (responses?.nutrition ?? {}) as NutritionInput;
+  const cookingStyle = COOKING_STYLES.find((s) => s === profile?.cooking_style) ?? "fresh";
 
   const [recipes, pickWeights] = await Promise.all([getAllRecipes(supabase), getRecipePickFrequency(userId, supabase)]);
   const planningRecipes: RecipeForPlanning[] = recipes.map((r) => ({
@@ -128,6 +128,7 @@ export async function generateAndSaveMealPlan(
     plannedDaysOfWeek: nutrition.plannedMealDays ?? undefined,
     recipes: planningRecipes,
     pickWeights,
+    cookingStyle,
   });
 
   const { data: plan, error: planError } = await supabase

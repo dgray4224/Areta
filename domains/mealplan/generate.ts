@@ -78,7 +78,20 @@ export type MealPlanGenerationInput = {
    * variety gap, so it can influence which eligible recipe wins but can
    * never bypass those caps. Omitted/empty means no history yet. */
   pickWeights?: Map<string, number>;
+  /** How the person cooks (profiles.cooking_style, 2026-09-09):
+   *  - fresh  — a different meal most days; the variety rules below apply.
+   *  - batch  — cook once, eat leftovers: at most a couple of recipes per
+   *             meal type for the week, assigned in consecutive runs
+   *             (A, A, B, B) so the prep plan is one session and the
+   *             grocery list is a few dishes' worth. This is what most
+   *             adults who cook actually do.
+   *  - simple — fresh, but quick recipes win ties.
+   * Omitted → fresh, preserving every existing caller and test. */
+  cookingStyle?: CookingStyle;
 };
+
+export const COOKING_STYLES = ["fresh", "batch", "simple"] as const;
+export type CookingStyle = (typeof COOKING_STYLES)[number];
 
 export type PlannedMeal = { mealType: MealType; recipeId: string };
 export type MealPlanDay = {
@@ -94,6 +107,15 @@ export type MealPlanGenerationResult = {
 };
 
 const MAX_USES_PER_WEEK = 2;
+/** Batch mode: how many distinct recipes a meal type gets across the week.
+ * Breakfast and snacks are one thing all week for nearly everyone; lunch and
+ * dinner get two dishes once there are enough planned days to alternate. */
+const BATCH_DISTINCT_MAIN = 2;
+const BATCH_MIN_DAYS_FOR_TWO = 4;
+/** Score bonus for "quick" recipes in simple mode — bigger than the variety
+ * jitter (45), well under the cuisine penalty (150), so it decides ties
+ * among suitable options without overriding a stated preference. */
+const QUICK_RECIPE_BONUS = 60;
 
 function slotsForMealsPerDay(mealsPerDay: number): MealType[] {
   const base: MealType[] = ["breakfast", "lunch", "dinner"];
@@ -276,6 +298,26 @@ export function generateMealPlan(input: MealPlanGenerationInput): MealPlanGenera
 
   const usageCount = new Map<string, number>();
   const recentDays = new Map<string, number>(); // recipeId -> last day used
+  const style: CookingStyle = input.cookingStyle ?? "fresh";
+
+  // Independent of the day, so shared by both cooking styles below.
+  const scoreOf = (r: RecipeForPlanning) => {
+    const base = Math.abs(r.calories - slotCalorieTarget) + Math.abs(r.proteinG - slotProteinTarget) * 2;
+    const cuisineMismatch = preferredCuisines.length > 0 && !preferredCuisines.includes(r.cuisine);
+    const withCuisine = cuisineMismatch ? base + CUISINE_MISMATCH_PENALTY : base;
+    const pickCount = Math.min(pickWeights?.get(r.id) ?? 0, PREFERENCE_CAP_PICKS);
+    // Variety jitter (4b, 2026-08-14): a deterministic per-seed,
+    // per-recipe offset in [0, 45) — bigger than typical macro-score
+    // gaps between similar recipes (so near-ties rotate week to week)
+    // but well under CUISINE_MISMATCH_PENALTY (so it stays a shuffle
+    // among suitable options, never overriding a stated preference).
+    // Without a catalog-size-independent shake-up like this, a bigger
+    // library adds zero felt variety: the same nearest-macro recipes
+    // win every single week.
+    const jitter = input.variantSeed ? hashString(`${input.variantSeed}:${r.id}`) % 45 : 0;
+    const quickBonus = style === "simple" && r.dietaryTags.includes("quick") ? QUICK_RECIPE_BONUS : 0;
+    return withCuisine - pickCount * PREFERENCE_WEIGHT_PER_PICK + jitter - quickBonus;
+  };
 
   const planDays: MealPlanDay[] = [];
 
@@ -284,8 +326,58 @@ export function generateMealPlan(input: MealPlanGenerationInput): MealPlanGenera
   // day into the plan, and downstream code reads "has a day row" as
   // "this day is planned".
   const plannedDays = input.plannedDaysOfWeek;
+  const dayList: number[] = [];
   for (let day = 0; day < days; day++) {
     if (plannedDays && !plannedDays.includes(day)) continue;
+    dayList.push(day);
+  }
+
+  if (style === "batch") {
+    // Cook once, eat leftovers. Each meal type gets one or two dishes for
+    // the whole week, each covering a consecutive run of planned days —
+    // a person batch-cooking on Sunday makes dish A for the first half of
+    // the week and dish B for the second, not seven different dinners.
+    // A recipe is never used for two meal types in the same week.
+    const chosenByType = new Map<MealType, RecipeForPlanning[]>();
+    const takenIds = new Set<string>();
+    const distinctTypes = [...new Set(slots)];
+    for (const mealType of distinctTypes) {
+      const pool = (poolByType.get(mealType) ?? []).filter((r) => !takenIds.has(r.id));
+      if (pool.length === 0) continue;
+      const wanted =
+        (mealType === "lunch" || mealType === "dinner") && dayList.length >= BATCH_MIN_DAYS_FOR_TWO ? BATCH_DISTINCT_MAIN : 1;
+      const ranked = [...pool].sort((a, b) => scoreOf(a) - scoreOf(b)).slice(0, wanted);
+      for (const r of ranked) takenIds.add(r.id);
+      chosenByType.set(mealType, ranked);
+    }
+
+    // Consecutive runs: the first dish covers the first half of the
+    // planned days (rounded up), the next the rest.
+    const recipeForDay = (mealType: MealType, dayIndex: number): RecipeForPlanning | undefined => {
+      const dishes = chosenByType.get(mealType);
+      if (!dishes || dishes.length === 0) return undefined;
+      const runLength = Math.ceil(dayList.length / dishes.length);
+      return dishes[Math.min(dishes.length - 1, Math.floor(dayIndex / runLength))];
+    };
+
+    dayList.forEach((day, dayIndex) => {
+      const meals: PlannedMeal[] = [];
+      let totalCalories = 0;
+      let totalProtein = 0;
+      for (const mealType of slots) {
+        const chosen = recipeForDay(mealType, dayIndex);
+        if (!chosen) continue;
+        meals.push({ mealType, recipeId: chosen.id });
+        totalCalories += chosen.calories;
+        totalProtein += chosen.proteinG;
+      }
+      planDays.push({ dayOfWeek: day, meals, totalCalories, totalProtein });
+    });
+
+    return { days: planDays, warnings };
+  }
+
+  for (const day of dayList) {
     const meals: PlannedMeal[] = [];
     const usedToday = new Set<string>();
     let totalCalories = 0;
@@ -314,22 +406,6 @@ export function generateMealPlan(input: MealPlanGenerationInput): MealPlanGenera
               ? notUsedToday
               : pool;
 
-      const scoreOf = (r: RecipeForPlanning) => {
-        const base = Math.abs(r.calories - slotCalorieTarget) + Math.abs(r.proteinG - slotProteinTarget) * 2;
-        const cuisineMismatch = preferredCuisines.length > 0 && !preferredCuisines.includes(r.cuisine);
-        const withCuisine = cuisineMismatch ? base + CUISINE_MISMATCH_PENALTY : base;
-        const pickCount = Math.min(pickWeights?.get(r.id) ?? 0, PREFERENCE_CAP_PICKS);
-        // Variety jitter (4b, 2026-08-14): a deterministic per-seed,
-        // per-recipe offset in [0, 45) — bigger than typical macro-score
-        // gaps between similar recipes (so near-ties rotate week to week)
-        // but well under CUISINE_MISMATCH_PENALTY (so it stays a shuffle
-        // among suitable options, never overriding a stated preference).
-        // Without a catalog-size-independent shake-up like this, a bigger
-        // library adds zero felt variety: the same nearest-macro recipes
-        // win every single week.
-        const jitter = input.variantSeed ? hashString(`${input.variantSeed}:${r.id}`) % 45 : 0;
-        return withCuisine - pickCount * PREFERENCE_WEIGHT_PER_PICK + jitter;
-      };
       const chosen = options.reduce((best, r) => (scoreOf(r) < scoreOf(best) ? r : best), options[0]);
 
       meals.push({ mealType, recipeId: chosen.id });

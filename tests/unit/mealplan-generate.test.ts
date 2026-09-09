@@ -436,3 +436,89 @@ describe("variety jitter (variantSeed)", () => {
     expect(ids(weekA1)).not.toBe(ids(weekB));
   });
 });
+
+describe("generateMealPlan cooking styles", () => {
+  const FOUR_WEEKNIGHTS = [1, 2, 3, 4];
+
+  it("batch: cooks a couple of dishes and eats them in runs", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: SAMPLE_RECIPES,
+      plannedDaysOfWeek: FOUR_WEEKNIGHTS,
+      cookingStyle: "batch",
+    });
+
+    expect(days.map((d) => d.dayOfWeek)).toEqual(FOUR_WEEKNIGHTS);
+    const dinners = days.map((d) => d.meals.find((m) => m.mealType === "dinner")?.recipeId);
+    // Two dishes, each covering a consecutive run: A, A, B, B.
+    expect(new Set(dinners).size).toBe(2);
+    expect(dinners[0]).toBe(dinners[1]);
+    expect(dinners[2]).toBe(dinners[3]);
+    expect(dinners[0]).not.toBe(dinners[2]);
+    // Breakfast is one thing all week.
+    const breakfasts = days.map((d) => d.meals.find((m) => m.mealType === "breakfast")?.recipeId);
+    expect(new Set(breakfasts).size).toBe(1);
+  });
+
+  it("batch: one dish per meal type when there are only a few planned days", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: SAMPLE_RECIPES,
+      plannedDaysOfWeek: [2, 4],
+      cookingStyle: "batch",
+    });
+    const dinners = days.map((d) => d.meals.find((m) => m.mealType === "dinner")?.recipeId);
+    expect(new Set(dinners).size).toBe(1);
+  });
+
+  it("batch: never serves the same recipe as both lunch and dinner", () => {
+    const shared = recipe({ id: "x1", name: "Rice Bowl", mealType: "lunch", alsoSuitableFor: ["dinner"], calories: 500, proteinG: 45 });
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: [...SAMPLE_RECIPES, shared],
+      plannedDaysOfWeek: FOUR_WEEKNIGHTS,
+      cookingStyle: "batch",
+    });
+    for (const day of days) {
+      const ids = day.meals.map((m) => m.recipeId);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+  });
+
+  it("fresh (the default) keeps the variety rules", () => {
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: SAMPLE_RECIPES,
+      plannedDaysOfWeek: FOUR_WEEKNIGHTS,
+    });
+    const dinners = days.map((d) => d.meals.find((m) => m.mealType === "dinner")?.recipeId);
+    // Two dinner recipes in the sample, a 2-day gap: they alternate.
+    expect(dinners[0]).not.toBe(dinners[1]);
+  });
+
+  it("simple: quick recipes win ties", () => {
+    const quick = recipe({ id: "dq", name: "Quick Stir-fry", mealType: "dinner", calories: 520, proteinG: 40, dietaryTags: ["quick"] });
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: [...SAMPLE_RECIPES, quick],
+      plannedDaysOfWeek: [1],
+      cookingStyle: "simple",
+    });
+    expect(days[0].meals.find((m) => m.mealType === "dinner")?.recipeId).toBe("dq");
+  });
+});

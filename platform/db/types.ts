@@ -1939,6 +1939,7 @@ export type Database = {
           admin_role: string | null
           avatar_url: string | null
           bed_time: string | null
+          cooking_style: string
           created_at: string
           full_name: string | null
           grocery_day: number | null
@@ -1963,6 +1964,7 @@ export type Database = {
           admin_role?: string | null
           avatar_url?: string | null
           bed_time?: string | null
+          cooking_style?: string
           created_at?: string
           full_name?: string | null
           grocery_day?: number | null
@@ -1987,6 +1989,7 @@ export type Database = {
           admin_role?: string | null
           avatar_url?: string | null
           bed_time?: string | null
+          cooking_style?: string
           created_at?: string
           full_name?: string | null
           grocery_day?: number | null
