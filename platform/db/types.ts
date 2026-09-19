@@ -4183,6 +4183,7 @@ export type Database = {
           cardio_intensity: string | null
           coaching_notes: string | null
           completed_at: string | null
+          completed_source: string | null
           created_at: string
           day_of_week: number
           duration_minutes: number | null
@@ -4209,6 +4210,7 @@ export type Database = {
           cardio_intensity?: string | null
           coaching_notes?: string | null
           completed_at?: string | null
+          completed_source?: string | null
           created_at?: string
           day_of_week: number
           duration_minutes?: number | null
@@ -4235,6 +4237,7 @@ export type Database = {
           cardio_intensity?: string | null
           coaching_notes?: string | null
           completed_at?: string | null
+          completed_source?: string | null
           created_at?: string
           day_of_week?: number
           duration_minutes?: number | null

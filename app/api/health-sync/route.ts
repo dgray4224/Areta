@@ -20,6 +20,7 @@ import { importedVitalSampleSchema } from "@/domains/vitals/schema";
 import { recomputeActivityDailySummaryForDay, resolveTimezone } from "@/domains/activity-summary/service";
 import { localDateString } from "@/domains/activity-summary/timezone";
 import { checkSameDayRecords } from "@/domains/insights/same-day-records";
+import { autoCompletePlannedWorkouts } from "@/domains/workoutplan/auto-complete-service";
 
 type Handler = (
   supabase: SupabaseClient<Database>,
@@ -165,10 +166,16 @@ export async function POST(request: NextRequest) {
     recordDays.add(day);
   }
 
-  // After the response: the phone's sync must not wait on the record
-  // check, and the check itself never throws (see same-day-records.ts).
+  // After the response: the phone's sync must not wait on either of
+  // these, and neither throws (see same-day-records.ts and
+  // auto-complete-service.ts).
+  //
+  // Auto-complete runs here rather than on read because adherence should
+  // become true the moment the data arrives, whether or not anyone opens
+  // the Exercise tab — the whole point is that the person does nothing.
   if (recordDays.size > 0) {
     after(() => checkSameDayRecords(supabase, user.id, recordDays));
+    after(() => autoCompletePlannedWorkouts(supabase, user.id, recordDays));
   }
 
   return NextResponse.json(response);
