@@ -96,6 +96,7 @@ export async function generateAndSaveMealPlan(
     searchableText: [r.name, ...r.ingredients.map((i) => i.name)].join(" ").toLowerCase(),
     allergens: r.allergens,
     dietaryTags: r.dietaryTags,
+    totalMinutes: r.prepMinutes + r.cookMinutes,
   }));
 
   // Substring keywords stay as the extra safety layer for free-text

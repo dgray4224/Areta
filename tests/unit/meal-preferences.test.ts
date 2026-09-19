@@ -16,6 +16,7 @@ function recipe(overrides: Partial<RecipeForPlanning>): RecipeForPlanning {
     searchableText: "test recipe",
     allergens: [],
     dietaryTags: [],
+    totalMinutes: 30,
     ...overrides,
   };
 }

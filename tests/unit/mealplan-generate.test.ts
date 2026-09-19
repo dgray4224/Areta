@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateMealPlan, type RecipeForPlanning } from "@/domains/mealplan/generate";
+import { generateMealPlan, isQuickRecipe, QUICK_MAX_MINUTES, type RecipeForPlanning } from "@/domains/mealplan/generate";
 
 function recipe(overrides: Partial<RecipeForPlanning>): RecipeForPlanning {
   return {
@@ -13,6 +13,7 @@ function recipe(overrides: Partial<RecipeForPlanning>): RecipeForPlanning {
     searchableText: "test recipe",
     allergens: [],
     dietaryTags: [],
+    totalMinutes: 30,
     ...overrides,
   };
 }
@@ -509,7 +510,7 @@ describe("generateMealPlan cooking styles", () => {
   });
 
   it("simple: quick recipes win ties", () => {
-    const quick = recipe({ id: "dq", name: "Quick Stir-fry", mealType: "dinner", calories: 520, proteinG: 40, dietaryTags: ["quick"] });
+    const quick = recipe({ id: "dq", name: "Quick Stir-fry", mealType: "dinner", calories: 520, proteinG: 40, totalMinutes: 15 });
     const { days } = generateMealPlan({
       calorieTarget: 2000,
       proteinTarget: 150,
@@ -520,5 +521,53 @@ describe("generateMealPlan cooking styles", () => {
       cookingStyle: "simple",
     });
     expect(days[0].meals.find((m) => m.mealType === "dinner")?.recipeId).toBe("dq");
+  });
+
+  // Regression: "quick" used to be a hand-applied tag that disagreed with
+  // the clock — 128 recipes under 20 minutes lacked it and 5 that carried
+  // it took longer. It is derived from prep + cook now, so neither
+  // mistake can steer the plan.
+  it("simple: a fast recipe counts as quick even with no tag on it", () => {
+    const fastUntagged = recipe({ id: "dfast", name: "Five Minute Bowl", mealType: "dinner", calories: 520, proteinG: 40, totalMinutes: 5, dietaryTags: [] });
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: [...SAMPLE_RECIPES, fastUntagged],
+      plannedDaysOfWeek: [1],
+      cookingStyle: "simple",
+    });
+    expect(days[0].meals.find((m) => m.mealType === "dinner")?.recipeId).toBe("dfast");
+  });
+
+  it("simple: a slow recipe gets no quick bonus however it is tagged", () => {
+    const slowButTagged = recipe({
+      id: "dslow",
+      name: "All Afternoon Braise",
+      mealType: "dinner",
+      calories: 520,
+      proteinG: 40,
+      totalMinutes: 180,
+      dietaryTags: ["quick"],
+    });
+    const { days } = generateMealPlan({
+      calorieTarget: 2000,
+      proteinTarget: 150,
+      mealsPerDay: 3,
+      excludeKeywords: [],
+      recipes: [...SAMPLE_RECIPES, slowButTagged],
+      plannedDaysOfWeek: [1],
+      cookingStyle: "simple",
+    });
+    expect(days[0].meals.find((m) => m.mealType === "dinner")?.recipeId).not.toBe("dslow");
+  });
+});
+
+describe("isQuickRecipe", () => {
+  it("draws the line at 20 minutes of prep plus cook, inclusive", () => {
+    expect(isQuickRecipe({ totalMinutes: 0 })).toBe(true);
+    expect(isQuickRecipe({ totalMinutes: QUICK_MAX_MINUTES })).toBe(true);
+    expect(isQuickRecipe({ totalMinutes: QUICK_MAX_MINUTES + 1 })).toBe(false);
   });
 });

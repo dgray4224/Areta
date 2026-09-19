@@ -27,6 +27,9 @@ export type RecipeForPlanning = {
   allergens: string[];
   /** Free-text-ish curated tags (vegetarian/vegan/gluten-free/...). */
   dietaryTags: string[];
+  /** prep + cook, the number the kitchen actually experiences. Drives
+   * "quick" — see QUICK_MAX_MINUTES. */
+  totalMinutes: number;
 };
 
 export type MealPlanGenerationInput = {
@@ -116,6 +119,27 @@ const BATCH_MIN_DAYS_FOR_TWO = 4;
  * jitter (45), well under the cuisine penalty (150), so it decides ties
  * among suitable options without overriding a stated preference. */
 const QUICK_RECIPE_BONUS = 60;
+
+/**
+ * What "quick" means, measured rather than declared: prep + cook at or
+ * under this.
+ *
+ * Until 2026-09-19 this read a hand-applied `quick` dietary tag, and the
+ * tag disagreed with the clock. Of 570 active recipes 188 come in at 20
+ * minutes or less, but only 65 carried the tag, 128 fast ones were
+ * missing it, and 5 tagged recipes took longer than 20 minutes. Someone
+ * who said "keep it simple, I don't cook much" was being steered toward
+ * a third of the genuinely quick options, plus five that weren't quick
+ * at all.
+ *
+ * Deriving it also stops the content pipeline drifting out of sync
+ * again: the times are already on every recipe.
+ */
+export const QUICK_MAX_MINUTES = 20;
+
+export function isQuickRecipe(recipe: Pick<RecipeForPlanning, "totalMinutes">): boolean {
+  return recipe.totalMinutes <= QUICK_MAX_MINUTES;
+}
 
 function slotsForMealsPerDay(mealsPerDay: number): MealType[] {
   const base: MealType[] = ["breakfast", "lunch", "dinner"];
@@ -315,7 +339,7 @@ export function generateMealPlan(input: MealPlanGenerationInput): MealPlanGenera
     // library adds zero felt variety: the same nearest-macro recipes
     // win every single week.
     const jitter = input.variantSeed ? hashString(`${input.variantSeed}:${r.id}`) % 45 : 0;
-    const quickBonus = style === "simple" && r.dietaryTags.includes("quick") ? QUICK_RECIPE_BONUS : 0;
+    const quickBonus = style === "simple" && isQuickRecipe(r) ? QUICK_RECIPE_BONUS : 0;
     return withCuisine - pickCount * PREFERENCE_WEIGHT_PER_PICK + jitter - quickBonus;
   };
 
