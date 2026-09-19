@@ -15,6 +15,11 @@ const serverEnvSchema = z.object({
   // Reserved for Phase 4 — no Phase 0/1 code reads this yet.
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   ALLOW_SEED: z.enum(["true", "false"]).optional(),
+  // Slack or Discord incoming webhook that ops alerts post to (see
+  // platform/alerts/notify.ts). Optional: unset means alerts still reach
+  // the logs, just nothing pushes them at anyone. Added 2026-09-19 after
+  // the weekly brief failed silently for four weeks.
+  ALERT_WEBHOOK_URL: z.string().url().optional(),
   // Calendar integration — optional so the app still boots without it configured.
   // Apple/CalDAV needs no client id/secret, only the encryption key below.
   GOOGLE_CALENDAR_CLIENT_ID: z.string().min(1).optional(),
@@ -48,6 +53,7 @@ export function getServerEnv() {
         CRON_SECRET: emptyToUndefined(process.env.CRON_SECRET),
         ANTHROPIC_API_KEY: emptyToUndefined(process.env.ANTHROPIC_API_KEY),
         ALLOW_SEED: emptyToUndefined(process.env.ALLOW_SEED),
+        ALERT_WEBHOOK_URL: emptyToUndefined(process.env.ALERT_WEBHOOK_URL),
         GOOGLE_CALENDAR_CLIENT_ID: emptyToUndefined(process.env.GOOGLE_CALENDAR_CLIENT_ID),
         GOOGLE_CALENDAR_CLIENT_SECRET: emptyToUndefined(process.env.GOOGLE_CALENDAR_CLIENT_SECRET),
         MICROSOFT_CALENDAR_CLIENT_ID: emptyToUndefined(process.env.MICROSOFT_CALENDAR_CLIENT_ID),

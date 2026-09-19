@@ -5,6 +5,8 @@ import { localDateString } from "@/domains/activity-summary/timezone";
 import { getOrCreateWeeklyReview, generateWeeklyBrief } from "@/domains/review/service";
 import { sendPushToUsers } from "@/platform/push/send";
 import { REVIEW_PUSH_TITLE, reviewPushBody } from "@/domains/review/push-copy";
+import { sendOpsAlert } from "@/platform/alerts/notify";
+import { summarizeError } from "@/domains/observability/ai-health";
 
 /**
  * Daily cron (see vercel.json): generates each user's weekly brief
@@ -107,5 +109,22 @@ export async function GET(request: NextRequest) {
     supabase
   );
 
-  return NextResponse.json({ checked: dueUserIds.length, generated, alreadyDone, failures });
+  // Until 2026-09-19 this returned 200 with the failures tucked into the
+  // body, which is how a four-week outage went unnoticed. Now any failure
+  // raises an alert, and a run where nothing at all succeeded also answers
+  // 500 so the invocation shows as failed in Vercel's cron list — two
+  // independent ways to find out, neither needing anyone to read JSON.
+  if (failures.length > 0) {
+    await sendOpsAlert({
+      subject:
+        generated === 0
+          ? `Weekly brief failed for all ${failures.length} user(s) due today`
+          : `Weekly brief failed for ${failures.length} of ${dueUserIds.length} user(s) due today`,
+      detail: `Sample error: ${summarizeError(failures[0].error)}`,
+    });
+  }
+
+  const body = { checked: dueUserIds.length, generated, alreadyDone, failures };
+  const totalOutage = generated === 0 && failures.length > 0;
+  return NextResponse.json(body, { status: totalOutage ? 500 : 200 });
 }
