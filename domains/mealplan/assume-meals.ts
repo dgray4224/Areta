@@ -29,6 +29,10 @@ export type AssumableItem = {
   date: string;
   completedAt: string | null;
   skippedAt: string | null;
+  /** When the item was added to the plan. A meal that appeared after its
+   * own day was over was never something the person could have followed,
+   * so it must not be assumed eaten — see the guard below. */
+  createdAt?: string;
 };
 
 /**
@@ -54,6 +58,11 @@ export function itemsToAssumeEaten(input: {
     // Strictly in the past: today is still being lived.
     .filter((item) => item.date < input.today)
     .filter((item) => item.date >= earliest)
+    // The plan has to have existed on the day it describes. The meal
+    // cron backfills a week that is already underway, so without this a
+    // plan generated on Thursday would be "followed" on Monday — intake
+    // invented for days when there was nothing to follow.
+    .filter((item) => item.createdAt === undefined || item.createdAt.slice(0, 10) <= item.date)
     .map((item) => item.id);
 }
 

@@ -27,6 +27,10 @@
     {
       "path": "/api/cron/assume-meals",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/regenerate-meal-plans",
+      "schedule": "0 5 * * *"
     }
   ]
 }

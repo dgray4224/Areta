@@ -59,3 +59,41 @@ describe("itemsToAssumeEaten", () => {
     ).toEqual(["a", "b", "c"]);
   });
 });
+
+/**
+ * The meal cron backfills a week that is already underway, so a plan can
+ * appear on Thursday describing Monday. Assuming those would invent
+ * intake for days when there was nothing to follow.
+ */
+describe("itemsToAssumeEaten: plans that arrived late", () => {
+  it("does not assume a meal added after its own day was over", () => {
+    expect(
+      itemsToAssumeEaten({
+        items: [{ ...item("a", "2026-09-16"), createdAt: "2026-09-18T09:00:00Z" }],
+        today: TODAY,
+      })
+    ).toEqual([]);
+  });
+
+  it("assumes a meal that existed on the day it describes", () => {
+    expect(
+      itemsToAssumeEaten({
+        items: [{ ...item("a", "2026-09-16"), createdAt: "2026-09-14T09:00:00Z" }],
+        today: TODAY,
+      })
+    ).toEqual(["a"]);
+  });
+
+  it("counts a meal created on the day itself", () => {
+    expect(
+      itemsToAssumeEaten({
+        items: [{ ...item("a", "2026-09-16"), createdAt: "2026-09-16T23:30:00Z" }],
+        today: TODAY,
+      })
+    ).toEqual(["a"]);
+  });
+
+  it("still works for rows with no creation time recorded", () => {
+    expect(itemsToAssumeEaten({ items: [item("a", "2026-09-16")], today: TODAY })).toEqual(["a"]);
+  });
+});

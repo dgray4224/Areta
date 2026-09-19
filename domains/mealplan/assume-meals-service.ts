@@ -68,7 +68,7 @@ export async function assumePlannedMealsForUser(
 
     const { data: plans, error } = await supabase
       .from("meal_plans")
-      .select("week_start, meal_plan_items(id, day_of_week, completed_at, skipped_at)")
+      .select("week_start, meal_plan_items(id, day_of_week, completed_at, skipped_at, created_at)")
       .eq("user_id", userId)
       .eq("status", "active");
     if (error || !plans) return { assumed: 0 };
@@ -81,6 +81,7 @@ export async function assumePlannedMealsForUser(
           date: addDays(plan.week_start, item.day_of_week),
           completedAt: item.completed_at,
           skippedAt: item.skipped_at,
+          createdAt: item.created_at,
         });
       }
     }
