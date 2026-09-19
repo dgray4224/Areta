@@ -455,6 +455,13 @@ export type WorkoutPlanItemView = {
   reps: number | null;
   durationMinutes: number | null;
   completedAt: string | null;
+  /** 'manual' when the person ticked it, 'health' when an Apple Health
+   * workout on that day did. Null before either. */
+  completedSource: string | null;
+  /** Set when the item came from a program template rather than a
+   * generated program — which is most of them, and the reason the
+   * session name lookup has to follow this too. */
+  templateSlotId: string | null;
   scheduledTime: string | null;
   notes: string | null;
   repsMin: number | null;
@@ -522,7 +529,7 @@ export async function getWorkoutPlanForWeek(
     supabase
       .from("workout_plan_items")
       .select(
-        "id, day_of_week, session_order, exercise_id, sets, reps, duration_minutes, completed_at, scheduled_time, notes, reps_min, reps_max, intensity_type, intensity_value, cardio_intensity, coaching_notes, substituted, program_session_exercise_id"
+        "id, day_of_week, session_order, exercise_id, sets, reps, duration_minutes, completed_at, completed_source, scheduled_time, notes, reps_min, reps_max, intensity_type, intensity_value, cardio_intensity, coaching_notes, substituted, program_session_exercise_id, template_slot_id"
       )
       .eq("workout_plan_id", plan.id)
       .order("day_of_week", { ascending: true })
@@ -561,6 +568,8 @@ export async function getWorkoutPlanForWeek(
       coachingNotes: i.coaching_notes,
       substituted: i.substituted,
       programSessionExerciseId: i.program_session_exercise_id,
+      completedSource: i.completed_source,
+      templateSlotId: i.template_slot_id,
     })),
   };
 }
@@ -903,6 +912,8 @@ export async function swapWorkoutPlanItemExercise(
       reps: targetRx.repsMax ?? targetRx.repsMin,
       durationMinutes: targetRx.durationMinutes,
       completedAt: item.completed_at,
+      completedSource: null,
+      templateSlotId: null,
       scheduledTime: item.scheduled_time,
       notes: item.notes,
       repsMin: targetRx.repsMin,
@@ -999,6 +1010,8 @@ export async function customizeWorkoutPlanItemExercise(
       reps: input.reps,
       durationMinutes: input.durationMinutes,
       completedAt: item.completed_at,
+      completedSource: null,
+      templateSlotId: null,
       scheduledTime: item.scheduled_time,
       notes: item.notes,
       repsMin: null,
@@ -1113,6 +1126,8 @@ export async function addWorkoutPlanItemExercise(
       reps: input.reps,
       durationMinutes: input.durationMinutes,
       completedAt: inserted.completed_at,
+      completedSource: null,
+      templateSlotId: null,
       scheduledTime: inserted.scheduled_time,
       notes: inserted.notes,
       repsMin: null,

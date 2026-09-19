@@ -11,7 +11,13 @@ import {
   selectAlternativeSessionForToday,
 } from "@/domains/workoutplan/service";
 import { getExercisesByIds } from "@/domains/exerciselibrary/service";
-import { getSlotOptions, getSessionForPrescription, getAlternativeSessions } from "@/domains/trainingprogram/service";
+import {
+  getSlotOptions,
+  getSessionForPrescription,
+  getSessionForTemplateSlot,
+  getAlternativeSessions,
+} from "@/domains/trainingprogram/service";
+import { estimateSessionMinutes } from "@/domains/workoutplan/session-estimate";
 import type { ProgramSessionExercise } from "@/domains/trainingprogram/types";
 import { hasEquipment } from "@/domains/workoutplan/generate";
 import { buildWorkoutRationale } from "@/domains/workoutplan/rationale";
@@ -136,7 +142,12 @@ export async function GET(request: NextRequest) {
     .filter((id): id is string => id !== null);
   const tomorrowsFirstPrescriptionId = tomorrowsItems.find((item) => item.programSessionExerciseId !== null)
     ?.programSessionExerciseId as string | undefined;
-  const [slotOptionsByCurrentId, equipmentAccess, todaysSession, tomorrowsSession] = await Promise.all([
+  // Most plans are template-sourced, so the session identity and the
+  // prescribed rest both live on template_slots rather than on the
+  // program tables the lookups above use.
+  const todaysSlotIds = todaysItems.map((i) => i.templateSlotId).filter((id): id is string => id !== null);
+  const [slotOptionsByCurrentId, equipmentAccess, todaysSession, tomorrowsSession, todaysTemplateSession, restRows] =
+    await Promise.all([
     getSlotOptions(currentPrescriptionIds, supabase),
     getUserEquipmentAccess(userId, supabase),
     // Every item materialized for a given day shares one program_sessions
@@ -149,7 +160,16 @@ export async function GET(request: NextRequest) {
     // intensity choice against what's actually coming next for this user,
     // not to display tomorrow's plan itself (see buildWorkoutRationale).
     tomorrowsFirstPrescriptionId ? getSessionForPrescription(tomorrowsFirstPrescriptionId, supabase) : null,
+    todaysSlotIds.length > 0 ? getSessionForTemplateSlot(todaysSlotIds[0], supabase) : null,
+    todaysSlotIds.length > 0
+      ? supabase.from("template_slots").select("id, rest_seconds").in("id", todaysSlotIds)
+      : Promise.resolve({ data: [] as { id: string; rest_seconds: number | null }[] }),
   ]);
+
+  const restBySlotId = new Map((restRows?.data ?? []).map((r) => [r.id, r.rest_seconds]));
+  const restByItemId = new Map(
+    todaysItems.map((i) => [i.id, i.templateSlotId ? (restBySlotId.get(i.templateSlotId) ?? null) : null])
+  );
 
   const alternativeSessions = todaysSession
     ? await getAlternativeSessions(todaysSession.phaseId, todaysSession.id, supabase)
@@ -231,7 +251,21 @@ export async function GET(request: NextRequest) {
     plan: plannedExercises,
     todaysWorkoutLogs: workoutLogs ?? [],
     programContext: plan?.programContext ?? null,
-    todaysSessionName: todaysSession?.name ?? null,
+    // Falls back to the template's session name, which is where most
+    // plans actually come from: without this, 168 of one account's 215
+    // items rendered as the placeholder "Workout" while
+    // template_sessions held "Full Body Strength" and "Conditioning".
+    todaysSessionName: todaysSession?.name ?? todaysTemplateSession?.name ?? null,
+    // "5 exercises" told nobody whether they had time. Built from each
+    // item's own prescription — see domains/workoutplan/session-estimate.
+    estimatedSessionMinutes: estimateSessionMinutes(
+      todaysItems.map((item) => ({
+        durationMinutes: item.durationMinutes,
+        sets: item.sets,
+        reps: item.reps ?? item.repsMax ?? item.repsMin,
+        restSeconds: restByItemId.get(item.id) ?? null,
+      }))
+    ),
     rationale,
     alternativeSessions: buildAlternativeSessionViews(alternativeSessions, exerciseMap),
   });

@@ -459,3 +459,34 @@ export async function getProgramSources(
 
   return (data ?? []).map(toSource);
 }
+
+/**
+ * The session a materialized item belongs to, when that item came from a
+ * program TEMPLATE rather than a generated program.
+ *
+ * getSessionForPrescription above only follows program_session_exercises,
+ * so it returns null for template-sourced items — which is most of them
+ * in practice: one real account had 168 of 215 active items from
+ * templates and 17 from programs. Every one of those days showed up in
+ * the app as the placeholder "Workout", while template_sessions had the
+ * real names sitting in it ("Full Body Strength", "Conditioning").
+ */
+export async function getSessionForTemplateSlot(
+  templateSlotId: string,
+  client?: SupabaseClient<Database>
+): Promise<{ name: string; sessionType: string } | null> {
+  const supabase = client ?? (await createClient());
+  const { data: slot } = await supabase
+    .from("template_slots")
+    .select("session_id")
+    .eq("id", templateSlotId)
+    .maybeSingle();
+  if (!slot) return null;
+
+  const { data: session } = await supabase
+    .from("template_sessions")
+    .select("name, session_type")
+    .eq("id", slot.session_id)
+    .maybeSingle();
+  return session ? { name: session.name, sessionType: session.session_type ?? "" } : null;
+}

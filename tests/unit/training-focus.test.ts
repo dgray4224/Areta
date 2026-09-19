@@ -31,6 +31,8 @@ function item(overrides: Partial<WorkoutPlanItemView>): WorkoutPlanItemView {
     reps: null,
     durationMinutes: null,
     completedAt: null,
+    completedSource: null,
+    templateSlotId: null,
     scheduledTime: null,
     notes: null,
     repsMin: null,
