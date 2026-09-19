@@ -86,6 +86,19 @@ Output format — narrative (2-3 short paragraphs, no bullet lists, no headers):
   metrics point elsewhere. If metrics.isDataSparse is true, say plainly there isn't
   enough logged this week to draw a real conclusion, rather than forcing an insight
   from thin data.
+- Training comes from the phone, not from the user's effort to report it. Use
+  metrics.trainingDays, metrics.trainingMinutes and metrics.averageDailySteps as facts
+  about what happened, the same standing as weight or sleep. metrics.workoutsPlanned and
+  metrics.workoutsCompleted are plan adherence; metrics.workoutsAutoCompleted is the
+  part of that inferred from an Apple Health workout on the day rather than ticked by
+  hand, so treat it as "they trained" and never as "they said they trained".
+- Never ask someone to log what the phone already supplies, and never call a week empty
+  because of missing taps. If trainingDays or averageDailySteps is present, the week is
+  not empty — say what the movement shows. Mention logging only where logging would
+  genuinely change the advice, which in practice means food and weight, and say why.
+- Training happening off-plan is still training. If trainingDays is high while
+  workoutAdherencePercent is low, that is a plan-design signal, not a discipline one:
+  the plan is asking for the wrong days or the wrong sessions.
 - Be honest, not falsely encouraging. If adherence was poor, say so plainly and explain
   the likely cause. Never manufacture praise, and never compare the user to anyone but
   their own history.
@@ -105,6 +118,7 @@ metrics/memory/experimentOutcomes. Describe changes qualitatively — determinis
 recalculates exact numeric targets separately. For each change, also state expectedMetric
 (one of: weightChangeLb, averageWeightThisWeek, proteinAdherencePercent,
 calorieAdherencePercent, averageSleepMinutes, taskCompletionPercent, learningMinutes,
+workoutAdherencePercent, trainingMinutes, trainingDays, averageDailySteps,
 averagePainThisWeek, averageSwellingThisWeek) and expectedDirection — this turns the
 change into a falsifiable one-week hypothesis that next week's brief will check against
 the real measured outcome. Pick the metric this change is actually meant to move, not an
@@ -139,6 +153,9 @@ async function fetchMetrics(
     { data: recoveryLogs },
     { data: studySessions },
     { data: tasks },
+    { data: recordedWorkouts },
+    { data: plannedWorkoutRows },
+    { data: dailySummaries },
     calorieTarget,
     proteinTarget,
   ] = await Promise.all([
@@ -205,6 +222,30 @@ async function fetchMetrics(
       .eq("user_id", userId)
       .gte("date", weekStart)
       .lte("date", weekEnd),
+    // Training, added 2026-09-19. Until then the brief had no training
+    // input at all — not zero, absent — so a coach whose whole job is
+    // rewriting your training week could only ever comment on food
+    // logging. These three are the passive side of that: what Health
+    // recorded, what the plan asked for, and how much the person moved.
+    supabase
+      .from("health_metrics")
+      .select("started_at, ended_at")
+      .eq("user_id", userId)
+      .eq("metric_type", "workout")
+      .gte("started_at", `${weekStart}T00:00:00.000Z`)
+      .lte("started_at", `${weekEnd}T23:59:59.999Z`),
+    supabase
+      .from("workout_plan_items")
+      .select("completed_at, completed_source, workout_plans!inner(week_start, status)")
+      .eq("user_id", userId)
+      .eq("workout_plans.week_start", weekStart)
+      .eq("workout_plans.status", "active"),
+    supabase
+      .from("activity_daily_summaries")
+      .select("day, steps_total")
+      .eq("user_id", userId)
+      .gte("day", weekStart)
+      .lte("day", weekEnd),
     getApprovedParameterValue(userId, "nutrition", "calorie_target", supabase),
     getApprovedParameterValue(userId, "nutrition", "protein_target_g", supabase),
   ]);
@@ -271,6 +312,19 @@ async function fetchMetrics(
       swelling: r.swelling,
     })),
     studySessions: (studySessions ?? []).map((s) => ({ durationMinutes: s.duration_minutes })),
+    recordedWorkouts: (recordedWorkouts ?? [])
+      .filter((w) => w.ended_at !== null)
+      .map((w) => ({
+        date: w.started_at.slice(0, 10),
+        durationMinutes: Math.round(
+          (new Date(w.ended_at as string).getTime() - new Date(w.started_at).getTime()) / 60000
+        ),
+      })),
+    plannedWorkouts: (plannedWorkoutRows ?? []).map((w) => ({
+      completedAt: w.completed_at,
+      completedSource: w.completed_source,
+    })),
+    stepDays: (dailySummaries ?? []).map((d) => ({ date: d.day, steps: d.steps_total })),
     tasks: (tasks ?? []).map((t) => ({
       status: t.status as TaskStatus,
       skipReason: t.skip_reason,

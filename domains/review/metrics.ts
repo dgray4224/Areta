@@ -9,6 +9,13 @@ export type WeeklyMetricsInput = {
   recoveryLogs: { date: string; pain: number | null; swelling: number | null }[];
   studySessions: { durationMinutes: number | null }[];
   tasks: { status: TaskStatus; skipReason: string | null }[];
+  /** Training, added 2026-09-19. Before this the brief had no training
+   * input at all — not zero, absent — so a coach built to rewrite your
+   * training week could only ever talk about food logging. All three are
+   * optional so existing fixtures keep working unchanged. */
+  recordedWorkouts?: { date: string; durationMinutes: number }[];
+  plannedWorkouts?: { completedAt: string | null; completedSource: string | null }[];
+  stepDays?: { date: string; steps: number }[];
   calorieTarget: number | null;
   proteinTarget: number | null;
   /** Weekly HealthKit vitals (Phase 4 of the enhancement roadmap,
@@ -53,6 +60,19 @@ export type WeeklyMetrics = {
   learningMinutes: number;
   taskCompletionPercent: number | null;
   missedTaskReasons: string[];
+  /** Training (2026-09-19). `workoutsCompleted` counts ticks from either
+   * source; `workoutsAutoCompleted` is the subset inferred from Apple
+   * Health, so the brief can tell "you trained" from "you told us you
+   * trained". `trainingMinutes` and `trainingDays` come from Health
+   * regardless of what was planned — someone can train hard all week off
+   * plan, and a coach that called that zero would be wrong. */
+  workoutsPlanned: number;
+  workoutsCompleted: number;
+  workoutsAutoCompleted: number;
+  workoutAdherencePercent: number | null;
+  trainingMinutes: number;
+  trainingDays: number;
+  averageDailySteps: number | null;
   /** True when too little was logged this week to trust adherence numbers
    * — CLAUDE.md's "data-quality issue" classification should win over
    * "adherence issue" whenever this is true. */
@@ -192,11 +212,38 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
     )
   );
 
+  // --- training ------------------------------------------------------
+  const recordedWorkouts = input.recordedWorkouts ?? [];
+  const plannedWorkouts = input.plannedWorkouts ?? [];
+  const stepDays = input.stepDays ?? [];
+
+  const workoutsPlanned = plannedWorkouts.length;
+  const workoutsCompleted = plannedWorkouts.filter((w) => w.completedAt !== null).length;
+  const workoutsAutoCompleted = plannedWorkouts.filter(
+    (w) => w.completedAt !== null && w.completedSource === "health"
+  ).length;
+  const workoutAdherencePercent =
+    workoutsPlanned > 0 ? Math.round((workoutsCompleted / workoutsPlanned) * 100) : null;
+  const trainingMinutes = recordedWorkouts.reduce((sum, w) => sum + Math.max(0, w.durationMinutes), 0);
+  const trainingDays = new Set(recordedWorkouts.filter((w) => w.durationMinutes > 0).map((w) => w.date)).size;
+  const daysWithSteps = stepDays.filter((d) => d.steps > 0);
+  const averageDailySteps =
+    daysWithSteps.length > 0
+      ? Math.round(daysWithSteps.reduce((sum, d) => sum + d.steps, 0) / daysWithSteps.length)
+      : null;
+
+  // Sparse means "we cannot see this person's week", and passively
+  // imported movement is seeing them. Counting only hand-logged days
+  // meant someone whose watch reported every day was still told the
+  // data was too thin to say anything — the exact scolding this rework
+  // set out to stop.
   const loggedDayCount = new Set([
     ...sortedWeights.map((w) => w.loggedAt.slice(0, 10)),
     ...input.sleepLogs.length > 0 ? ["sleep"] : [],
     ...input.nutritionLogs.map((n) => n.date),
     ...input.recoveryLogs.map((r) => r.date),
+    ...daysWithSteps.map((d) => d.date),
+    ...recordedWorkouts.map((w) => w.date),
   ]).size;
 
   return {
@@ -215,6 +262,13 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
     learningMinutes,
     taskCompletionPercent,
     missedTaskReasons,
+    workoutsPlanned,
+    workoutsCompleted,
+    workoutsAutoCompleted,
+    workoutAdherencePercent,
+    trainingMinutes,
+    trainingDays,
+    averageDailySteps,
     isDataSparse: loggedDayCount < 3,
     averageRestingHeartRate,
     averageHeartRateVariability,

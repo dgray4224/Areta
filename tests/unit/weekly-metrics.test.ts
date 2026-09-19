@@ -267,3 +267,73 @@ describe("computeWeeklyMetrics", () => {
     expect(notSparse.isDataSparse).toBe(false);
   });
 });
+
+/**
+ * Training, added 2026-09-19. Before this the brief had no training input
+ * at all — not zero, absent — which is why every brief could only ever
+ * talk about food logging.
+ */
+describe("computeWeeklyMetrics: training", () => {
+  it("reports what Health recorded, independently of what was planned", () => {
+    const result = computeWeeklyMetrics(
+      baseInput({
+        recordedWorkouts: [
+          { date: "2026-07-21", durationMinutes: 45 },
+          { date: "2026-07-21", durationMinutes: 15 },
+          { date: "2026-07-24", durationMinutes: 30 },
+        ],
+      })
+    );
+    expect(result.trainingMinutes).toBe(90);
+    expect(result.trainingDays).toBe(2);
+  });
+
+  it("separates a tick the person made from one inferred off Health", () => {
+    const result = computeWeeklyMetrics(
+      baseInput({
+        plannedWorkouts: [
+          { completedAt: "2026-07-21T18:00:00Z", completedSource: "health" },
+          { completedAt: "2026-07-23T18:00:00Z", completedSource: "manual" },
+          { completedAt: null, completedSource: null },
+          { completedAt: null, completedSource: null },
+        ],
+      })
+    );
+    expect(result.workoutsPlanned).toBe(4);
+    expect(result.workoutsCompleted).toBe(2);
+    expect(result.workoutsAutoCompleted).toBe(1);
+    expect(result.workoutAdherencePercent).toBe(50);
+  });
+
+  it("has no adherence figure to report when nothing was planned", () => {
+    expect(computeWeeklyMetrics(baseInput()).workoutAdherencePercent).toBeNull();
+  });
+
+  it("averages steps over the days that have them, not the whole week", () => {
+    const result = computeWeeklyMetrics(
+      baseInput({
+        stepDays: [
+          { date: "2026-07-20", steps: 10000 },
+          { date: "2026-07-21", steps: 6000 },
+          { date: "2026-07-22", steps: 0 },
+        ],
+      })
+    );
+    expect(result.averageDailySteps).toBe(8000);
+  });
+
+  // The scolding this rework set out to stop: a week where the watch
+  // reported every day used to count as "not enough logged to say
+  // anything", because only hand-entered days counted.
+  it("does not call a week sparse when the phone saw every day of it", () => {
+    const stepDays = Array.from({ length: 7 }, (_, i) => ({
+      date: `2026-07-2${i}`,
+      steps: 9000,
+    }));
+    expect(computeWeeklyMetrics(baseInput({ stepDays })).isDataSparse).toBe(false);
+  });
+
+  it("still calls a week sparse when nothing at all came in", () => {
+    expect(computeWeeklyMetrics(baseInput()).isDataSparse).toBe(true);
+  });
+});
