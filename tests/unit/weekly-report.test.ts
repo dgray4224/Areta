@@ -53,10 +53,27 @@ describe("findConcerns", () => {
 
   it("catches a job that has never produced anything", () => {
     const report = healthyReport();
-    report.system.last_insight_created = null;
-    expect(findConcerns(report, NOW).find((c) => c.label === "Insight engine")?.detail).toBe(
+    report.system.last_workout_plan_created = null;
+    expect(findConcerns(report, NOW).find((c) => c.label === "Workout plans")?.detail).toBe(
       "has never produced anything"
     );
+  });
+
+  // Regression: on 2026-09-19 the report flagged the insight engine as
+  // stale, and running that cron returned created:0 with no failures —
+  // it was working. An empty week is a correct answer for both of these,
+  // and crying wolf is how a weekly report gets ignored.
+  it("stays quiet about insights, which legitimately produce nothing", () => {
+    const report = healthyReport();
+    report.system.last_insight_created = isoDaysAgo(40);
+    report.system.insights_created = 0;
+    expect(findConcerns(report, NOW).map((c) => c.label)).not.toContain("Insight engine");
+  });
+
+  it("stays quiet about meal plans, which have no scheduled job", () => {
+    const report = healthyReport();
+    report.system.last_meal_plan_created = isoDaysAgo(60);
+    expect(findConcerns(report, NOW).map((c) => c.label)).not.toContain("Meal plans");
   });
 
   it("flags a plan nobody touched, which is the product not landing", () => {

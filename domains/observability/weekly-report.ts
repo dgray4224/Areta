@@ -50,14 +50,32 @@ export type Concern = { label: string; detail: string };
 
 const DAY_MS = 86_400_000;
 
-/** How long each job's output may go missing before it is worth a line in
- * the report. Generous, because a quiet week is not the same as a broken
- * job, and a report that cries wolf gets filtered to a folder. */
-const FRESHNESS_BUDGET_DAYS: Record<string, number> = {
+/**
+ * Only jobs whose silence actually means failure. Each is scheduled and
+ * must produce output every cycle, so nothing arriving is a problem.
+ *
+ * Two outputs are deliberately NOT judged this way, because for them an
+ * empty week is a correct answer and flagging it would train the reader
+ * to ignore the report (found 2026-09-19, the day after this was written:
+ * the insight engine was flagged as stale, and running it returned
+ * `checked: 13, created: 0, failures: []` — working exactly as designed):
+ *
+ *   - Insights are gated on data availability and deduplicated, so a
+ *     fortnight of nothing new to say is ordinary.
+ *   - Meal plans have no scheduled job at all; regenerate-meal-plans is
+ *     not in vercel.json. They are generated on demand by onboarding and
+ *     the weekly approve flow.
+ *
+ * Both still appear in the report as plain numbers. They just aren't
+ * called problems. The gap this leaves is real and recorded below: with
+ * no per-run record, a job that produces nothing legitimately is
+ * indistinguishable from one that never ran.
+ */
+const MUST_PRODUCE_BUDGET_DAYS: Record<string, number> = {
+  // Daily cron; each user is due one on their own review day.
   "Weekly brief": STALE_AFTER_DAYS,
-  "Insight engine": 14,
+  // Weekly cron, Mondays 06:00 UTC.
   "Workout plans": 14,
-  "Meal plans": 14,
 };
 
 function daysSince(iso: string | null, now: Date): number | null {
@@ -88,12 +106,10 @@ export function findConcerns(report: UsageReport, now = new Date()): Concern[] {
 
   for (const [label, iso] of [
     ["Weekly brief", system.last_brief_success],
-    ["Insight engine", system.last_insight_created],
     ["Workout plans", system.last_workout_plan_created],
-    ["Meal plans", system.last_meal_plan_created],
   ] as const) {
     const d = daysSince(iso, now);
-    const budget = FRESHNESS_BUDGET_DAYS[label];
+    const budget = MUST_PRODUCE_BUDGET_DAYS[label];
     if (d === null) {
       concerns.push({ label, detail: "has never produced anything" });
     } else if (d > budget) {
