@@ -71,6 +71,8 @@ export async function GET(request: NextRequest) {
       servings: item.servings,
       leftover,
       completedAt: item.completedAt,
+      completedSource: item.completedSource,
+      skippedAt: item.skippedAt,
       scheduledTime: item.scheduledTime,
       endTime: item.endTime,
       notes: item.notes,

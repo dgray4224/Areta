@@ -218,6 +218,11 @@ export type MealPlanItemView = {
   recipeId: string;
   servings: number;
   completedAt: string | null;
+  /** 'manual' when the person confirmed it, 'assumed' when the nightly
+   * pass took the plan to have happened. Null before either. */
+  completedSource: string | null;
+  /** Set when the person said they did not eat this. */
+  skippedAt: string | null;
   nutritionLogId: string | null;
   scheduledTime: string | null;
   endTime: string | null;
@@ -272,7 +277,7 @@ export async function getMealPlanForWeek(
   const { data: items, error } = await supabase
     .from("meal_plan_items")
     .select(
-      "id, day_of_week, meal_type, recipe_id, servings, completed_at, nutrition_log_id, scheduled_time, end_time, notes"
+      "id, day_of_week, meal_type, recipe_id, servings, completed_at, completed_source, skipped_at, nutrition_log_id, scheduled_time, end_time, notes"
     )
     .eq("meal_plan_id", plan.id)
     .order("day_of_week", { ascending: true });
@@ -296,6 +301,8 @@ export async function getMealPlanForWeek(
       recipeId: i.recipe_id,
       servings: i.servings,
       completedAt: i.completed_at,
+      completedSource: i.completed_source,
+      skippedAt: i.skipped_at,
       nutritionLogId: i.nutrition_log_id,
       scheduledTime: i.scheduled_time,
       endTime: i.end_time,
@@ -678,6 +685,10 @@ export async function swapMealPlanItem(
       recipeId,
       servings: item.servings,
       completedAt: item.completed_at,
+      // A swap replaces the dish, so any prior verdict about the old one
+      // no longer applies.
+      completedSource: null,
+      skippedAt: null,
       nutritionLogId: item.nutrition_log_id,
       scheduledTime: item.scheduled_time,
       endTime: item.end_time,

@@ -8,12 +8,17 @@ import { assumePlannedMealsForUser } from "@/domains/mealplan/assume-meals-servi
  * Nightly: treat yesterday's planned meals as eaten unless the person
  * said otherwise.
  *
- * Runs hourly rather than once a day because "the day is over" happens
- * at a different moment in every timezone, and assumePlannedMealsForUser
- * decides per user from their own local date. An hour that is the middle
- * of the night for nobody simply assumes nothing, and the pass is
- * idempotent, so running it 24 times a day is the cheap way to be right
- * everywhere instead of right in one timezone.
+ * Once a day is enough, despite "the day is over" landing at a different
+ * moment in every timezone. assumePlannedMealsForUser works from each
+ * user's own local date and only touches days strictly before it, so at
+ * any instant "yesterday, where they are" is a finished day — whatever
+ * hour this fires. The three-day lookback absorbs the rest.
+ *
+ * (It was hourly for one commit, on the theory that timezones needed it.
+ * They don't, the per-user local date already handles it, and hourly is
+ * rejected outright on a Vercel Hobby plan — which silently failed every
+ * deployment for six commits until someone read the deploy log rather
+ * than the endpoint.)
  *
  * Only users with meal planning switched on: someone training-only has
  * no meals to assume, and writing them intake they never planned would
