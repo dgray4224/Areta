@@ -45,6 +45,13 @@ export async function generateAndSavePrepPlan(
   const recipeIds = [...new Set(plan.items.map((i) => i.recipeId))];
   const recipes = await getRecipesByIds(recipeIds, supabase);
 
+  // How many of the week's meals each recipe covers — the run length a
+  // batch cook is actually prepping for, and what decides leftovers.
+  const plannedMealCounts = new Map<string, number>();
+  for (const item of plan.items) {
+    plannedMealCounts.set(item.recipeId, (plannedMealCounts.get(item.recipeId) ?? 0) + 1);
+  }
+
   const uniqueRecipes: PrepRecipeInfo[] = recipeIds
     .map((id) => recipes.get(id))
     .filter((r): r is NonNullable<typeof r> => Boolean(r))
@@ -52,7 +59,7 @@ export async function generateAndSavePrepPlan(
       name: r.name,
       prepMinutes: r.prepMinutes,
       cookMinutes: r.cookMinutes,
-      servings: r.servings,
+      plannedMealCount: plannedMealCounts.get(r.id) ?? 1,
       needsOven: OVEN_PATTERN.test(r.instructions.join(" ")),
       hasProduceToWash: r.ingredients.some((i) => i.section === "produce"),
       hasProteinToCook: r.ingredients.some((i) => i.section === "protein"),

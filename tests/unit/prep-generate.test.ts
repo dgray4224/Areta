@@ -6,7 +6,7 @@ function recipe(overrides: Partial<PrepRecipeInfo>): PrepRecipeInfo {
     name: "Test",
     prepMinutes: 10,
     cookMinutes: 10,
-    servings: 1,
+    plannedMealCount: 1,
     needsOven: false,
     hasProduceToWash: false,
     hasProteinToCook: false,
@@ -65,15 +65,34 @@ describe("generatePrepPlan", () => {
     expect(result.estimatedMinutes).toBe(35);
   });
 
-  it("identifies multi-serving recipes as expected leftovers", () => {
+  it("calls a dish a leftover when the week eats it on more than one day", () => {
     const result = generatePrepPlan({
       uniqueRecipes: [
-        recipe({ name: "Chili", servings: 2 }),
-        recipe({ name: "Single Bowl", servings: 1 }),
+        recipe({ name: "Chili", plannedMealCount: 2 }),
+        recipe({ name: "Single Bowl", plannedMealCount: 1 }),
       ],
-      totalMealCount: 2,
+      totalMealCount: 3,
     });
     expect(result.expectedLeftoverRecipes).toEqual(["Chili"]);
+  });
+
+  // Regression: leftovers used to be read off the recipe's authored yield,
+  // which got batch cooking backwards in both directions. Batch is the
+  // default cooking style, so both of these are the common case.
+  it("counts a one-serving recipe cooked for four days as leftovers", () => {
+    const result = generatePrepPlan({
+      uniqueRecipes: [recipe({ name: "Carne Asada Tacos", plannedMealCount: 4 })],
+      totalMealCount: 4,
+    });
+    expect(result.expectedLeftoverRecipes).toEqual(["Carne Asada Tacos"]);
+  });
+
+  it("does not promise leftovers from a big-yield recipe planned once", () => {
+    const result = generatePrepPlan({
+      uniqueRecipes: [recipe({ name: "Family Lasagna", plannedMealCount: 1 })],
+      totalMealCount: 1,
+    });
+    expect(result.expectedLeftoverRecipes).toEqual([]);
   });
 
   it("always includes update-inventory and clean-kitchen steps even with zero meals", () => {

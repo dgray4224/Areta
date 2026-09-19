@@ -2,7 +2,10 @@ export type PrepRecipeInfo = {
   name: string;
   prepMinutes: number;
   cookMinutes: number;
-  servings: number;
+  /** How many meals in this week's plan use this recipe. NOT the recipe's
+   * authored yield: what makes a dish a leftover is being eaten on more
+   * than one day, which is a fact about the plan, not the recipe. */
+  plannedMealCount: number;
   needsOven: boolean;
   hasProduceToWash: boolean;
   hasProteinToCook: boolean;
@@ -106,7 +109,14 @@ export function generatePrepPlan(input: PrepPlanGenerationInput): PrepPlanGenera
   const longestCookMinutes = uniqueRecipes.reduce((max, r) => Math.max(max, r.cookMinutes), 0);
   const estimatedMinutes = totalPrepMinutes + longestCookMinutes;
 
-  const expectedLeftoverRecipes = uniqueRecipes.filter((r) => r.servings > 1).map((r) => r.name);
+  // A dish is a leftover when the plan has you eating it on more than one
+  // day. This used to test the recipe's authored yield instead, which got
+  // both cases wrong under batch cooking (the default style since
+  // 2026-09-09): a one-serving recipe scheduled across four days is
+  // exactly the dish you cook once and eat all week, and it was left out,
+  // while a four-serving recipe planned for a single meal was listed as a
+  // leftover it never produces.
+  const expectedLeftoverRecipes = uniqueRecipes.filter((r) => r.plannedMealCount > 1).map((r) => r.name);
 
   return {
     steps,
