@@ -20,6 +20,12 @@ const serverEnvSchema = z.object({
   // the logs, just nothing pushes them at anyone. Added 2026-09-19 after
   // the weekly brief failed silently for four weeks.
   ALERT_WEBHOOK_URL: z.string().url().optional(),
+  // Weekly operator report (platform/alerts/email.ts). All optional: with
+  // none of them set the report still runs and lands in the logs and the
+  // route's response, it just doesn't arrive anywhere on its own.
+  RESEND_API_KEY: z.string().min(1).optional(),
+  OPS_EMAIL_TO: z.string().email().optional(),
+  OPS_EMAIL_FROM: z.string().min(1).optional(),
   // Calendar integration — optional so the app still boots without it configured.
   // Apple/CalDAV needs no client id/secret, only the encryption key below.
   GOOGLE_CALENDAR_CLIENT_ID: z.string().min(1).optional(),
@@ -54,6 +60,9 @@ export function getServerEnv() {
         ANTHROPIC_API_KEY: emptyToUndefined(process.env.ANTHROPIC_API_KEY),
         ALLOW_SEED: emptyToUndefined(process.env.ALLOW_SEED),
         ALERT_WEBHOOK_URL: emptyToUndefined(process.env.ALERT_WEBHOOK_URL),
+        RESEND_API_KEY: emptyToUndefined(process.env.RESEND_API_KEY),
+        OPS_EMAIL_TO: emptyToUndefined(process.env.OPS_EMAIL_TO),
+        OPS_EMAIL_FROM: emptyToUndefined(process.env.OPS_EMAIL_FROM),
         GOOGLE_CALENDAR_CLIENT_ID: emptyToUndefined(process.env.GOOGLE_CALENDAR_CLIENT_ID),
         GOOGLE_CALENDAR_CLIENT_SECRET: emptyToUndefined(process.env.GOOGLE_CALENDAR_CLIENT_SECRET),
         MICROSOFT_CALENDAR_CLIENT_ID: emptyToUndefined(process.env.MICROSOFT_CALENDAR_CLIENT_ID),

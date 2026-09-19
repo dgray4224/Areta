@@ -4397,6 +4397,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      weekly_usage_report: {
+        Args: { p_since: string; p_until: string }
+        Returns: Json
+      }
       health_monthly_totals: {
         Args: { p_timezone?: string; p_user_id: string }
         Returns: {
