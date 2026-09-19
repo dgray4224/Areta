@@ -1470,6 +1470,8 @@ export type Database = {
       meal_plan_items: {
         Row: {
           completed_at: string | null
+          completed_source: string | null
+          skipped_at: string | null
           created_at: string
           day_of_week: number
           end_time: string | null
@@ -1486,6 +1488,8 @@ export type Database = {
         }
         Insert: {
           completed_at?: string | null
+          completed_source?: string | null
+          skipped_at?: string | null
           created_at?: string
           day_of_week: number
           end_time?: string | null
@@ -1502,6 +1506,8 @@ export type Database = {
         }
         Update: {
           completed_at?: string | null
+          completed_source?: string | null
+          skipped_at?: string | null
           created_at?: string
           day_of_week?: number
           end_time?: string | null

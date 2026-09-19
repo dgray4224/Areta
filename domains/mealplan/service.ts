@@ -436,7 +436,13 @@ export async function setMealPlanItemCompleted(
   userId: string,
   itemId: string,
   completed: boolean,
-  client?: SupabaseClient<Database>
+  client?: SupabaseClient<Database>,
+  /** Who decided this was eaten. 'assumed' is the nightly fill-in for a
+   * meal nobody answered about (domains/mealplan/assume-meals.ts): the
+   * macros written are the recipe's, exactly as for a manual tick, but
+   * the stamp keeps the two apart so the brief can weight an assumption
+   * as weaker evidence than a confirmation. */
+  source: "manual" | "assumed" = "manual"
 ): Promise<ActionResult> {
   const supabase = client ?? (await createClient());
 
@@ -454,7 +460,7 @@ export async function setMealPlanItemCompleted(
 
     const { error } = await supabase
       .from("meal_plan_items")
-      .update({ completed_at: null, nutrition_log_id: null })
+      .update({ completed_at: null, nutrition_log_id: null, completed_source: null, skipped_at: null })
       .eq("id", itemId)
       .eq("user_id", userId);
 
@@ -513,7 +519,7 @@ export async function setMealPlanItemCompleted(
 
   const { error: updateError } = await supabase
     .from("meal_plan_items")
-    .update({ completed_at: new Date().toISOString(), nutrition_log_id: log.id })
+    .update({ completed_at: new Date().toISOString(), nutrition_log_id: log.id, completed_source: source })
     .eq("id", itemId)
     .eq("user_id", userId);
 

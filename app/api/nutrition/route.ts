@@ -8,6 +8,7 @@ import {
   swapMealPlanItem,
 } from "@/domains/mealplan/service";
 import { getRecipesByIds } from "@/domains/recipes/service";
+import { setMealPlanItemSkipped } from "@/domains/mealplan/assume-meals-service";
 import { logNutrition, getNutritionLogsForDate, getNutritionDailyTotals } from "@/domains/nutrition/log-service";
 import { getApprovedParameterValue } from "@/domains/parameters/service";
 import { todayForUser } from "@/domains/activity-summary/service";
@@ -174,6 +175,7 @@ export async function PATCH(request: NextRequest) {
   let body: {
     itemId?: unknown;
     completed?: unknown;
+    skipped?: unknown;
     scheduledTime?: unknown;
     endTime?: unknown;
     notes?: unknown;
@@ -189,15 +191,16 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "itemId (string) is required" }, { status: 400 });
   }
   const hasCompleted = typeof body.completed === "boolean";
+  const hasSkipped = typeof body.skipped === "boolean";
   const hasScheduledTime = typeof body.scheduledTime === "string" || body.scheduledTime === null;
   const hasEndTime = typeof body.endTime === "string" || body.endTime === null;
   const hasNotes = typeof body.notes === "string" || body.notes === null;
   const hasRecipeId = typeof body.recipeId === "string";
-  if (!hasCompleted && !hasScheduledTime && !hasNotes && !hasRecipeId) {
+  if (!hasCompleted && !hasSkipped && !hasScheduledTime && !hasNotes && !hasRecipeId) {
     return NextResponse.json(
       {
         error:
-          "at least one of completed (boolean), scheduledTime (string | null), notes (string | null), or recipeId (string) is required",
+          "at least one of completed (boolean), skipped (boolean), scheduledTime (string | null), notes (string | null), or recipeId (string) is required",
       },
       { status: 400 }
     );
@@ -205,6 +208,15 @@ export async function PATCH(request: NextRequest) {
 
   if (hasRecipeId) {
     const result = await swapMealPlanItem(userId, body.itemId, body.recipeId as string, supabase);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+  }
+  // Declining a meal is a first-class answer, not the absence of one:
+  // silence now means the plan happened (domains/mealplan/assume-meals.ts),
+  // so this is what stops the nightly pass overruling the person.
+  if (hasSkipped) {
+    const result = await setMealPlanItemSkipped(userId, body.itemId, body.skipped as boolean, supabase);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
