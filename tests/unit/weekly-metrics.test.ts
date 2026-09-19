@@ -337,3 +337,61 @@ describe("computeWeeklyMetrics: training", () => {
     expect(computeWeeklyMetrics(baseInput()).isDataSparse).toBe(true);
   });
 });
+
+/**
+ * Assumed intake (2026-09-19). A planned meal on a finished day counts as
+ * eaten unless declined, and that goes into the calorie record — so the
+ * brief has to be able to tell report from inference before it advises
+ * anyone to eat differently.
+ */
+describe("computeWeeklyMetrics: assumed intake", () => {
+  const meal = (
+    completedSource: string | null,
+    opts: { skipped?: boolean } = {}
+  ) => ({
+    completedAt: completedSource ? "2026-07-21T19:00:00Z" : null,
+    completedSource,
+    skippedAt: opts.skipped ? "2026-07-21T19:00:00Z" : null,
+  });
+
+  it("separates what was confirmed from what was inferred from silence", () => {
+    const result = computeWeeklyMetrics(
+      baseInput({
+        plannedMeals: [meal("manual"), meal("assumed"), meal("assumed"), meal(null, { skipped: true })],
+      })
+    );
+    expect(result.mealsPlanned).toBe(4);
+    expect(result.mealsConfirmed).toBe(1);
+    expect(result.mealsAssumed).toBe(2);
+    expect(result.mealsSkipped).toBe(1);
+  });
+
+  it("reports the share of counted intake that rests on assumption", () => {
+    const result = computeWeeklyMetrics(
+      baseInput({ plannedMeals: [meal("manual"), meal("assumed"), meal("assumed"), meal("assumed")] })
+    );
+    expect(result.assumedIntakeSharePercent).toBe(75);
+  });
+
+  it("does not count a declined meal as intake either way", () => {
+    const result = computeWeeklyMetrics(
+      baseInput({ plannedMeals: [meal("manual"), meal(null, { skipped: true })] })
+    );
+    expect(result.assumedIntakeSharePercent).toBe(0);
+  });
+
+  it("has no share to report when nothing was counted", () => {
+    expect(computeWeeklyMetrics(baseInput()).assumedIntakeSharePercent).toBeNull();
+    expect(
+      computeWeeklyMetrics(baseInput({ plannedMeals: [meal(null), meal(null)] })).assumedIntakeSharePercent
+    ).toBeNull();
+  });
+
+  // Rows written before the stamp existed carry a null source; they were
+  // real taps, so they must not be read as assumptions.
+  it("treats an unstamped completion as confirmed, not assumed", () => {
+    const result = computeWeeklyMetrics(baseInput({ plannedMeals: [meal(null), { completedAt: "2026-07-21T19:00:00Z", completedSource: null, skippedAt: null }] }));
+    expect(result.mealsConfirmed).toBe(1);
+    expect(result.mealsAssumed).toBe(0);
+  });
+});

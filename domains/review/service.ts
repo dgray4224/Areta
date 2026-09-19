@@ -99,6 +99,15 @@ Output format — narrative (2-3 short paragraphs, no bullet lists, no headers):
 - Training happening off-plan is still training. If trainingDays is high while
   workoutAdherencePercent is low, that is a plan-design signal, not a discipline one:
   the plan is asking for the wrong days or the wrong sessions.
+- Intake may be partly inferred. A planned meal on a finished day is recorded as eaten
+  unless the person said otherwise, so calorie and protein adherence can rest on
+  assumption rather than report. metrics.assumedIntakeSharePercent is how much of the
+  counted intake that is. Above roughly half, do not state a calorie conclusion as fact:
+  either say plainly that intake is mostly inferred from the plan, or lean on weight and
+  training instead, which are measured. Never present an assumed meal as something the
+  person told you. metrics.mealsSkipped is them actively saying a meal did not happen,
+  which is real information about the plan not fitting their week — treat repeated skips
+  in the same slot as a plan-design signal.
 - Be honest, not falsely encouraging. If adherence was poor, say so plainly and explain
   the likely cause. Never manufacture praise, and never compare the user to anyone but
   their own history.
@@ -156,6 +165,7 @@ async function fetchMetrics(
     { data: recordedWorkouts },
     { data: plannedWorkoutRows },
     { data: dailySummaries },
+    { data: plannedMealRows },
     calorieTarget,
     proteinTarget,
   ] = await Promise.all([
@@ -246,6 +256,12 @@ async function fetchMetrics(
       .eq("user_id", userId)
       .gte("day", weekStart)
       .lte("day", weekEnd),
+    supabase
+      .from("meal_plan_items")
+      .select("completed_at, completed_source, skipped_at, meal_plans!inner(week_start, status)")
+      .eq("user_id", userId)
+      .eq("meal_plans.week_start", weekStart)
+      .eq("meal_plans.status", "active"),
     getApprovedParameterValue(userId, "nutrition", "calorie_target", supabase),
     getApprovedParameterValue(userId, "nutrition", "protein_target_g", supabase),
   ]);
@@ -325,6 +341,11 @@ async function fetchMetrics(
       completedSource: w.completed_source,
     })),
     stepDays: (dailySummaries ?? []).map((d) => ({ date: d.day, steps: d.steps_total })),
+    plannedMeals: (plannedMealRows ?? []).map((m) => ({
+      completedAt: m.completed_at,
+      completedSource: m.completed_source,
+      skippedAt: m.skipped_at,
+    })),
     tasks: (tasks ?? []).map((t) => ({
       status: t.status as TaskStatus,
       skipReason: t.skip_reason,

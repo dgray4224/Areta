@@ -16,6 +16,10 @@ export type WeeklyMetricsInput = {
   recordedWorkouts?: { date: string; durationMinutes: number }[];
   plannedWorkouts?: { completedAt: string | null; completedSource: string | null }[];
   stepDays?: { date: string; steps: number }[];
+  /** Planned meals for the week, with how each was resolved. Feeds the
+   * assumed-intake share below — calorie advice rests on this, so the
+   * brief has to know how much of it was inferred rather than told. */
+  plannedMeals?: { completedAt: string | null; completedSource: string | null; skippedAt: string | null }[];
   calorieTarget: number | null;
   proteinTarget: number | null;
   /** Weekly HealthKit vitals (Phase 4 of the enhancement roadmap,
@@ -73,6 +77,19 @@ export type WeeklyMetrics = {
   trainingMinutes: number;
   trainingDays: number;
   averageDailySteps: number | null;
+  /** Meals (2026-09-19). A planned meal on a finished day is assumed
+   * eaten unless the person said otherwise, and that assumption is
+   * written into intake, so the split matters: `mealsConfirmed` is what
+   * someone actually told us, `mealsAssumed` is what we inferred from
+   * silence, `mealsSkipped` is what they declined.
+   * `assumedIntakeSharePercent` is the share of counted meals resting on
+   * an assumption — the number that should make a calorie conclusion
+   * hedge, or hold entirely. Null when no meals were counted. */
+  mealsPlanned: number;
+  mealsConfirmed: number;
+  mealsAssumed: number;
+  mealsSkipped: number;
+  assumedIntakeSharePercent: number | null;
   /** True when too little was logged this week to trust adherence numbers
    * — CLAUDE.md's "data-quality issue" classification should win over
    * "adherence issue" whenever this is true. */
@@ -232,6 +249,19 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
       ? Math.round(daysWithSteps.reduce((sum, d) => sum + d.steps, 0) / daysWithSteps.length)
       : null;
 
+  const plannedMeals = input.plannedMeals ?? [];
+  const mealsPlanned = plannedMeals.length;
+  const mealsConfirmed = plannedMeals.filter(
+    (m) => m.completedAt !== null && m.completedSource !== "assumed"
+  ).length;
+  const mealsAssumed = plannedMeals.filter(
+    (m) => m.completedAt !== null && m.completedSource === "assumed"
+  ).length;
+  const mealsSkipped = plannedMeals.filter((m) => m.skippedAt !== null).length;
+  const mealsCounted = mealsConfirmed + mealsAssumed;
+  const assumedIntakeSharePercent =
+    mealsCounted > 0 ? Math.round((mealsAssumed / mealsCounted) * 100) : null;
+
   // Sparse means "we cannot see this person's week", and passively
   // imported movement is seeing them. Counting only hand-logged days
   // meant someone whose watch reported every day was still told the
@@ -269,6 +299,11 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
     trainingMinutes,
     trainingDays,
     averageDailySteps,
+    mealsPlanned,
+    mealsConfirmed,
+    mealsAssumed,
+    mealsSkipped,
+    assumedIntakeSharePercent,
     isDataSparse: loggedDayCount < 3,
     averageRestingHeartRate,
     averageHeartRateVariability,
