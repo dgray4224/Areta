@@ -3891,6 +3891,7 @@ export type Database = {
         Row: {
           answers: Json
           approved_at: string | null
+          backfilled: boolean
           brief: Json | null
           created_at: string
           id: string
@@ -3902,6 +3903,7 @@ export type Database = {
         Insert: {
           answers?: Json
           approved_at?: string | null
+          backfilled?: boolean
           brief?: Json | null
           created_at?: string
           id?: string
@@ -3913,6 +3915,7 @@ export type Database = {
         Update: {
           answers?: Json
           approved_at?: string | null
+          backfilled?: boolean
           brief?: Json | null
           created_at?: string
           id?: string

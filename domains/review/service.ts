@@ -10,6 +10,7 @@ import { buildWeeklyReviewContext } from "@/domains/review/context-builder";
 import { getRecentMemories, createMemory } from "@/domains/memory/service";
 import type { MemoryType } from "@/domains/memory/schema";
 import { getAIProvider } from "@/platform/ai/get-provider";
+import { computeAndStoreInsights } from "@/domains/insights/service";
 import { getApprovedParameterValue } from "@/domains/parameters/service";
 import type { TaskStatus } from "@/domains/tasks/schema";
 import { reviewWeekStart, reviewWindowFor, todayIso } from "@/domains/review/dates";
@@ -958,8 +959,147 @@ export async function ensureWeeklyBrief(
 
   if ((count ?? 0) >= MAX_BRIEF_ATTEMPTS_PER_CYCLE) return "attempts_exhausted";
 
+  // Give the brief something from the user's own history to talk about
+  // before writing it. Both of these read imported HealthKit data that
+  // was previously only ever reached by a daily cron, so a new user's
+  // first brief had nothing of their past in it however much history
+  // they had imported. Neither is allowed to block the brief: a first
+  // brief about this week alone beats no brief at all.
+  await Promise.allSettled([
+    ensureHistoricalWeeksBackfilled(userId, supabase),
+    ensureInsightsExist(userId, supabase),
+  ]);
+
   const result = await generateWeeklyBrief(userId, supabase);
   return result.ok ? "generated" : "failed";
+}
+
+/** How many past weeks to reconstruct from imported history. Matches
+ * METRICS_HISTORY_WEEKS — there is no point building weeks the brief's
+ * own history query would never read. */
+const BACKFILL_WEEKS = METRICS_HISTORY_WEEKS;
+
+/**
+ * Reconstructs past weeks' metrics from imported health history, so a
+ * brand-new account's first brief has something to compare against.
+ *
+ * Everything comparative in a brief — weeklyMetricsHistory, the
+ * correlations mined from it, achievements, goal trajectories — reads
+ * past weekly_reviews rows, which accumulate one per week going
+ * forward. Importing ten years of HealthKit data produced none of them,
+ * so a new user's history was invisible to the brief no matter how much
+ * of it they had. These rows close that gap.
+ *
+ * They are marked `backfilled` and carry no brief, answers or
+ * recommendations: they are weeks that HAPPENED, not weeks that were
+ * reviewed, and nothing should present them as the latter.
+ *
+ * Only weeks with actual imported data become rows — a user with three
+ * weeks of history gets three, not twelve empty ones that would poison
+ * every correlation with fabricated zeroes.
+ */
+async function ensureHistoricalWeeksBackfilled(
+  userId: string,
+  supabase: SupabaseClient<Database>
+): Promise<void> {
+  try {
+    // Once per account, and only for an account that has no history of
+    // its own. Checked against the flag rather than a raw row count so
+    // re-running is idempotent no matter how many weeks were written.
+    const [{ count: reconstructed }, { count: lived }] = await Promise.all([
+      supabase
+        .from("weekly_reviews")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("backfilled", true),
+      supabase
+        .from("weekly_reviews")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("backfilled", false),
+    ]);
+    if ((reconstructed ?? 0) > 0) return;
+    // More than the current cycle's own row means real weeks have
+    // accumulated, and those are better history than anything
+    // reconstructed.
+    if ((lived ?? 0) > 1) return;
+
+    const weekStart = await reviewWeekStart(supabase, userId);
+
+    // How far back the imported history actually goes. Without this we'd
+    // manufacture empty weeks for someone who joined last Tuesday.
+    const { data: earliest } = await supabase
+      .from("activity_daily_summaries")
+      .select("day")
+      .eq("user_id", userId)
+      .order("day", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (!earliest?.day) return;
+
+    const rows: Database["public"]["Tables"]["weekly_reviews"]["Insert"][] = [];
+    for (let i = 1; i <= BACKFILL_WEEKS; i++) {
+      const anchor = new Date(`${weekStart}T00:00:00Z`);
+      anchor.setUTCDate(anchor.getUTCDate() - 7 * i);
+      const past = anchor.toISOString().slice(0, 10);
+      const window = reviewWindowFor(past);
+      if (window.end < earliest.day) break;
+
+      const metrics = await fetchMetrics(userId, window.start, window.end, supabase);
+      // A week the person simply wasn't wearing the phone tells the
+      // correlation miner nothing, and a run of fabricated zeroes would
+      // actively mislead it.
+      if (metrics.isDataSparse) continue;
+
+      rows.push({
+        user_id: userId,
+        week_start: past,
+        metrics: metrics as unknown as Database["public"]["Tables"]["weekly_reviews"]["Insert"]["metrics"],
+        status: "draft",
+        backfilled: true,
+      });
+    }
+
+    if (rows.length === 0) return;
+
+    // Ignores anything that already exists on (user_id, week_start) --
+    // a real reviewed week always wins over a reconstructed one.
+    const { error } = await supabase
+      .from("weekly_reviews")
+      .upsert(rows, { onConflict: "user_id,week_start", ignoreDuplicates: true });
+    if (error) {
+      console.error(`[review] historical week backfill failed for ${userId}: ${error.message}`);
+    }
+  } catch (error) {
+    console.error(`[review] historical week backfill failed for ${userId}:`, error);
+  }
+}
+
+/**
+ * Runs the insight engine on demand for a user who has none.
+ *
+ * computeAndStoreInsights reads activity_daily_summaries and
+ * health_metrics — the imported history — but until now the daily cron
+ * was its only caller anywhere in the codebase, so a user who had just
+ * imported ten years of HealthKit data waited up to 24 hours before
+ * anything looked at it. Only fires when the user has no insights at
+ * all, so it's a one-off for new accounts rather than a second engine
+ * running beside the cron.
+ */
+async function ensureInsightsExist(userId: string, supabase: SupabaseClient<Database>): Promise<void> {
+  const { count } = await supabase
+    .from("insights")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if ((count ?? 0) > 0) return;
+
+  try {
+    // Pattern scans are the expensive part and the reason this is worth
+    // doing at all -- they are what find something in years of history.
+    await computeAndStoreInsights(userId, supabase, { includePatternScans: true });
+  } catch (error) {
+    console.error(`[review] on-demand insight generation failed for ${userId}:`, error);
+  }
 }
 
 export async function getReviewSummaryBundle(
