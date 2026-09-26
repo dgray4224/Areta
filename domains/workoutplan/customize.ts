@@ -381,3 +381,91 @@ export async function restoreWorkoutPlanDays(
 
   return { ok: true, data: { warnings: [] } };
 }
+
+
+/**
+ * Writes a workout the user generated and chose for one specific day,
+ * replacing whatever that day held.
+ *
+ * Unlike its two siblings this takes no view on the plan family. The
+ * exercises come from the free library via generate-today.ts, not from
+ * an authored program or template, so there is no phase to belong to
+ * and nothing to validate against -- which is exactly what makes this
+ * work for a user whose week has no program at all.
+ *
+ * Replace, not append: the user asked "what should I do today" and
+ * picked an answer. That is what the day is now. The previous contents
+ * come back in `displaced` so the client can offer the same undo the
+ * assignment flow has, via restoreWorkoutPlanDays.
+ */
+export async function applyTodayWorkoutSession(
+  userId: string,
+  weekStart: string,
+  dayOfWeek: number,
+  exercises: { exerciseId: string; sets: number | null; reps: number | null; durationMinutes: number | null; coachingNotes: string | null }[],
+  client?: SupabaseClient<Database>
+): Promise<ActionResult<{ warnings: string[]; displaced: DisplacedWorkoutDay[] }>> {
+  const supabase = client ?? (await createClient());
+
+  if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+    return { ok: false, error: "That isn't a day of the week." };
+  }
+  if (exercises.length === 0) {
+    return { ok: false, error: "That workout has no exercises in it." };
+  }
+
+  const bootstrap = await bootstrapIfMissing(userId, weekStart, supabase);
+  if (!bootstrap.ok) return bootstrap;
+
+  const { data: plan, error: planError } = await supabase
+    .from("workout_plans")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+  if (planError) return { ok: false, error: planError.message };
+  if (!plan) return { ok: false, error: "No workout plan exists for that week." };
+
+  const snapshot = await snapshotDays(supabase, plan.id, [dayOfWeek]);
+  if (!snapshot.ok) return { ok: false, error: snapshot.error };
+
+  const { error: deleteError } = await supabase
+    .from("workout_plan_items")
+    .delete()
+    .eq("workout_plan_id", plan.id)
+    .eq("day_of_week", dayOfWeek);
+  if (deleteError) return { ok: false, error: deleteError.message };
+
+  const { error: insertError } = await supabase.from("workout_plan_items").insert(
+    exercises.map((ex, index) => ({
+      workout_plan_id: plan.id,
+      user_id: userId,
+      day_of_week: dayOfWeek,
+      session_order: index,
+      exercise_id: ex.exerciseId,
+      sets: ex.sets,
+      reps: ex.reps,
+      duration_minutes: ex.durationMinutes,
+      coaching_notes: ex.coachingNotes,
+      // Same meaning the assignment flow gives it: this day is the
+      // user's own choice, not the generator's authored prescription.
+      substituted: true,
+    }))
+  );
+  if (insertError) return { ok: false, error: insertError.message };
+
+  const { error: historyError } = await supabase.from("exercise_pick_history").insert(
+    exercises.map((ex) => ({
+      user_id: userId,
+      exercise_id: ex.exerciseId,
+      session_id: null,
+      week_start: weekStart,
+      day_of_week: dayOfWeek,
+    }))
+  );
+
+  const warnings = [...bootstrap.warnings];
+  if (historyError) warnings.push(`Preference tracking failed: ${historyError.message}`);
+  return { ok: true, data: { warnings, displaced: snapshot.displaced } };
+}
+
