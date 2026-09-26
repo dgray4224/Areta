@@ -247,9 +247,46 @@ export async function GET(request: NextRequest) {
         : null,
   });
 
+  // What the body actually did today, next to what was planned. The tab
+  // showed the plan and nothing else, so on a day with no session it had
+  // nothing to say at all — while HealthKit knew the step count. Each
+  // figure is null when that metric has nothing for today, and the
+  // interface omits it rather than printing "No data" four times.
+  const [{ data: stepRow }, { data: energyRows }, { data: distanceRows }] = await Promise.all([
+    supabase
+      .from("activity_daily_summaries")
+      .select("steps_total")
+      .eq("user_id", userId)
+      .eq("day", date)
+      .maybeSingle(),
+    supabase
+      .from("health_metrics")
+      .select("value")
+      .eq("user_id", userId)
+      .eq("metric_type", "active_energy")
+      .gte("started_at", `${date}T00:00:00.000Z`)
+      .lte("started_at", `${date}T23:59:59.999Z`),
+    supabase
+      .from("health_metrics")
+      .select("value")
+      .eq("user_id", userId)
+      .eq("metric_type", "distance_walking_running")
+      .gte("started_at", `${date}T00:00:00.000Z`)
+      .lte("started_at", `${date}T23:59:59.999Z`),
+  ]);
+
+  const sumValues = (rows: { value: number | null }[] | null) =>
+    rows && rows.length > 0 ? rows.reduce((sum, r) => sum + (r.value ?? 0), 0) : null;
+
   return NextResponse.json({
     plan: plannedExercises,
     todaysWorkoutLogs: workoutLogs ?? [],
+    todaysActivity: {
+      steps: stepRow?.steps_total ?? null,
+      activeEnergyKcal: sumValues(energyRows),
+      distanceMeters: sumValues(distanceRows),
+      workoutMinutes: (workoutLogs ?? []).reduce((sum, w) => sum + (w.duration_minutes ?? 0), 0),
+    },
     programContext: plan?.programContext ?? null,
     // Falls back to the template's session name, which is where most
     // plans actually come from: without this, 168 of one account's 215
