@@ -26,6 +26,7 @@ import type { ExerciseInput } from "@/domains/exercise/schema";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/platform/db/types";
 import { todayForUser } from "@/domains/activity-summary/service";
+import { dayMetricTotal } from "@/domains/activity-summary/day-total";
 
 /**
  * Bearer-token-authenticated read/write endpoint for the mobile Exercise
@@ -261,30 +262,30 @@ export async function GET(request: NextRequest) {
       .maybeSingle(),
     supabase
       .from("health_metrics")
-      .select("value")
+      .select("value, dedup_key")
       .eq("user_id", userId)
       .eq("metric_type", "active_energy")
       .gte("started_at", `${date}T00:00:00.000Z`)
       .lte("started_at", `${date}T23:59:59.999Z`),
     supabase
       .from("health_metrics")
-      .select("value")
+      .select("value, dedup_key")
       .eq("user_id", userId)
       .eq("metric_type", "distance_walking_running")
       .gte("started_at", `${date}T00:00:00.000Z`)
       .lte("started_at", `${date}T23:59:59.999Z`),
   ]);
 
-  const sumValues = (rows: { value: number | null }[] | null) =>
-    rows && rows.length > 0 ? rows.reduce((sum, r) => sum + (r.value ?? 0), 0) : null;
+  // A day can hold both a whole-day rollup and the raw samples for the
+  // same day; dayMetricTotal is where that precedence lives.
 
   return NextResponse.json({
     plan: plannedExercises,
     todaysWorkoutLogs: workoutLogs ?? [],
     todaysActivity: {
       steps: stepRow?.steps_total ?? null,
-      activeEnergyKcal: sumValues(energyRows),
-      distanceMeters: sumValues(distanceRows),
+      activeEnergyKcal: dayMetricTotal(energyRows),
+      distanceMeters: dayMetricTotal(distanceRows),
       workoutMinutes: (workoutLogs ?? []).reduce((sum, w) => sum + (w.duration_minutes ?? 0), 0),
     },
     programContext: plan?.programContext ?? null,

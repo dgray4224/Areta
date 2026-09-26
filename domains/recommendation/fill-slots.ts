@@ -2,6 +2,7 @@ import type { Exercise } from "@/domains/exerciselibrary/types";
 import type { ExerciseInput } from "@/domains/exercise/schema";
 import { hasEquipment } from "@/domains/workoutplan/generate";
 import { stableHash } from "@/domains/recommendation/select-template";
+import { buildSafetyFilter } from "@/domains/recommendation/safety";
 import {
   ACTIVITY_TO_PATTERN,
   AEROBIC_PATTERN_GROUP,
@@ -47,18 +48,13 @@ const MAX_USES_PER_SESSION_SET = 2; // same variety cap as generate.ts
 export function fillSessionSlots(input: FillSlotsInput): FillSlotsResult {
   const warnings: string[] = [];
   const filled: FilledSlot[] = [];
-  const userTags = new Set<string>(input.exercise.limitationTags ?? []);
-  const hasLimitations = input.exercise.injuryStatus && input.exercise.injuryStatus !== "no" && userTags.size > 0;
-
-  const activeRules = hasLimitations ? input.limitationRules.filter((r) => userTags.has(r.limitationTag)) : [];
-  const excludedPatterns = new Set(
-    activeRules.filter((r) => r.action === "exclude" && r.movementPattern).map((r) => r.movementPattern!)
+  const { activeRules, substituteByPattern, isSafe } = buildSafetyFilter(
+    input.exercise,
+    input.limitationRules,
+    input.tier
   );
-  const substituteByPattern = new Map(
-    activeRules
-      .filter((r) => r.action === "substitute" && r.movementPattern && r.substituteMovementPattern)
-      .map((r) => [r.movementPattern!, r.substituteMovementPattern!])
-  );
+  // Loop-invariant: the safety floor depends on the user, not the slot.
+  const safe = input.exercises.filter(isSafe);
 
   const dislikedPatterns = new Set(
     (input.exercise.dislikedActivities ?? [])
@@ -92,16 +88,8 @@ export function fillSessionSlots(input: FillSlotsInput): FillSlotsResult {
 
     const isAerobicSlot = (AEROBIC_PATTERN_GROUP as readonly string[]).includes(targetPattern);
 
-    // 2. Safety floor: limitation excludes + beginner high-skill guard.
-    //    Never relaxed.
-    const safe = input.exercises.filter((e) => {
-      if (hasLimitations) {
-        if (e.limitationTags.some((tag) => userTags.has(tag))) return false;
-        if (e.movementPatterns.some((p) => excludedPatterns.has(p))) return false;
-      }
-      if (input.tier === "beginner" && e.difficulty === "advanced") return false;
-      return true;
-    });
+    // 2. Safety floor (`safe`) is applied above the loop -- see
+    //    buildSafetyFilter. Never relaxed by any branch below.
 
     // 3. Pattern match (aerobic slots accept the whole aerobic group,
     //    re-ranked by stated preference below).
