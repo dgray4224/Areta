@@ -237,7 +237,7 @@ describe("generateTodayWorkouts", () => {
   it("surfaces a manual-review rule as a warning rather than silently proceeding", () => {
     const rules: LimitationRule[] = [
       {
-        limitationTag: "cardiac",
+        limitationTag: "cardiovascular",
         action: "manual_review",
         movementPattern: null,
         substituteMovementPattern: null,
@@ -250,7 +250,7 @@ describe("generateTodayWorkouts", () => {
         exercise: {
           equipmentAccess: ["Bodyweight only"],
           injuryStatus: "yes",
-          limitationTags: ["cardiac"],
+          limitationTags: ["cardiovascular"],
         } as ExerciseInput,
       })
     );

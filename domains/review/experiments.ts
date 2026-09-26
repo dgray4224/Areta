@@ -10,6 +10,18 @@ export const EXPECTED_METRIC_KEYS = [
   "learningMinutes",
   "averagePainThisWeek",
   "averageSwellingThisWeek",
+  // Training (2026-09-26). These joined WeeklyMetrics on 2026-09-19 so
+  // the brief could finally see training at all, but this enum wasn't
+  // extended with them. The model, now looking at training data,
+  // reasonably proposed a training change and named a training metric
+  // for it -- and the output schema rejected the entire brief. One
+  // account's brief failed every Sunday on this while twelve others
+  // went through. Anything the brief can SEE it must be able to TARGET.
+  "workoutAdherencePercent",
+  "workoutsCompleted",
+  "trainingMinutes",
+  "trainingDays",
+  "averageDailySteps",
 ] as const;
 export type ExpectedMetricKey = (typeof EXPECTED_METRIC_KEYS)[number];
 
@@ -49,6 +61,13 @@ const EPSILON: Record<ExpectedMetricKey, number> = {
   learningMinutes: 20,
   averagePainThisWeek: 0.5,
   averageSwellingThisWeek: 0.5,
+  workoutAdherencePercent: 10,
+  // A whole extra session, not a rounding difference.
+  workoutsCompleted: 1,
+  trainingMinutes: 20,
+  trainingDays: 1,
+  // Day-to-day step counts swing widely; below ~500/day is noise.
+  averageDailySteps: 500,
 };
 
 /** Whether a higher value is unambiguously "better" for this metric —
@@ -68,6 +87,14 @@ const HIGHER_IS_BETTER: Record<ExpectedMetricKey, boolean | null> = {
   learningMinutes: true,
   averagePainThisWeek: false,
   averageSwellingThisWeek: false,
+  // More training is the better direction for every goal Areta plans
+  // for -- the deload case is expressed as an explicit "decrease", not
+  // as "improve".
+  workoutAdherencePercent: true,
+  workoutsCompleted: true,
+  trainingMinutes: true,
+  trainingDays: true,
+  averageDailySteps: true,
 };
 
 function classify(

@@ -12,7 +12,7 @@ import type { MemoryType } from "@/domains/memory/schema";
 import { getAIProvider } from "@/platform/ai/get-provider";
 import { getApprovedParameterValue } from "@/domains/parameters/service";
 import type { TaskStatus } from "@/domains/tasks/schema";
-import { reviewWeekStart, todayIso } from "@/domains/review/dates";
+import { reviewWeekStart, reviewWindowFor, todayIso } from "@/domains/review/dates";
 import { resolveTimezone } from "@/domains/activity-summary/service";
 import { computeMetricCorrelations } from "@/domains/review/correlations";
 import { computeAchievements, type AchievementFacts } from "@/domains/review/achievements";
@@ -380,8 +380,11 @@ export async function getOrCreateWeeklyReview(
     };
   }
 
-  const today = await todayIso(supabase, userId);
-  const metrics = await fetchMetrics(userId, weekStart, today, supabase);
+  // The completed week this cycle reports on, not "up to today" -- see
+  // reviewWindowFor. Fixed for the whole cycle, so the figures never
+  // drift out from under the narrative written against them.
+  const window = reviewWindowFor(weekStart);
+  const metrics = await fetchMetrics(userId, window.start, window.end, supabase);
   const { data: created, error } = await supabase
     .from("weekly_reviews")
     .insert({ user_id: userId, week_start: weekStart, metrics, status: "draft" })
@@ -886,6 +889,11 @@ export async function getRecommendationsForCurrentReview(
 export type ReviewSummaryBundle = {
   weekStart: string;
   status: WeeklyReviewView["status"];
+  /** Why `brief` is null, when it is. "pending" means one is being
+   * written now (the route kicks generation off in the background);
+   * "unavailable" means this cycle's attempts are spent and the client
+   * should stop promising one rather than spin forever. */
+  briefStatus: "ready" | "pending" | "unavailable";
   metrics: WeeklyMetrics | null;
   brief: WeeklyBrief | null;
   answers: Record<string, string>;
@@ -911,6 +919,49 @@ export type ReviewSummaryBundle = {
  * Read-only: getReviewFactsBundle recomputes the deterministic facts fresh
  * (cheap — pure queries/math, no AI call), so this works whether or not a
  * brief has been generated yet this week. */
+/** Automatic generation attempts allowed per review cycle, counting the
+ * cron's. Bounds the cost of a user who reopens the tab all week while
+ * something is persistently failing, but still lets a transient failure
+ * recover without waiting seven days for the next cron. */
+const MAX_BRIEF_ATTEMPTS_PER_CYCLE = 3;
+
+export type EnsureBriefOutcome = "ready" | "generated" | "failed" | "attempts_exhausted";
+
+/**
+ * Guarantees the current cycle has a brief, generating one on the spot
+ * if it doesn't.
+ *
+ * The cron used to be the only trigger, which meant a brief existed only
+ * if you had been a user on your review day and nothing went wrong that
+ * morning. Someone who installed the app on a Wednesday saw a promise
+ * about Sunday; someone whose Sunday generation failed saw that same
+ * promise for a fortnight. Neither had any way to ask for one.
+ *
+ * Safe to call on every load: it returns immediately once a brief
+ * exists, and caps attempts per cycle so a persistent failure can't turn
+ * every app open into a model call.
+ */
+export async function ensureWeeklyBrief(
+  userId: string,
+  client?: SupabaseClient<Database>
+): Promise<EnsureBriefOutcome> {
+  const supabase = client ?? (await createClient());
+  const review = await getOrCreateWeeklyReview(userId, supabase);
+  if (review.brief) return "ready";
+
+  const { count } = await supabase
+    .from("ai_runs")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("purpose", "weekly_brief")
+    .gte("created_at", `${review.weekStart}T00:00:00.000Z`);
+
+  if ((count ?? 0) >= MAX_BRIEF_ATTEMPTS_PER_CYCLE) return "attempts_exhausted";
+
+  const result = await generateWeeklyBrief(userId, supabase);
+  return result.ok ? "generated" : "failed";
+}
+
 export async function getReviewSummaryBundle(
   userId: string,
   client?: SupabaseClient<Database>
@@ -923,9 +974,24 @@ export async function getReviewSummaryBundle(
     getReviewFactsBundle(userId, supabase),
   ]);
 
+  // Lets the client distinguish "your brief is being written right now"
+  // from "we tried and it isn't coming" -- previously both looked like
+  // an indefinite promise that one would arrive on your review day.
+  let briefStatus: "ready" | "pending" | "unavailable" = "ready";
+  if (!review.brief) {
+    const { count } = await supabase
+      .from("ai_runs")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("purpose", "weekly_brief")
+      .gte("created_at", `${review.weekStart}T00:00:00.000Z`);
+    briefStatus = (count ?? 0) >= MAX_BRIEF_ATTEMPTS_PER_CYCLE ? "unavailable" : "pending";
+  }
+
   return {
     weekStart: review.weekStart,
     status: review.status,
+    briefStatus,
     metrics: review.metrics,
     brief: review.brief,
     answers: review.answers,
