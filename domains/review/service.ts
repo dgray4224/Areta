@@ -247,7 +247,7 @@ next week's suggested commitments, so keep each one a single concrete, checkable
 changes: proposed changes to their plan or targets — never to app behavior such as
 prompts, reminders or logging, and never a reduction in volume or targets unless
 planExecution.planChangeWarranted is true (see "The plan is the plan"). An empty list is
-a perfectly good answer. Each grounded in metrics/memory/experimentOutcomes.
+a perfectly good answer. Never list a change that keeps something as it is. Each grounded in metrics/memory/experimentOutcomes.
 field is shown to the person as a button label: a short plain-English name of what
 changes, 2-5 words, sentence case (e.g. "Training days per week", "Protein target").
 reason is shown too, so write it in plain words like the narrative. Describe changes qualitatively — deterministic code

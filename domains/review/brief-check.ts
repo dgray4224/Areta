@@ -69,7 +69,7 @@ const RULES: { pattern: RegExp; problem: string }[] = [
     problem: "uses internal jargon. Say it in everyday words.",
   },
   {
-    pattern: /\b(enough weeks|weeks in a row for|not a plan problem|plan (didn't|did not|hasn't|has not|doesn't|does not) (change|need to change|need changing)|doesn't need to change|plan itself (is|was|isn't|wasn't) (wrong|the (issue|problem))|sign the plan (itself )?is wrong)\b/i,
+    pattern: /\b(enough to change|enough weeks|weeks in a row for|not a plan problem|plan (didn't|did not|hasn't|has not|doesn't|does not) (change|need to change|need changing)|doesn't need to change|plan itself (is|was|isn't|wasn't) (wrong|the (issue|problem))|sign the plan (itself )?is wrong)\b/i,
     problem: "explains your own rules or why you are or aren't changing the plan. Just coach.",
   },
   {
@@ -77,7 +77,7 @@ const RULES: { pattern: RegExp; problem: string }[] = [
     problem: "claims a habit the data doesn't show (there is one week of missed days). Describe this week only.",
   },
   {
-    pattern: /\ba choice, not\b|\b(it's|it is|that's|that is|was) (a|your) choice\b|\b(gap|problem|issue) (isn't|is not|wasn't|was not) (about )?(ability|capacity|your body)\b|\bbody (that's|that is|is) (clearly |fully )?capable\b|\bpurely (about|a matter of|down to)\b|\bbody can(not|'t|) handle\b|\bnothing (here )?saying your body\b|\bnothing (physically |really )?changed\b|\bjust a (choice|decision)\b|\bonly (thing|difference) (is|was) (the )?(choice|decision|you)\b/i,
+    pattern: /\b(isn't|is not|wasn't|was not) about (capacity|ability|capability)\b|\ba choice, not\b|\b(it's|it is|that's|that is|was) (a|your) choice\b|\b(gap|problem|issue) (isn't|is not|wasn't|was not) (about )?(ability|capacity|your body)\b|\bbody (that's|that is|is) (clearly |fully )?capable\b|\bpurely (about|a matter of|down to)\b|\bbody can(not|'t|) handle\b|\bnothing (here )?saying your body\b|\bnothing (physically |really )?changed\b|\bjust a (choice|decision)\b|\bonly (thing|difference) (is|was) (the )?(choice|decision|you)\b/i,
     problem: "claims to know why their training dropped. You can't see injuries, illness or life events; describe what changed, never why.",
   },
   {
@@ -142,6 +142,16 @@ export function findBriefViolations(brief: WeeklyBrief, facts: BriefCheckFacts):
       if (m) problems.push(`${where} ${excerpt(text, m.index)} ${rule.problem}`);
     }
   }
+
+  // A "change" that keeps things as they are still shows up as a button
+  // to accept or reject, and explains the rules while it's at it.
+  brief.changes.forEach((c, i) => {
+    const same = c.previousValue !== null && String(c.previousValue).trim() === String(c.proposedValue).trim();
+    const saysKept = /\b(kept|keep|as[- ]is|unchanged|no change|stays? the same)\b/i.test(String(c.proposedValue));
+    if (same || saysKept) {
+      problems.push(`change ${i + 1} doesn't change anything. Leave it out; an empty changes list is fine.`);
+    }
+  });
 
   // A narrative crowded with numbers reads as a report, not a coach.
   const numbers = brief.narrative.join(" ").match(/\d+(?:[.,]\d+)?/g) ?? [];

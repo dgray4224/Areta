@@ -45,6 +45,16 @@ describe("findBriefViolations", () => {
     ["a stat-heavy narrative", { narrative: ["3 of 7, 0.5 and 0.7 averages, 4.3 best, 3 floor, 69 RHR, 29.3 HRV, 1,084 steps, 20 lbs, 12 weeks.", "x"] }],
     ["a claim about their body", { narrative: ["You did it on a body that's clearly capable of it.", "x"] }],
     ["a claim the gap isn't ability", { narrative: ["The gap isn't ability. It's the days.", "x"] }],
+    ["a claim it isn't about capacity", { narrative: ["Here's the proof this isn't about capacity.", "x"] }],
+    ["explaining the plan won't change", { narrative: ["One missed week isn't enough to change the plan.", "x"] }],
+    [
+      "a change that changes nothing",
+      {
+        changes: [
+          { field: "Training days per week", previousValue: "7 sessions/week plan", proposedValue: "7 sessions/week plan (kept as-is)", reason: "Execute it.", confidence: 0.5 },
+        ],
+      },
+    ],
     ["a stepping-stone target", { priorities: [{ title: "Build toward 4-5 days next week", reason: "r", domain: "training", priority: 1 as const }] }],
   ])("flags %s", (_label, overrides) => {
     expect(findBriefViolations(brief(overrides as Partial<WeeklyBrief>), facts)).toHaveLength(1);
