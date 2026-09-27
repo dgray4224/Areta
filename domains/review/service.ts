@@ -20,7 +20,7 @@ import { computeAchievements, immediatelyPreviousWeek, type AchievementFacts } f
 import { computeGoalTrajectories, type GoalTrajectory, type GoalWithTarget } from "@/domains/review/trajectory";
 import { computeStreaks, type StreakFacts } from "@/domains/review/streaks";
 import { computePlanExecution } from "@/domains/review/plan-execution";
-import { computeTrainingBaseline, BASELINE_WEEKS } from "@/domains/review/training-baseline";
+import { computeTrainingBaseline, BASELINE_WEEKS, type TrainingBaseline } from "@/domains/review/training-baseline";
 import { addDaysToDateString } from "@/domains/insights/dates";
 import { generateCheckedBrief } from "@/domains/review/brief-check";
 import { judgeBrief } from "@/domains/review/brief-judge";
@@ -885,23 +885,7 @@ export async function generateWeeklyBrief(
     .maybeSingle();
   const lastBrief = (lastBriefRow?.brief as WeeklyBrief | null) ?? null;
 
-  // A year of the person's own training, straight from imported history,
-  // as the yardstick for this week (domains/review/training-baseline.ts).
-  const { data: baselineDays } = await supabase
-    .from("activity_daily_summaries")
-    .select("day, workout_total_minutes, steps_total")
-    .eq("user_id", userId)
-    .gte("day", addDaysToDateString(currentMetrics.weekStart, -7 * BASELINE_WEEKS))
-    .lte("day", addDaysToDateString(currentMetrics.weekStart, 6));
-  const trainingBaseline = computeTrainingBaseline(
-    currentMetrics.weekStart,
-    (baselineDays ?? []).map((d) => ({
-      date: d.day,
-      workoutMinutes: d.workout_total_minutes ?? 0,
-      steps: d.steps_total ?? 0,
-    })),
-    currentMetrics.workoutsPlanned
-  );
+  const trainingBaseline = await fetchTrainingBaseline(supabase, userId, currentMetrics);
 
   // This week's Insight Engine v2 findings (Phase 3, 2026-08-14) — the
   // generate-insights cron runs 30 minutes before this one (vercel.json),
@@ -1088,6 +1072,34 @@ export async function getRecommendationsForCurrentReview(
   }));
 }
 
+/**
+ * A year of the person's own training, straight from imported history,
+ * as the yardstick for the week `metrics` covers
+ * (domains/review/training-baseline.ts). Shared by the brief, which
+ * argues from it, and the summary bundle, which shows it.
+ */
+async function fetchTrainingBaseline(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  metrics: WeeklyMetrics
+): Promise<TrainingBaseline> {
+  const { data: baselineDays } = await supabase
+    .from("activity_daily_summaries")
+    .select("day, workout_total_minutes, steps_total")
+    .eq("user_id", userId)
+    .gte("day", addDaysToDateString(metrics.weekStart, -7 * BASELINE_WEEKS))
+    .lte("day", addDaysToDateString(metrics.weekStart, 6));
+  return computeTrainingBaseline(
+    metrics.weekStart,
+    (baselineDays ?? []).map((d) => ({
+      date: d.day,
+      workoutMinutes: d.workout_total_minutes ?? 0,
+      steps: d.steps_total ?? 0,
+    })),
+    metrics.workoutsPlanned
+  );
+}
+
 export type ReviewSummaryBundle = {
   weekStart: string;
   status: WeeklyReviewView["status"];
@@ -1113,6 +1125,10 @@ export type ReviewSummaryBundle = {
   streaks: StreakFacts;
   correlationFindings: ReviewFactsBundle["correlationFindings"];
   experimentOutcomes: ExperimentOutcome[];
+  /** The week's training against the person's own year of history, for
+   * the You tab's Progress card and Week tiles. Null before the week has
+   * metrics. */
+  trainingBaseline: TrainingBaseline | null;
 };
 
 /** Everything the Review tab's sub-tabs need in one round trip — shared by
@@ -1304,6 +1320,7 @@ export async function getReviewSummaryBundle(
     getRecommendationsForCurrentReview(userId, supabase),
     getReviewFactsBundle(userId, supabase),
   ]);
+  const trainingBaseline = review.metrics ? await fetchTrainingBaseline(supabase, userId, review.metrics) : null;
 
   // Lets the client distinguish "your brief is being written right now"
   // from "we tried and it isn't coming" -- previously both looked like
@@ -1334,5 +1351,6 @@ export async function getReviewSummaryBundle(
     streaks: facts.streaks,
     correlationFindings: facts.correlationFindings,
     experimentOutcomes: facts.experimentOutcomes,
+    trainingBaseline,
   };
 }
