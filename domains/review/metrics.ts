@@ -14,7 +14,10 @@ export type WeeklyMetricsInput = {
    * training week could only ever talk about food logging. All three are
    * optional so existing fixtures keep working unchanged. */
   recordedWorkouts?: { date: string; durationMinutes: number }[];
-  plannedWorkouts?: { completedAt: string | null; completedSource: string | null }[];
+  /** One row per planned exercise, not per session — a session is all of
+   * a day's exercises, so these are grouped by `dayOfWeek` before
+   * counting. (Counting rows read a 7-session week as "24 workouts".) */
+  plannedWorkouts?: { dayOfWeek: number; completedAt: string | null; completedSource: string | null }[];
   stepDays?: { date: string; steps: number }[];
   /** Planned meals for the week, with how each was resolved. Feeds the
    * assumed-intake share below — calorie advice rests on this, so the
@@ -64,7 +67,8 @@ export type WeeklyMetrics = {
   learningMinutes: number;
   taskCompletionPercent: number | null;
   missedTaskReasons: string[];
-  /** Training (2026-09-19). `workoutsCompleted` counts ticks from either
+  /** Training (2026-09-19). All three workout counts are sessions (planned
+   * training days), not exercises. `workoutsCompleted` counts ticks from either
    * source; `workoutsAutoCompleted` is the subset inferred from Apple
    * Health, so the brief can tell "you trained" from "you told us you
    * trained". `trainingMinutes` and `trainingDays` come from Health
@@ -74,6 +78,10 @@ export type WeeklyMetrics = {
   workoutsCompleted: number;
   workoutsAutoCompleted: number;
   workoutAdherencePercent: number | null;
+  /** Weekday names of planned sessions with nothing done, in plan order —
+   * lets the brief coach the actual days that slipped instead of
+   * inventing new slots. Rows stored before 2026-09-27 lack this key. */
+  missedWorkoutDays?: string[];
   trainingMinutes: number;
   trainingDays: number;
   averageDailySteps: number | null;
@@ -106,6 +114,14 @@ export type WeeklyMetrics = {
   weightTrackingSince: string | null;
   weightChange12WeekLb: number | null;
 };
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** Plan items sit on week_start + day_of_week. */
+function weekdayName(weekStart: string, dayOfWeek: number): string {
+  const date = new Date(`${weekStart}T00:00:00Z`);
+  return WEEKDAYS[(date.getUTCDay() + dayOfWeek) % 7];
+}
 
 function average(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -234,11 +250,27 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
   const plannedWorkouts = input.plannedWorkouts ?? [];
   const stepDays = input.stepDays ?? [];
 
-  const workoutsPlanned = plannedWorkouts.length;
-  const workoutsCompleted = plannedWorkouts.filter((w) => w.completedAt !== null).length;
-  const workoutsAutoCompleted = plannedWorkouts.filter(
-    (w) => w.completedAt !== null && w.completedSource === "health"
-  ).length;
+  // A session counts as done if any of its exercises was — the same
+  // day-level question auto-complete answers ("did they train on a day
+  // the plan asked?"). It counts as auto-completed only if nothing that
+  // day was ticked by hand, so a person's own tick always wins.
+  const sessions = new Map<number, { done: boolean; manual: boolean }>();
+  for (const w of plannedWorkouts) {
+    const s = sessions.get(w.dayOfWeek) ?? { done: false, manual: false };
+    if (w.completedAt !== null) {
+      s.done = true;
+      if (w.completedSource !== "health") s.manual = true;
+    }
+    sessions.set(w.dayOfWeek, s);
+  }
+  const workoutsPlanned = sessions.size;
+  const workoutsCompleted = [...sessions.values()].filter((s) => s.done).length;
+  const workoutsAutoCompleted = [...sessions.values()].filter((s) => s.done && !s.manual).length;
+  const missedWorkoutDays = [...sessions.entries()]
+    .filter(([, s]) => !s.done)
+    .map(([dayOfWeek]) => dayOfWeek)
+    .sort((a, b) => a - b)
+    .map((dayOfWeek) => weekdayName(input.weekStart, dayOfWeek));
   const workoutAdherencePercent =
     workoutsPlanned > 0 ? Math.round((workoutsCompleted / workoutsPlanned) * 100) : null;
   const trainingMinutes = recordedWorkouts.reduce((sum, w) => sum + Math.max(0, w.durationMinutes), 0);
@@ -296,6 +328,7 @@ export function computeWeeklyMetrics(input: WeeklyMetricsInput): WeeklyMetrics {
     workoutsCompleted,
     workoutsAutoCompleted,
     workoutAdherencePercent,
+    missedWorkoutDays,
     trainingMinutes,
     trainingDays,
     averageDailySteps,

@@ -32,6 +32,10 @@ export type StructuredGenerationRequest<T> = {
   /** Validates the model's output; a failed parse must not reach the caller
    * as trusted data (CLAUDE.md §20 rule 8). */
   schema: z.ZodType<T>;
+  /** "fast" for small judging/classification jobs where a quicker, cheaper
+   * model is enough; each provider maps it to its own model. Defaults to
+   * "standard". */
+  tier?: "standard" | "fast";
 };
 
 export type StructuredGenerationResult<T> =

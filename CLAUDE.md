@@ -62,7 +62,7 @@ Primary differentiator:
 
 5. **Review**
    - Calculate progress.
-   - Identify adherence, plan-design, outcome, and data-quality issues.
+   - Identify execution, outcome, and data-quality issues (plan-design only after sustained missed execution — see §6 Issue classification).
 
 6. **Regenerate**
    - Preserve what worked.
@@ -659,11 +659,14 @@ This is the highest-priority feature.
 
 The system must distinguish:
 
-#### Adherence issue
-The plan may be good, but the user did not follow it.
+#### Adherence (execution) issue
+The user did not follow the plan. This is the default reading of a missed week.
 
 #### Plan-design issue
-The user tried, but the plan was unrealistic or unpleasant.
+The plan itself needs changing. Only concluded after sustained missed execution
+(currently 4 consecutive weeks under 80% of planned sessions, computed
+deterministically in `domains/review/plan-execution.ts`), or when the user reports
+something outside their control (injury, illness, a schedule change).
 
 #### Outcome issue
 The user followed the plan, but the desired result did not occur.
@@ -671,7 +674,11 @@ The user followed the plan, but the desired result did not occur.
 #### Data-quality issue
 There is insufficient reliable data.
 
-Never reduce every problem to discipline.
+**The plan is the plan (decided 2026-09-27).** The user built their plan when they set
+their goals; it is their commitment. A missed week is an execution gap to name plainly
+and help close, never evidence the plan is too big. The brief does not propose reducing
+training volume or lowering targets because of a single missed or unmeasured week. Be
+direct, never scolding: say what happened and how to hit the plan next week.
 
 ### Weekly Operating Brief
 
@@ -680,8 +687,8 @@ Before generating the next week, recalculate any operating parameter whose assum
 Examples:
 
 - Adjust calorie targets when actual weight trend differs from the expected trend.
-- Adjust learning workload when completion and fatigue indicate that the plan is too aggressive.
-- Adjust meal complexity when preparation adherence is low.
+- Adjust learning workload only after sustained missed execution (see Issue classification), or when the user reports fatigue or a changed schedule.
+- Adjust meal complexity only after sustained low preparation adherence.
 - Adjust reminders when the user consistently completes tasks without them.
 - Preserve clinician-controlled recovery restrictions unless the user records a new professional instruction.
 

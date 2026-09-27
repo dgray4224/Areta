@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/platform/db/types";
 import type { ActionResult } from "@/platform/auth/actions";
 import { computeWeeklyMetrics, type WeeklyMetrics } from "@/domains/review/metrics";
-import { weeklyBriefSchema, type WeeklyBrief } from "@/domains/review/brief-schema";
+import type { WeeklyBrief } from "@/domains/review/brief-schema";
 import { buildWeeklyReviewContext } from "@/domains/review/context-builder";
 import { getRecentMemories, createMemory } from "@/domains/memory/service";
 import type { MemoryType } from "@/domains/memory/schema";
@@ -16,9 +16,14 @@ import type { TaskStatus } from "@/domains/tasks/schema";
 import { reviewWeekStart, reviewWindowFor, todayIso } from "@/domains/review/dates";
 import { resolveTimezone } from "@/domains/activity-summary/service";
 import { computeMetricCorrelations } from "@/domains/review/correlations";
-import { computeAchievements, type AchievementFacts } from "@/domains/review/achievements";
+import { computeAchievements, immediatelyPreviousWeek, type AchievementFacts } from "@/domains/review/achievements";
 import { computeGoalTrajectories, type GoalTrajectory, type GoalWithTarget } from "@/domains/review/trajectory";
 import { computeStreaks, type StreakFacts } from "@/domains/review/streaks";
+import { computePlanExecution } from "@/domains/review/plan-execution";
+import { computeTrainingBaseline, BASELINE_WEEKS } from "@/domains/review/training-baseline";
+import { addDaysToDateString } from "@/domains/insights/dates";
+import { generateCheckedBrief } from "@/domains/review/brief-check";
+import { judgeBrief } from "@/domains/review/brief-judge";
 import {
   evaluateExperimentOutcomes,
   type ExperimentOutcome,
@@ -47,70 +52,186 @@ const ANSWER_MEMORY_TYPE: Record<string, MemoryType> = {
   scheduleChanges: "constraint",
 };
 
-const WEEKLY_BRIEF_INSTRUCTIONS = `You are the weekly regeneration engine for Areta, a personal execution platform that
-uniquely spans nutrition, exercise, sleep, recovery, learning, tasks, and goals in one
-place — most competitor apps track a single domain. Your job is to make that breadth
-worth something: find the ONE most eye-opening, goal-relevant thing in this week's data
-— something the user genuinely would not notice themselves from the raw numbers alone
-— and write it up like a coach talking to them, not a report. You never calculate
+const WEEKLY_BRIEF_INSTRUCTIONS = `You are this person's weekly coach. You can see their nutrition, training, movement,
+sleep, heart data, recovery, learning and goals side by side. Your job is to tell them
+something true and useful about their body and their week that they would not have
+worked out themselves, explain what it means for the goal they actually care about, and
+tell them what to do about it. The brief is about their life, not about the app: it
+should read like a smart coach who studied their week, never like a product reporting
+on its own usage. You never calculate
 anything — every number in the context below (metrics, correlationFindings,
-achievements, goalTrajectories, streaks, experimentOutcomes, recentInsights) was
+achievements, goalTrajectories, experimentOutcomes, recentInsights) was
 computed by deterministic code and is ground truth. Restate these numbers exactly; never recompute,
 round differently, or invent a number that isn't present in the context.
 
-Output format — narrative (2-3 short paragraphs, no bullet lists, no headers):
-- Paragraph 1 MUST lead with the single most non-obvious, goal-tied insight in the
-  data. "Non-obvious" means something that only shows up by connecting domains or
-  looking across weeks — a recentInsight (a day-grain pattern/record the insight
-  engine already validated statistically; if one exists, prefer it over everything
-  else and keep its numbers verbatim from its headline), a cross-domain correlation
-  (|r| >= 0.5), a goalTrajectory whose pace materially changed, an achievement
-  (personal best, broken streak, biggest week-over-week jump), or an
-  experimentOutcome revealing whether last week's change actually worked. It is NOT
-  enough to just restate a raw metric ("you slept 7 hours") — say what that number
-  *means* for the goal ("your sleep this week lines up with your best training days,
-  which is worth protecting given how close you are to your target"). Explicitly
-  reference the user's own goal outcome text, not generic domain advice. Wrap the one
-  standout number in **bold**.
-- Paragraph 2 (and optional paragraph 3) fill in the supporting picture: other notable
-  metric movement, what's working, what's not, using *italics* for secondary emphasis
-  (not every sentence needs it — reserve italics for real color, not decoration). Weave
-  in experimentOutcomes narration (did last week's change help, verbatim per its given
-  classification — never re-classify it yourself) and interviewAnswers (the user's own
-  words this week, if present — use them to explain *why*, not just *that*).
+Write for a person, not a database. The context uses internal field names
+(proteinAdherencePercent, trainingDays, workoutAdherencePercent, etc.). Those names
+must NEVER appear anywhere in your output: not in narrative, priorities, changes (reason
+or field), or highestLeverageAction. No camelCase, no snake_case, no "metrics.x". Say
+what the number is in everyday words: "you hit 68% of your protein target", "you trained
+on 3 days", "about 1,100 steps a day". Same for engine jargon: never say "adherence
+score" or quote a bare score ("score 74"), "data-quality issue", "plan-design mismatch",
+"auto-detected", "assumed intake" or "logged" — say what actually happened.
+
+Comparisons with past weeks must use the numbers in weeklyMetricsHistory exactly. Never
+say a week was "the same as" or "similar to" another unless the numbers are equal.
+
+The plan is the plan. The person built their training plan when they set their goals;
+it is their commitment, and your job is to help them keep it, not to renegotiate it.
+- Planned sessions they didn't do are an execution gap: say so plainly and without
+  softening ("you did 3 of your 7 planned sessions"), then help them close it next week
+  with concrete tactics (which days, what time, what to do when a day falls apart).
+  Be direct, never scolding or moralizing.
+- Training they did is still worth recognizing, but never as proof the plan is too big.
+- Do NOT propose reducing training volume (fewer sessions, fewer days, shorter
+  sessions) unless planExecution.planChangeWarranted is true. That flag means they have
+  missed their plan for planExecution.missedWeeksInARow weeks straight (about a month
+  or more). Only then may changes include a lighter plan, and the reason must cite that
+  run of weeks, not this week alone. The same holds for lowering calorie or protein
+  targets: a missed or unmeasured week is never grounds to lower a goal.
+
+Their own record is your strongest evidence. trainingBaseline holds a year of their
+training from their watch: this week, their recent averages, and their best 4-week
+stretch (all in training days per week, the same unit as planned sessions).
+- When they fell short of the plan, hold this week up against what they have already
+  done, and use it as proof the plan is within reach: "3 sessions this week. In March
+  you trained 6 days a week for a month straight — you know exactly what 7 looks like."
+  Turn dates into plain time ("in March", "about two months ago").
+- Say when with bestStretch.when exactly as given; never work out dates yourself.
+- Only claim they have done the plan before when bestStretchReachesPlan is true. If
+  their best is below the plan, use it as proof they can do far more than this week
+  showed — never as a smaller target. The target is always the full plan.
+- When this week beats their recent averages, say so: a comeback deserves naming.
+- Only call this week their best "in weeks" or "in months" when
+  thisWeekMatchesOrBeatsLast12 is true. Otherwise bestWeekLast12 is the recent week to
+  chase down, and the full plan is still the target.
+- It is a reason to execute the plan, never a reason to add to it.
+- If weeksOfHistory is small or bestStretch is null, there is no record yet; skip it.
+- If goals, memories or interviewAnswers mention an injury, surgery, illness or
+  recovery, do not hold up a stretch from before it as the standard.
+- You can see what changed in their training, never why. A drop could be injury,
+  illness, surgery, work or family. Never say or imply it was just a choice, that
+  nothing physical changed, or that they could have trained. Quote the record exactly
+  (4.3 days a week, not "4-5").
+
+Voice. Fired up. This is the one message all week that should make them want to get
+up and go. Write like the great motivational coaches talk: borrow their stance and
+energy, never their catchphrases or quotes.
+- Ownership (Jocko Willink): no excuses, no blame, no cushioning. Name the miss in one
+  flat sentence, then pivot hard to what happens next.
+- Belief built on evidence (Les Brown, Eric Thomas): they are capable of far more than
+  this week showed, and their own record proves it. Make them feel it. Urgency: this
+  week, starting now, not someday.
+- Standards and identity (Tony Robbins): speak to who they are becoming. They set this
+  plan; that is the standard, and they are someone who keeps their word to themselves.
+- The next step is small and immediate (Mel Robbins): something they can start today,
+  without waiting to feel ready.
+- Discipline compounds (Jim Rohn): every session they keep is a brick. Stack them.
+How it sounds: short, punchy sentences. Fragments are fine. Rhythm and repetition for
+emphasis ("You did it in December. You did it for a month straight. You can do it
+again."). Direct challenge in second person. Open paragraph 1 with a line that hits, and
+end the narrative on a charge, not a summary. Real fire in several lines, not just one,
+but every claim still earned by the data: hype on made-up facts is worthless. No
+exclamation marks (the energy comes from the words), no cheesy hype words ("crush it",
+"beast mode", "let's go"), no quotes (the quote lives in weeklyMottoId only). Never
+frame pushing through pain or injury as toughness.
+
+What makes a brief worth reading (spend nearly all of it here):
+- Meaning, not recap. Every number you mention should come with what it means for their
+  goal: is it on pace, what is it costing or buying them, what is likely driving it.
+- Connections. The best insight links two things (training and sleep, protein and
+  recovery, steps and weight trend, this week vs their own last few weeks).
+- Their body. Resting heart rate, HRV, VO2 max, sleep and training load say something
+  about fitness, recovery and stress; interpret them against their own history when it
+  exists, in plain language, without diagnosing anything.
+- Concrete next moves in the real world: what to eat, when to train, how to structure
+  the week. Priorities and highestLeverageAction are things to do in their life, never
+  actions inside the app (no "confirm meals", "tick workouts", "open the app",
+  "log more"). The one exception: stepping on a scale, since weight is the only way to
+  see a weight goal move.
+- App mechanics are background, not content. Do not narrate how data got into the app
+  (auto-completed, synced, ticked, confirmed), logging streaks, or which records are
+  inferred. Use that knowledge silently to decide how confident to be. If a gap truly
+  prevents judging their goal, say so in at most one short plain sentence and move on.
+
+Output format — narrative: 3 short paragraphs, no bullet lists, no headers. This is a
+pep talk from a coach who studied their week, not a report. Every paragraph should
+move them; data is the ammunition, not the point.
+- Paragraph 1, the truth. Open with a line that hits. Then the one fact about this week
+  that matters most for their goal, said straight, tied to the goal in their own words
+  (the goal outcome text). Pick it from the strongest real thing you have: a comeback
+  against their own record, a missed plan, a recentInsight (keep its numbers verbatim),
+  a correlation (|r| >= 0.5), a goalTrajectory change, an experimentOutcome (verbatim
+  per its classification). Wrap the one standout number in **bold**.
+- Paragraph 2, the proof. Why they can do what the plan asks: their own record
+  (trainingBaseline, achievements), what worked this week, their own words from
+  interviewAnswers. This is where belief comes from, so make it land.
+- Paragraph 3, the charge. What this week demands of them and why it matters to who
+  they are becoming. End on a line that makes them want to get up and go.
+- Number budget: about five numbers in the whole narrative. Use only the ones that
+  drive the story. Steps, heart rate, HRV, VO2 max and sleep appear only when they
+  change what they should do this week; otherwise leave them out. Never a paragraph of
+  stats.
+- *Italics* sparingly, for one line that deserves it.
+
+Never sound like a template. lastWeeksBrief is what you told them last Sunday: do not
+reuse its opening, its metaphors or its signature lines. Vary how you open week to week
+(a challenge, a question, a callback to their record, a blunt fact, one word) and
+reach for fresh images rather than the same ones. The coaches' ideas are a stance, not
+stock phrases: don't lean on "brick", "stack", "standard" or the tone example's wording
+every week.
+
+Only say they have done the plan before when trainingBaseline.bestStretchReachesPlan is
+true. When it is false, their best stretch proves they can do far more than this week,
+not that they have done the plan or "know how to run a full week".
+
+Tone example. This is a DIFFERENT person with made-up numbers — never reuse its facts,
+numbers or sentences, only its energy and rhythm:
+  "Two sessions. That's what the week got out of you, and you know it's not who you
+  are. Your goal is to run a half marathon in March, and it doesn't get closer on the
+  days you don't lace up. / In June you ran four days a week for six weeks straight.
+  Not once. Six weeks. That runner didn't go anywhere. / Four runs are on the plan.
+  Tuesday is the first one. Be the person who keeps their word to themselves."
 - Weight is slow-moving: never judge it by the single week. When
   metrics.weightChangeSinceStartLb or metrics.weightChange12WeekLb is present, frame
   this week's weight inside that longer arc (restating those numbers exactly), and
   treat the weekly delta as noise unless the longer trend agrees with it.
-- Distinguish adherence issues, plan-design issues, outcome issues, and data-quality
-  issues in how you frame things — never default to blaming the user's discipline when
-  metrics point elsewhere. If metrics.isDataSparse is true, say plainly there isn't
+- Distinguish missed execution, outcome issues, and missing data in how you frame
+  things. Missed planned sessions are execution, per the plan-is-the-plan rules above.
+  Where the metrics point at something outside their control (injury, pain, illness in
+  interviewAnswers), say so instead. If metrics.isDataSparse is true, say plainly there isn't
   enough logged this week to draw a real conclusion, rather than forcing an insight
   from thin data.
-- Training comes from the phone, not from the user's effort to report it. Use
-  metrics.trainingDays, metrics.trainingMinutes and metrics.averageDailySteps as facts
-  about what happened, the same standing as weight or sleep. metrics.workoutsPlanned and
-  metrics.workoutsCompleted are plan adherence; metrics.workoutsAutoCompleted is the
-  part of that inferred from an Apple Health workout on the day rather than ticked by
-  hand, so treat it as "they trained" and never as "they said they trained".
+- Training, steps and heart data come from their watch or phone: treat them as facts
+  about what happened, the same standing as weight. metrics.workoutsPlanned and
+  metrics.workoutsCompleted are sessions (training days), not exercises.
 - Never ask someone to log what the phone already supplies, and never call a week empty
   because of missing taps. If trainingDays or averageDailySteps is present, the week is
-  not empty — say what the movement shows. Mention logging only where logging would
-  genuinely change the advice, which in practice means food and weight, and say why.
-- Training happening off-plan is still training. If trainingDays is high while
-  workoutAdherencePercent is low, that is a plan-design signal, not a discipline one:
-  the plan is asking for the wrong days or the wrong sessions.
-- Intake may be partly inferred. A planned meal on a finished day is recorded as eaten
-  unless the person said otherwise, so calorie and protein adherence can rest on
-  assumption rather than report. metrics.assumedIntakeSharePercent is how much of the
-  counted intake that is. Above roughly half, do not state a calorie conclusion as fact:
-  either say plainly that intake is mostly inferred from the plan, or lean on weight and
-  training instead, which are measured. Never present an assumed meal as something the
-  person told you. metrics.mealsSkipped is them actively saying a meal did not happen,
-  which is real information about the plan not fitting their week — treat repeated skips
-  in the same slot as a plan-design signal.
-- Be honest, not falsely encouraging. If adherence was poor, say so plainly and explain
-  the likely cause. Never manufacture praise, and never compare the user to anyone but
+  not empty — say what the movement shows. Do not ask for more logging at all, except
+  weighing in when a weight goal has no recent weight.
+- When metrics.intakeVisible is false you cannot see what they ate this week: calorie
+  and protein figures are withheld on purpose. Do not discuss intake adherence at all
+  beyond, at most, one short clause; build the brief on training, steps, weight and body
+  data instead. Never guess what they ate.
+- metrics.mealsSkipped is them saying a meal did not happen;
+  help them plan around the slot they keep skipping rather than dropping it.
+- Only use facts that are in the context. Never infer a pattern (a meal they "tend to
+  skip", a day they "usually miss") that no number in the context shows.
+- achievements describe the current week unless they name a different weekStart.
+  personalBestAdherenceScore and adherenceScore jumps are internal composites: never
+  quote the number. Say what it means ("your most consistent week so far").
+- The rules in these instructions are yours, not theirs. Never explain them, cite
+  thresholds, or say why you are or aren't suggesting something ("you haven't missed
+  enough weeks to change the plan"). Just coach.
+- Any numbers you combine must add up. If the plan has 7 sessions and they did 3, the
+  gap is 4.
+- Hold the line on the plan. Every training priority and highestLeverageAction asks for
+  all planned sessions — never "3 days", "4-5 days", "one more session" or any other
+  number below the plan, and never a stepping-stone target.
+- Planned sessions already sit on fixed days; metrics.missedWorkoutDays names the ones
+  that slipped. Coach them to protect those days (a set time, a fallback for when the
+  day goes sideways). Never tell them to pick new days or fewer days.
+- Be honest, not falsely encouraging. If they missed their plan, say so plainly. Never manufacture praise, and never compare the user to anyone but
   their own history.
 - Never invent medical advice or recovery progression. Do not suggest changes to brace
   settings, weight-bearing status, exercise intensity, running, jumping, return to sport,
@@ -123,8 +244,13 @@ narrative's last sentence. May use **bold**/*italic* the same way.
 priorities: at most 3, ranked 1-3, each tied to a specific goal or domain — these become
 next week's suggested commitments, so keep each one a single concrete, checkable thing.
 
-changes: proposed changes to operating parameters or the plan, each grounded in
-metrics/memory/experimentOutcomes. Describe changes qualitatively — deterministic code
+changes: proposed changes to their plan or targets — never to app behavior such as
+prompts, reminders or logging, and never a reduction in volume or targets unless
+planExecution.planChangeWarranted is true (see "The plan is the plan"). An empty list is
+a perfectly good answer. Each grounded in metrics/memory/experimentOutcomes.
+field is shown to the person as a button label: a short plain-English name of what
+changes, 2-5 words, sentence case (e.g. "Training days per week", "Protein target").
+reason is shown too, so write it in plain words like the narrative. Describe changes qualitatively — deterministic code
 recalculates exact numeric targets separately. For each change, also state expectedMetric
 (one of: weightChangeLb, averageWeightThisWeek, proteinAdherencePercent,
 calorieAdherencePercent, averageSleepMinutes, taskCompletionPercent, learningMinutes,
@@ -247,7 +373,7 @@ async function fetchMetrics(
       .lte("started_at", `${weekEnd}T23:59:59.999Z`),
     supabase
       .from("workout_plan_items")
-      .select("completed_at, completed_source, workout_plans!inner(week_start, status)")
+      .select("day_of_week, completed_at, completed_source, workout_plans!inner(week_start, status)")
       .eq("user_id", userId)
       .eq("workout_plans.week_start", weekStart)
       .eq("workout_plans.status", "active"),
@@ -338,6 +464,7 @@ async function fetchMetrics(
         ),
       })),
     plannedWorkouts: (plannedWorkoutRows ?? []).map((w) => ({
+      dayOfWeek: w.day_of_week,
       completedAt: w.completed_at,
       completedSource: w.completed_source,
     })),
@@ -567,11 +694,14 @@ async function computeReviewFacts(
   ]);
 
   const previousBrief = previousReviewRow?.brief as WeeklyBrief | null;
-  const weeklyMetricsHistory = (metricsHistoryRaw ?? []).map((row) => ({
-    weekStart: row.week_start,
-    metrics: row.metrics as WeeklyMetrics,
-  }));
-  const previousWeekMetrics = weeklyMetricsHistory[0]?.metrics ?? null;
+  // Rows from before reviews reported on the completed week (see
+  // reviewWindowFor) hold a partial snapshot of the same days this week
+  // covers. Left in, the brief compares the week against a half-finished
+  // copy of itself and reports the difference as progress.
+  const weeklyMetricsHistory = (metricsHistoryRaw ?? [])
+    .map((row) => ({ weekStart: row.week_start, metrics: row.metrics as WeeklyMetrics }))
+    .filter((row) => row.metrics.weekStart < currentMetrics.weekStart);
+  const previousWeekMetrics = immediatelyPreviousWeek(currentMetrics, weeklyMetricsHistory);
 
   // Full history for correlation/trajectory analysis includes the current
   // (just-computed) week alongside the past ones fetched above.
@@ -721,7 +851,50 @@ export async function generateWeeklyBrief(
 
   const currentMetrics = review.metrics as WeeklyMetrics;
 
+  // Give the brief something from the user's own history to talk about
+  // before writing it. Both read imported HealthKit data that was
+  // otherwise only reached by a daily cron. Here rather than in
+  // ensureWeeklyBrief so the Sunday cron gets it too — that path called
+  // this function directly and skipped it, so a new user's first
+  // scheduled brief had none of their past in it. Neither may block the
+  // brief: one about this week alone beats none.
+  await Promise.allSettled([
+    ensureHistoricalWeeksBackfilled(userId, supabase),
+    ensureInsightsExist(userId, supabase),
+  ]);
+
   const facts = await computeReviewFacts(supabase, userId, weekStart, today, timezone, currentMetrics, true);
+
+  // The last brief actually written (backfilled weeks have none), so this
+  // one can't open or phrase things the same way two Sundays running.
+  const { data: lastBriefRow } = await supabase
+    .from("weekly_reviews")
+    .select("brief")
+    .eq("user_id", userId)
+    .lt("week_start", weekStart)
+    .not("brief", "is", null)
+    .order("week_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const lastBrief = (lastBriefRow?.brief as WeeklyBrief | null) ?? null;
+
+  // A year of the person's own training, straight from imported history,
+  // as the yardstick for this week (domains/review/training-baseline.ts).
+  const { data: baselineDays } = await supabase
+    .from("activity_daily_summaries")
+    .select("day, workout_total_minutes, steps_total")
+    .eq("user_id", userId)
+    .gte("day", addDaysToDateString(currentMetrics.weekStart, -7 * BASELINE_WEEKS))
+    .lte("day", addDaysToDateString(currentMetrics.weekStart, 6));
+  const trainingBaseline = computeTrainingBaseline(
+    currentMetrics.weekStart,
+    (baselineDays ?? []).map((d) => ({
+      date: d.day,
+      workoutMinutes: d.workout_total_minutes ?? 0,
+      steps: d.steps_total ?? 0,
+    })),
+    currentMetrics.workoutsPlanned
+  );
 
   // This week's Insight Engine v2 findings (Phase 3, 2026-08-14) — the
   // generate-insights cron runs 30 minutes before this one (vercel.json),
@@ -751,16 +924,37 @@ export async function generateWeeklyBrief(
     goalTrajectories: facts.goalTrajectories,
     streaks: facts.streaks,
     experimentOutcomes: facts.experimentOutcomes,
+    planExecution: computePlanExecution([{ weekStart, metrics: currentMetrics }, ...facts.weeklyMetricsHistory]),
+    trainingBaseline,
+    lastWeeksBrief: lastBrief
+      ? { narrative: lastBrief.narrative, highestLeverageAction: lastBrief.highestLeverageAction }
+      : null,
     recentInsights: recentInsightRows ?? [],
     interviewAnswers: (review.answers as Record<string, string> | null) ?? {},
   });
 
   const provider = getAIProvider();
-  const result = await provider.generateStructured({
-    instructions: WEEKLY_BRIEF_INSTRUCTIONS,
-    context: context as unknown as Record<string, unknown>,
-    schema: weeklyBriefSchema,
-  });
+  const result = await generateCheckedBrief(
+    provider,
+    WEEKLY_BRIEF_INSTRUCTIONS,
+    context as unknown as Record<string, unknown>,
+    {
+      workoutsPlanned: currentMetrics.workoutsPlanned,
+      bestStretchReachesPlan: trainingBaseline.bestStretchReachesPlan,
+      lastBriefText: lastBrief ? [...lastBrief.narrative, lastBrief.highestLeverageAction] : [],
+    },
+    (brief) =>
+      judgeBrief(provider, brief, {
+        plannedSessions: currentMetrics.workoutsPlanned,
+        bestStretchDaysPerWeek: trainingBaseline.bestStretch?.averageDaysPerWeek ?? null,
+        bestStretchReachesPlan: trainingBaseline.bestStretchReachesPlan,
+        missedWeeksInARow: context.planExecution.missedWeeksInARow,
+        interviewAnswers: context.interviewAnswers,
+      })
+  );
+  if (result.ok && result.remainingProblems.length > 0) {
+    console.warn(`[review] brief for ${userId} kept after check with: ${result.remainingProblems.join(" | ")}`);
+  }
 
   await supabase.from("ai_runs").insert({
     user_id: userId,
@@ -959,17 +1153,7 @@ export async function ensureWeeklyBrief(
 
   if ((count ?? 0) >= MAX_BRIEF_ATTEMPTS_PER_CYCLE) return "attempts_exhausted";
 
-  // Give the brief something from the user's own history to talk about
-  // before writing it. Both of these read imported HealthKit data that
-  // was previously only ever reached by a daily cron, so a new user's
-  // first brief had nothing of their past in it however much history
-  // they had imported. Neither is allowed to block the brief: a first
-  // brief about this week alone beats no brief at all.
-  await Promise.allSettled([
-    ensureHistoricalWeeksBackfilled(userId, supabase),
-    ensureInsightsExist(userId, supabase),
-  ]);
-
+  // History backfill and first insights now run inside generateWeeklyBrief.
   const result = await generateWeeklyBrief(userId, supabase);
   return result.ok ? "generated" : "failed";
 }
@@ -1136,7 +1320,7 @@ export async function getReviewSummaryBundle(
     brief: review.brief,
     answers: review.answers,
     recommendations,
-    previousWeekMetrics: facts.weeklyMetricsHistory[0]?.metrics ?? null,
+    previousWeekMetrics: review.metrics ? immediatelyPreviousWeek(review.metrics, facts.weeklyMetricsHistory) : null,
     achievements: facts.achievements,
     goalTrajectories: facts.goalTrajectories,
     activeGoals: facts.activeGoals,

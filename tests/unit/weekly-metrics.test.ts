@@ -292,10 +292,10 @@ describe("computeWeeklyMetrics: training", () => {
     const result = computeWeeklyMetrics(
       baseInput({
         plannedWorkouts: [
-          { completedAt: "2026-07-21T18:00:00Z", completedSource: "health" },
-          { completedAt: "2026-07-23T18:00:00Z", completedSource: "manual" },
-          { completedAt: null, completedSource: null },
-          { completedAt: null, completedSource: null },
+          { dayOfWeek: 1, completedAt: "2026-07-21T18:00:00Z", completedSource: "health" },
+          { dayOfWeek: 3, completedAt: "2026-07-23T18:00:00Z", completedSource: "manual" },
+          { dayOfWeek: 4, completedAt: null, completedSource: null },
+          { dayOfWeek: 5, completedAt: null, completedSource: null },
         ],
       })
     );
@@ -303,6 +303,31 @@ describe("computeWeeklyMetrics: training", () => {
     expect(result.workoutsCompleted).toBe(2);
     expect(result.workoutsAutoCompleted).toBe(1);
     expect(result.workoutAdherencePercent).toBe(50);
+  });
+
+  // Plan rows are exercises, not sessions: a real week of 7 sessions made
+  // of 24 exercises was reported to the brief as "24 workouts planned".
+  it("counts sessions per day, not exercises", () => {
+    const ex = (dayOfWeek: number, done: string | null, source: string | null = null) => ({
+      dayOfWeek,
+      completedAt: done,
+      completedSource: source,
+    });
+    const result = computeWeeklyMetrics(
+      baseInput({
+        plannedWorkouts: [
+          ex(0, null), ex(0, null), ex(0, null),
+          ex(2, "2026-07-22T18:00:00Z", "health"), ex(2, "2026-07-22T18:00:00Z", "health"),
+          ex(4, "2026-07-24T18:00:00Z", "health"), ex(4, "2026-07-24T18:05:00Z", "manual"), ex(4, null),
+        ],
+      })
+    );
+    expect(result.workoutsPlanned).toBe(3);
+    expect(result.workoutsCompleted).toBe(2);
+    expect(result.workoutsAutoCompleted).toBe(1);
+    expect(result.workoutAdherencePercent).toBe(67);
+    // baseInput's week starts 2026-07-20, a Monday.
+    expect(result.missedWorkoutDays).toEqual(["Monday"]);
   });
 
   it("has no adherence figure to report when nothing was planned", () => {

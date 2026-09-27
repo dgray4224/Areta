@@ -5,6 +5,7 @@ import type { AIProvider } from "@/platform/ai/provider";
 import type { StructuredGenerationRequest, StructuredGenerationResult } from "@/platform/ai/types";
 
 const MODEL = "claude-sonnet-5";
+const FAST_MODEL = "claude-haiku-4-5-20251001";
 const TOOL_NAME = "emit_result";
 const MAX_ATTEMPTS = 2;
 
@@ -35,7 +36,7 @@ export class AnthropicProvider implements AIProvider {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
         const message = await client.messages.create({
-          model: MODEL,
+          model: request.tier === "fast" ? FAST_MODEL : MODEL,
           max_tokens: 4096,
           system: request.instructions,
           messages: [

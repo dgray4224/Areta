@@ -13,21 +13,52 @@ export type AchievementFacts = {
   streaks: StreakFacts;
 };
 
+/** Above this share of intake inferred from the plan, calorie and protein
+ * adherence describe the plan rather than the person, so they stay out of
+ * the composite. */
+const MAX_ASSUMED_INTAKE_PERCENT = 50;
+
 /** A single composite adherence number for ranking weeks against each
- * other — the average of whichever of calorie/protein/task-completion
- * adherence percentages are non-null this week. Returns null if none are
- * available (a week with no relevant data can't be ranked). Deliberately
- * excludes `weightChangeLb` from this composite and from the
- * week-over-week jump comparison below: unlike the three adherence
+ * other — the average of whichever of calorie/protein/workout/task
+ * adherence percentages are non-null and trustworthy this week. Returns
+ * null if none are (a week with no relevant data can't be ranked).
+ *
+ * Calorie and protein are dropped when most intake was assumed: a week
+ * where every meal was inferred from the plan otherwise scored as a
+ * "personal best" on numbers the person never reported (2026-09-27).
+ * Workouts were missing entirely until then, so the headline adherence
+ * figure ignored the one thing measured from the watch.
+ *
+ * Deliberately excludes `weightChangeLb` from this composite and from the
+ * week-over-week jump comparison below: unlike the adherence
  * percentages, a bigger weight change isn't unambiguously "better" or
  * "worse" without knowing the user's goal direction, and this module
  * must never editorialize a direction it can't actually justify. */
 function compositeAdherenceScore(metrics: WeeklyMetrics): number | null {
-  const values = [metrics.calorieAdherencePercent, metrics.proteinAdherencePercent, metrics.taskCompletionPercent].filter(
-    (v): v is number => v !== null
-  );
+  // `?? null` because rows stored before these fields existed lack them.
+  const intakeTrusted = (metrics.assumedIntakeSharePercent ?? 0) <= MAX_ASSUMED_INTAKE_PERCENT;
+  const values = [
+    intakeTrusted ? metrics.calorieAdherencePercent : null,
+    intakeTrusted ? metrics.proteinAdherencePercent : null,
+    metrics.workoutAdherencePercent ?? null,
+    metrics.taskCompletionPercent,
+  ].filter((v): v is number => v !== null);
   if (values.length === 0) return null;
   return Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
+}
+
+/** The history entry covering the week right before `current`, or null
+ * when that week has no review. Reviews can skip weeks, and comparing
+ * against whatever came last reported a mid-August week as "the week
+ * before". `history` is most-recent-first. */
+export function immediatelyPreviousWeek(
+  current: WeeklyMetrics,
+  history: { metrics: WeeklyMetrics }[]
+): WeeklyMetrics | null {
+  const latest = history[0]?.metrics;
+  if (!latest) return null;
+  const gapDays = (Date.parse(`${current.weekStart}T00:00:00Z`) - Date.parse(`${latest.weekStart}T00:00:00Z`)) / 86_400_000;
+  return gapDays === 7 ? latest : null;
 }
 
 /**
