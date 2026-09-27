@@ -55,6 +55,8 @@ describe("findBriefViolations", () => {
         ],
       },
     ],
+    ["a pronoun for the reader", { narrative: ["That runner didn't disappear, he's still you.", "x"] }],
+    ["a ratio the model worked out", { narrative: ["You nearly doubled this week's output for a month.", "x"] }],
     ["a stepping-stone target", { priorities: [{ title: "Build toward 4-5 days next week", reason: "r", domain: "training", priority: 1 as const }] }],
   ])("flags %s", (_label, overrides) => {
     expect(findBriefViolations(brief(overrides as Partial<WeeklyBrief>), facts)).toHaveLength(1);

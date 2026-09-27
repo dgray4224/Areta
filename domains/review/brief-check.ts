@@ -81,6 +81,14 @@ const RULES: { pattern: RegExp; problem: string }[] = [
     problem: "claims to know why their training dropped. You can't see injuries, illness or life events; describe what changed, never why.",
   },
   {
+    pattern: /\b(he|she|he's|she's|him|his|hers|herself|himself)\b/i,
+    problem: "describes them in the third person or assumes their pronoun. Speak to them as \"you\".",
+  },
+  {
+    pattern: /\b(doubled?|doubling|tripled?|tripling|quadrupled?|twice (as|the)|half (as|of what))\b/i,
+    problem: "turns a comparison into a ratio, which is arithmetic. Give both numbers instead.",
+  },
+  {
     pattern: /!/,
     problem: "uses an exclamation mark.",
   },
