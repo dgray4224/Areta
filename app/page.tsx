@@ -186,9 +186,17 @@ export default async function RootPage() {
             <LogoMark size={16} />
             Areta
           </span>
-          <Link href="/privacy" className="hover:underline">
-            Privacy Policy
-          </Link>
+          <div className="flex gap-5">
+            <Link href="/privacy" className="hover:underline">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:underline">
+              Terms
+            </Link>
+            <Link href="/support" className="hover:underline">
+              Support
+            </Link>
+          </div>
         </div>
       </footer>
     </main>
