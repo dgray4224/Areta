@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: "How Areta collects, uses, and protects your data.",
 };
 
-const EFFECTIVE_DATE = "August 8, 2026";
+const EFFECTIVE_DATE = "November 7, 2026";
 const CONTACT_EMAIL = "dgrayze249@gmail.com";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -83,6 +83,13 @@ export default function PrivacyPolicyPage() {
             disconnect any calendar at any time in Settings.
           </p>
           <p>
+            <strong>Location (opt-in, iOS only).</strong> If you turn on Evening Nudge, Areta asks
+            for location access so you can mark one place as home. iOS then tells Areta only when
+            you leave or return to that one area, so it can remind you about an early workout on a
+            night you&apos;re still out. Your home location is stored only on your phone and is
+            never sent to Areta&apos;s servers or anyone else. Turning Evening Nudge off forgets it.
+          </p>
+          <p>
             <strong>Usage and device information.</strong> Standard technical information such as
             app version, device type, and basic request logs, used for debugging and reliability.
           </p>
@@ -100,9 +107,12 @@ export default function PrivacyPolicyPage() {
 
         <Section title="AI-assisted features">
           <p>
-            Some features — such as your weekly review brief and parts of onboarding — use a
-            third-party AI provider (Anthropic) to turn your account information into structured,
-            personalized content. This can include information like your goals, a summary of your
+            Your weekly review brief is written by a third-party AI provider (Anthropic), and only
+            if you allow it. The app asks you once, before anything is sent, and you can change your
+            answer at any time in Settings &gt; AI. If you say no, nothing about you is sent to the
+            AI provider and the rest of Areta works as normal; you just don&apos;t get a written
+            brief. Trainers who use program import also send the program text they paste to the
+            same provider. When you allow it, what is sent can include information like your goals, a summary of your
             recent metrics (for example, derived from health or nutrition data you&apos;ve logged
             or synced), and your own notes. The AI provider processes this information solely to
             generate the requested content for you, under its own data-processing and

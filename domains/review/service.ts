@@ -836,11 +836,31 @@ export async function getReviewFactsBundle(
   );
 }
 
+/** Error generateWeeklyBrief returns when the person hasn't agreed to
+ * the AI provider seeing their data. Callers match on it to skip
+ * quietly rather than count it as a failure. */
+export const AI_CONSENT_REQUIRED = "AI consent not given";
+
+/**
+ * True only when the person has explicitly agreed to have their data sent
+ * to the AI provider (profiles.ai_consent, App Store guideline 5.1.2(i)).
+ * Never asked and declined both read as no: the brief is the only thing
+ * that sends a person's own data to the model, and it must not go
+ * without a yes.
+ */
+export async function hasAiConsent(supabase: SupabaseClient<Database>, userId: string): Promise<boolean> {
+  const { data } = await supabase.from("profiles").select("ai_consent").eq("id", userId).maybeSingle();
+  return data?.ai_consent === true;
+}
+
 export async function generateWeeklyBrief(
   userId: string,
   client?: SupabaseClient<Database>
 ): Promise<ActionResult> {
   const supabase = client ?? (await createClient());
+  if (!(await hasAiConsent(supabase, userId))) {
+    return { ok: false, error: AI_CONSENT_REQUIRED };
+  }
   const weekStart = await reviewWeekStart(supabase, userId);
   const today = await todayIso(supabase, userId);
   const timezone = await resolveTimezone(supabase, userId);
@@ -1106,8 +1126,10 @@ export type ReviewSummaryBundle = {
   /** Why `brief` is null, when it is. "pending" means one is being
    * written now (the route kicks generation off in the background);
    * "unavailable" means this cycle's attempts are spent and the client
-   * should stop promising one rather than spin forever. */
-  briefStatus: "ready" | "pending" | "unavailable";
+   * should stop promising one rather than spin forever; "no_consent"
+   * means the person hasn't agreed to the AI provider seeing their data,
+   * so none will be written until they do. */
+  briefStatus: "ready" | "pending" | "unavailable" | "no_consent";
   metrics: WeeklyMetrics | null;
   brief: WeeklyBrief | null;
   answers: Record<string, string>;
@@ -1143,7 +1165,7 @@ export type ReviewSummaryBundle = {
  * recover without waiting seven days for the next cron. */
 const MAX_BRIEF_ATTEMPTS_PER_CYCLE = 3;
 
-export type EnsureBriefOutcome = "ready" | "generated" | "failed" | "attempts_exhausted";
+export type EnsureBriefOutcome = "ready" | "generated" | "failed" | "attempts_exhausted" | "no_consent";
 
 /**
  * Guarantees the current cycle has a brief, generating one on the spot
@@ -1166,6 +1188,7 @@ export async function ensureWeeklyBrief(
   const supabase = client ?? (await createClient());
   const review = await getOrCreateWeeklyReview(userId, supabase);
   if (review.brief) return "ready";
+  if (!(await hasAiConsent(supabase, userId))) return "no_consent";
 
   const { count } = await supabase
     .from("ai_runs")
@@ -1325,8 +1348,10 @@ export async function getReviewSummaryBundle(
   // Lets the client distinguish "your brief is being written right now"
   // from "we tried and it isn't coming" -- previously both looked like
   // an indefinite promise that one would arrive on your review day.
-  let briefStatus: "ready" | "pending" | "unavailable" = "ready";
-  if (!review.brief) {
+  let briefStatus: ReviewSummaryBundle["briefStatus"] = "ready";
+  if (!review.brief && !(await hasAiConsent(supabase, userId))) {
+    briefStatus = "no_consent";
+  } else if (!review.brief) {
     const { count } = await supabase
       .from("ai_runs")
       .select("id", { count: "exact", head: true })

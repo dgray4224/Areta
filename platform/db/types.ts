@@ -1943,6 +1943,8 @@ export type Database = {
       profiles: {
         Row: {
           admin_role: string | null
+          ai_consent: boolean | null
+          ai_consent_at: string | null
           avatar_url: string | null
           bed_time: string | null
           cooking_style: string
@@ -1968,6 +1970,8 @@ export type Database = {
         }
         Insert: {
           admin_role?: string | null
+          ai_consent?: boolean | null
+          ai_consent_at?: string | null
           avatar_url?: string | null
           bed_time?: string | null
           cooking_style?: string
@@ -1993,6 +1997,8 @@ export type Database = {
         }
         Update: {
           admin_role?: string | null
+          ai_consent?: boolean | null
+          ai_consent_at?: string | null
           avatar_url?: string | null
           bed_time?: string | null
           cooking_style?: string

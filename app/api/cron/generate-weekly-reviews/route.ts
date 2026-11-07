@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServerEnv } from "@/platform/env.server";
 import { createAdminClient } from "@/platform/supabase/admin";
 import { localDateString } from "@/domains/activity-summary/timezone";
-import { getOrCreateWeeklyReview, generateWeeklyBrief } from "@/domains/review/service";
+import { AI_CONSENT_REQUIRED, getOrCreateWeeklyReview, generateWeeklyBrief } from "@/domains/review/service";
 import { sendPushToUsers } from "@/platform/push/send";
 import { REVIEW_PUSH_TITLE, reviewPushBody } from "@/domains/review/push-copy";
 import { sendOpsAlert } from "@/platform/alerts/notify";
@@ -71,6 +71,9 @@ export async function GET(request: NextRequest) {
         return { userId, skipped: true as const };
       }
       const result = await generateWeeklyBrief(userId, supabase);
+      // Not a failure: this person hasn't agreed to the AI provider
+      // seeing their data, so there is deliberately no brief to write.
+      if (!result.ok && result.error === AI_CONSENT_REQUIRED) return { userId, skipped: true as const };
       if (!result.ok) throw new Error(result.error);
       // Re-read for the brief itself: the push below leads with its
       // highest-leverage action, the one specific sentence this week's
