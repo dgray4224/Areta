@@ -71,6 +71,10 @@ export default function PrivacyPolicyPage() {
         <p>
           <strong>Usage and device information.</strong> Standard technical information such as
           app version, device type, and basic request logs, used for debugging and reliability.
+          If the app crashes or hits an error, a crash report is sent to our error-monitoring
+          provider, Sentry: what went wrong in the code, the device model, iOS version and app
+          version. Crash reports don&apos;t include your name, email, IP address, health data or
+          anything shown on screen.
         </p>
       </Section>
 
@@ -104,8 +108,8 @@ export default function PrivacyPolicyPage() {
         <ul className="list-disc space-y-1 pl-5">
           <li>
             <strong>Service providers:</strong> Supabase (database, authentication, file
-            storage) and Vercel (app hosting) — both process data on our behalf under their own
-            security commitments.
+            storage), Vercel (app hosting) and Sentry (crash reports) — all process data on our
+            behalf under their own security commitments.
           </li>
           <li>
             <strong>Calendar and health platforms:</strong> Google, Microsoft, and Apple, solely
